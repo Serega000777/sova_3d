@@ -6,7 +6,11 @@ import pytest
 
 from app.ai.providers.shap_e_3d import ShapEThreeDProvider
 from app.ai.three_d import GenerationEstimate, GenerationRequest
-from app.ai.three_d_router import ProviderRoute, select_provider
+from app.ai.three_d_router import (
+    ProviderRoute,
+    ProviderRoutingEvidence,
+    select_provider,
+)
 from app.api.errors import ValidationFailedError
 
 
@@ -54,6 +58,36 @@ def test_router_uses_server_side_priority_then_cost_and_latency() -> None:
 
     assert decision.provider.name == "faster"
     assert decision.estimate.cost_usd == Decimal("0.05")
+
+
+def test_router_learns_only_between_equal_priority_routes_with_complete_evidence() -> None:
+    cheaper = PricedShapE("cheaper", "0.05", 200)
+    preferred = PricedShapE("preferred", "0.10", 300)
+    routes = [
+        ProviderRoute(provider=cheaper, default_priority=20),
+        ProviderRoute(provider=preferred, default_priority=20),
+    ]
+    evidence = {
+        ("cheaper", "text300M"): ProviderRoutingEvidence(10, 4),
+        ("preferred", "text300M"): ProviderRoutingEvidence(10, 8),
+    }
+
+    assert select_provider(routes, request(), evidence).provider.name == "preferred"
+
+    incomplete = {("preferred", "text300M"): ProviderRoutingEvidence(10, 8)}
+    assert select_provider(routes, request(), incomplete).provider.name == "cheaper"
+
+    sparse = {
+        ("cheaper", "text300M"): ProviderRoutingEvidence(4, 1),
+        ("preferred", "text300M"): ProviderRoutingEvidence(4, 4),
+    }
+    assert select_provider(routes, request(), sparse).provider.name == "cheaper"
+
+    higher_priority = [
+        ProviderRoute(provider=cheaper, default_priority=10),
+        ProviderRoute(provider=preferred, default_priority=20),
+    ]
+    assert select_provider(higher_priority, request(), evidence).provider.name == "cheaper"
 
 
 def test_router_fails_closed_for_budget_latency_and_unknown_cost() -> None:

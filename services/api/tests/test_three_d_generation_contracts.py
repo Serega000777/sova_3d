@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from app.ai.providers.colmap_3d import ColmapThreeDProvider
 from app.ai.providers.shap_e_3d import ShapEThreeDProvider
 from app.ai.three_d import (
+    GenerationBenchmarkGroup,
+    GenerationBenchmarkReport,
     GenerationMode,
     GenerationPurpose,
     GenerationRequest,
@@ -16,6 +18,7 @@ from app.ai.three_d import (
     quality_report_from_repair,
 )
 from app.api.errors import ValidationFailedError
+from app.services.generation import routing_evidence_from_benchmark
 
 
 def _request(**overrides: object) -> GenerationRequest:
@@ -118,6 +121,72 @@ def test_quality_report_rejects_malformed_benchmark_evidence(
     values.update(overrides)
     with pytest.raises(ValidationError):
         QualityReport.model_validate(values)
+
+
+def test_routing_evidence_uses_only_matching_rated_outcomes() -> None:
+    report = GenerationBenchmarkReport(
+        groups=[
+            GenerationBenchmarkGroup(
+                provider="provider-a",
+                model="model-a",
+                provider_version="v1",
+                mode="text",
+                purpose="draft",
+                runs=8,
+                active=0,
+                succeeded=8,
+                failed=0,
+                cancelled=0,
+                accepted=3,
+                accepted_after_fix=1,
+                rejected=1,
+                mixed=1,
+                unrated=2,
+                total_cost_usd=Decimal("1"),
+            ),
+            GenerationBenchmarkGroup(
+                provider="provider-a",
+                model="model-a",
+                provider_version="v2",
+                mode="text",
+                purpose="draft",
+                runs=2,
+                active=0,
+                succeeded=2,
+                failed=0,
+                cancelled=0,
+                accepted=1,
+                accepted_after_fix=0,
+                rejected=1,
+                mixed=0,
+                unrated=0,
+                total_cost_usd=Decimal("1"),
+            ),
+            GenerationBenchmarkGroup(
+                provider="provider-a",
+                model="model-a",
+                mode="image",
+                purpose="draft",
+                runs=5,
+                active=0,
+                succeeded=5,
+                failed=0,
+                cancelled=0,
+                accepted=5,
+                accepted_after_fix=0,
+                rejected=0,
+                mixed=0,
+                unrated=0,
+                total_cost_usd=Decimal("1"),
+            ),
+        ]
+    )
+
+    evidence = routing_evidence_from_benchmark(report, _request())
+
+    assert set(evidence) == {("provider-a", "model-a")}
+    assert evidence[("provider-a", "model-a")].rated_outcomes == 8
+    assert evidence[("provider-a", "model-a")].accepted_outcomes == 5
 
 
 def test_image_request_is_prepared_with_an_asset_id_and_multiview_stays_fail_closed() -> None:

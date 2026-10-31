@@ -18,11 +18,15 @@ from sqlalchemy.orm import Session
 from worker import exterior, generate_mesh, reconstruction
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
+from app.ai.providers.shap_e_3d import ShapEThreeDProvider
+from app.ai.three_d import GenerationEstimate, GenerationRequest
+from app.ai.three_d_router import ProviderRoute
 from app.jobs.runner import JobContext, JobFailureError
 from app.models.execution import Job, JobArtifact, JobStatus
 from app.models.feedback import AIFeedback, FeedbackRating, FeedbackReason
 from app.models.generation import ThreeDGeneration
 from app.models.versioning import Asset, AssetRole, ProjectVersion
+from app.services import generation as generation_service
 from app.services import jobs as job_service
 from app.storage import ObjectNotFoundError, S3Storage
 from tests.integration.conftest import Actor
@@ -751,6 +755,93 @@ def test_generation_benchmark_joins_cost_latency_quality_and_one_outcome_per_ass
         headers=stranger.headers,
     )
     assert hidden.status_code == 404
+
+
+def test_estimate_and_start_use_sufficient_project_feedback_between_equal_priority_routes(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    project: str,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class HistoricalProvider(ShapEThreeDProvider):
+        def __init__(self, name: str, cost: str) -> None:
+            self.name = name
+            self.cost = Decimal(cost)
+
+        def estimate(self, request: GenerationRequest) -> GenerationEstimate:
+            return (
+                super()
+                .estimate(request)
+                .model_copy(update={"provider": self.name, "cost_usd": self.cost})
+            )
+
+    routes = [
+        ProviderRoute(provider=HistoricalProvider("cheaper", "0.05"), default_priority=20),
+        ProviderRoute(provider=HistoricalProvider("preferred", "0.10"), default_priority=20),
+    ]
+    monkeypatch.setattr(generation_service, "provider_routes", lambda _settings: routes)
+
+    for provider, accepted in (("cheaper", 2), ("preferred", 4)):
+        for index in range(5):
+            job = Job(
+                workspace_id=actor.workspace.id,
+                project_id=uuid.UUID(project),
+                created_by=actor.user.id,
+                type="generate_mesh",
+                status=JobStatus.succeeded,
+            )
+            db_session.add(job)
+            db_session.flush()
+            db_session.add(
+                ThreeDGeneration(
+                    job_id=job.id,
+                    workspace_id=actor.workspace.id,
+                    project_id=uuid.UUID(project),
+                    provider=provider,
+                    provider_model="text300M",
+                    mode="text",
+                    purpose="draft",
+                    target_format="glb",
+                    request={},
+                    estimate={},
+                )
+            )
+            rating = FeedbackRating.good if index < accepted else FeedbackRating.bad
+            reason = FeedbackReason.prompt_mismatch if rating is FeedbackRating.bad else None
+            db_session.add(
+                AIFeedback(
+                    project_id=uuid.UUID(project),
+                    job_id=job.id,
+                    user_id=actor.user.id,
+                    rating=rating,
+                    reason=reason,
+                )
+            )
+    db_session.commit()
+
+    body = {
+        "mode": "text",
+        "purpose": "draft",
+        "prompt": "an owl figurine",
+        "target_format": "glb",
+    }
+    estimate = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations/estimate",
+        json=body,
+        headers=actor.headers,
+    )
+    assert estimate.status_code == 200, estimate.text
+    assert estimate.json()["provider"] == "preferred"
+
+    accepted = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations",
+        json=body,
+        headers={**actor.headers, "Idempotency-Key": "learned-provider-route"},
+    )
+    assert accepted.status_code == 202, accepted.text
+    record = db_session.get(ThreeDGeneration, uuid.UUID(accepted.json()["job_id"]))
+    assert record is not None and record.provider == "preferred"
 
 
 def test_a_viewer_cannot_generate_into_a_project_and_bad_input_is_refused(

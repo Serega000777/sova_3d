@@ -473,6 +473,28 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         (
             "POST",
+            f"/api/v1/models/{version}/animation-command-proposal",
+            {"prompt": "close in 2 seconds"},
+        ),
+        (
+            "POST",
+            f"/api/v1/models/{version}/animation-command-apply",
+            {
+                "prompt": "close in 2 seconds",
+                "clip": {
+                    "schema_version": 1,
+                    "kind": "rigid_joint_clip",
+                    "joint_type": "revolute",
+                    "node_id": "lid",
+                    "duration_seconds": 2,
+                    "direction": "reverse",
+                },
+            },
+        ),
+        ("POST", f"/api/v1/models/{version}/blender-handoffs", {}),
+        ("POST", f"/api/v1/versions/{version}/turntable-video", None),
+        (
+            "POST",
             f"/api/v1/models/{version}/site-plan",
             {
                 "plot_length_mm": 30_000,

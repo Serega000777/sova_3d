@@ -29,7 +29,12 @@ from app.ai.three_d import (
     ProviderCapabilities,
     QualityReport,
 )
-from app.ai.three_d_router import ProviderRoute, RoutingDecision, select_provider
+from app.ai.three_d_router import (
+    ProviderRoute,
+    ProviderRoutingEvidence,
+    RoutingDecision,
+    select_provider,
+)
 from app.api.errors import APIError, ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
 from app.models.core import WorkspaceRole
@@ -80,14 +85,19 @@ def provider_routes(settings: Settings) -> list[ProviderRoute]:
     return routes
 
 
-def route_provider(settings: Settings, request: GenerationRequest) -> RoutingDecision:
+def route_provider(
+    settings: Settings,
+    request: GenerationRequest,
+    *,
+    evidence: dict[tuple[str, str], ProviderRoutingEvidence] | None = None,
+) -> RoutingDecision:
     routes = provider_routes(settings)
     if not routes:
         raise MeshGenerationNotEnabledError(
             "3D generation is not enabled on this server",
             {"setting": "MESH_GENERATION_PROVIDER"},
         )
-    return select_provider(routes, request)
+    return select_provider(routes, request, evidence)
 
 
 def provider_capabilities(settings: Settings) -> list[ProviderCapabilities]:
@@ -108,6 +118,36 @@ def _validate_request_assets(
             )
 
 
+def routing_evidence_from_benchmark(
+    report: GenerationBenchmarkReport, request: GenerationRequest
+) -> dict[tuple[str, str], ProviderRoutingEvidence]:
+    """Collapse versioned benchmark rows into comparable feedback evidence per route."""
+
+    counts: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0])
+    for group in report.groups:
+        if group.mode is not request.mode or group.purpose is not request.purpose:
+            continue
+        rated = group.accepted + group.accepted_after_fix + group.rejected + group.mixed
+        key = (group.provider, group.model)
+        counts[key][0] += rated
+        counts[key][1] += group.accepted + group.accepted_after_fix
+    return {
+        key: ProviderRoutingEvidence(rated_outcomes=value[0], accepted_outcomes=value[1])
+        for key, value in counts.items()
+    }
+
+
+def _project_routing_evidence(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    request: GenerationRequest,
+) -> dict[tuple[str, str], ProviderRoutingEvidence]:
+    report = benchmark_generations(db, user_id=user_id, project_id=project_id)
+    return routing_evidence_from_benchmark(report, request)
+
+
 def estimate_generation(
     db: Session,
     *,
@@ -119,7 +159,10 @@ def estimate_generation(
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
     _validate_request_assets(db, workspace_id=project.workspace_id, request=request)
-    return route_provider(settings, request).estimate
+    evidence = _project_routing_evidence(
+        db, user_id=user_id, project_id=project_id, request=request
+    )
+    return route_provider(settings, request, evidence=evidence).estimate
 
 
 def start_provider_generation(
@@ -134,7 +177,10 @@ def start_provider_generation(
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
     _validate_request_assets(db, workspace_id=project.workspace_id, request=request)
-    decision = route_provider(settings, request)
+    evidence = _project_routing_evidence(
+        db, user_id=user_id, project_id=project_id, request=request
+    )
+    decision = route_provider(settings, request, evidence=evidence)
     provider = decision.provider
     estimate = decision.estimate
     prepared = provider.prepare(request)
