@@ -95,6 +95,7 @@ def mechanism_animation(
     ):
         return None
     duration = _finite(clip.get("duration_seconds"))
-    if duration is None or not 0.1 <= duration <= 60:
+    direction = clip.get("direction", "forward")
+    if duration is None or not 0.1 <= duration <= 60 or direction not in {"forward", "reverse"}:
         return None
-    return {**animation, "duration_seconds": duration}
+    return {**animation, "duration_seconds": duration, "direction": direction}

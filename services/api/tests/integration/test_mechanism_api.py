@@ -89,7 +89,7 @@ def test_hinged_lid_builds_three_parts_and_a_revolute_joint(
 
     proposal = api_client.post(
         f"/api/v1/models/{result['version_id']}/animation-command-proposal",
-        json={"prompt": "анимируй крышку за 2,5 секунды"},
+        json={"prompt": "закрой крышку за 2,5 секунды"},
         headers=actor.headers,
     )
     assert proposal.status_code == 200, proposal.text
@@ -101,6 +101,7 @@ def test_hinged_lid_builds_three_parts_and_a_revolute_joint(
             "joint_type": "revolute",
             "node_id": mechanism["parts"]["lid"],
             "duration_seconds": 2.5,
+            "direction": "reverse",
         },
         "language": "ru",
         "job_created": False,
@@ -109,16 +110,25 @@ def test_hinged_lid_builds_three_parts_and_a_revolute_joint(
     tampered = api_client.post(
         f"/api/v1/models/{result['version_id']}/animation-command-apply",
         json={
-            "prompt": "анимируй крышку за 2,5 секунды",
+            "prompt": "закрой крышку за 2,5 секунды",
             "clip": {**proposed["clip"], "duration_seconds": 3},
         },
         headers=actor.headers,
     )
     assert tampered.status_code == 422
+    tampered_direction = api_client.post(
+        f"/api/v1/models/{result['version_id']}/animation-command-apply",
+        json={
+            "prompt": "закрой крышку за 2,5 секунды",
+            "clip": {**proposed["clip"], "direction": "forward"},
+        },
+        headers=actor.headers,
+    )
+    assert tampered_direction.status_code == 422
 
     applied = api_client.post(
         f"/api/v1/models/{result['version_id']}/animation-command-apply",
-        json={"prompt": "анимируй крышку за 2,5 секунды", "clip": proposed["clip"]},
+        json={"prompt": "закрой крышку за 2,5 секунды", "clip": proposed["clip"]},
         headers=actor.headers,
     )
     assert applied.status_code == 201, applied.text
@@ -133,6 +143,7 @@ def test_hinged_lid_builds_three_parts_and_a_revolute_joint(
     visible = {node["id"] for node in resolved["nodes"] if node["effective_visible"]}
     clip_animation = mechanism_animation(made.provenance, visible)
     assert clip_animation is not None and clip_animation["duration_seconds"] == 2.5
+    assert clip_animation["direction"] == "reverse"
 
     clipped_export = api_client.post(
         f"/api/v1/models/{animated_id}/exports",

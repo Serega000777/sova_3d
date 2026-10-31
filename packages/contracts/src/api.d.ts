@@ -3928,6 +3928,12 @@ export interface components {
             node_id: string;
             /** Duration Seconds */
             duration_seconds: number;
+            /**
+             * Direction
+             * @default forward
+             * @enum {string}
+             */
+            direction: "forward" | "reverse";
         };
         /** AnimationCommandApplied */
         AnimationCommandApplied: {

@@ -92,6 +92,7 @@ class SceneAnimationInput(BaseModel):
     min_travel_mm: float | None = Field(default=None, ge=-10_000, le=10_000)
     max_travel_mm: float | None = Field(default=None, ge=-10_000, le=10_000)
     duration_seconds: float = Field(default=1.0, gt=0, le=60)
+    direction: Literal["forward", "reverse"] = "forward"
 
     @model_validator(mode="after")
     def moving_range(self) -> SceneAnimationInput:
@@ -524,6 +525,8 @@ def _animated_glb(data: bytes, node_name: str, animation: SceneAnimationInput) -
         ]
         path, value_type, animation_name = "rotation", "VEC4", "HingedLid"
 
+    if animation.direction == "reverse":
+        values.reverse()
     times = np.asarray([0.0, animation.duration_seconds], dtype="<f4").tobytes()
     encoded_values = np.asarray(values, dtype="<f4").tobytes()
     binary = bytearray(chunks.get(b"BIN\0", b""))

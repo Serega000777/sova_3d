@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.api.errors import ValidationFailedError
-from app.services.animation_commands import parse_duration
+from app.services.animation_commands import parse_command, parse_duration
 from app.services.scene_animations import mechanism_animation
 
 HINGE = {
@@ -28,6 +28,22 @@ HINGE = {
 )
 def test_bounded_animation_command_parser(prompt: str, expected: tuple[float, str]) -> None:
     assert parse_duration(prompt) == expected
+
+
+@pytest.mark.parametrize(
+    ("prompt", "direction", "language"),
+    [
+        ("open the lid in 2 seconds", "forward", "en"),
+        ("close the mechanism over 1.5 sec", "reverse", "en"),
+        ("открой крышку за 2 секунды", "forward", "ru"),
+        ("закрой механизм за 1,5 сек", "reverse", "ru"),
+    ],
+)
+def test_bounded_animation_command_has_explicit_direction(
+    prompt: str, direction: str, language: str
+) -> None:
+    parsed = parse_command(prompt)
+    assert (parsed.direction, parsed.language) == (direction, language)
 
 
 @pytest.mark.parametrize(
@@ -61,5 +77,6 @@ def test_clip_duration_is_trusted_only_when_bound_to_the_exact_joint() -> None:
         {**provenance["animation_clip"], "node_id": "base"},
         {**provenance["animation_clip"], "joint_type": "prismatic"},
         {**provenance["animation_clip"], "duration_seconds": 0},
+        {**provenance["animation_clip"], "direction": "sideways"},
     ):
         assert mechanism_animation({**provenance, "animation_clip": forged}, {"lid"}) is None

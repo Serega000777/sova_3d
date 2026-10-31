@@ -16772,6 +16772,15 @@
             "maximum": 60.0,
             "minimum": 0.1,
             "title": "Duration Seconds"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "forward",
+              "reverse"
+            ],
+            "title": "Direction",
+            "default": "forward"
           }
         },
         "type": "object",

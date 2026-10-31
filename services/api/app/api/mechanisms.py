@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field, model_validator
@@ -81,6 +81,7 @@ class AnimationClip(BaseModel):
     joint_type: Literal["revolute", "prismatic"]
     node_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     duration_seconds: float = Field(ge=0.1, le=60)
+    direction: Literal["forward", "reverse"] = "forward"
 
 
 class AnimationCommandProposal(BaseModel):
@@ -170,13 +171,14 @@ def _animation_clip(
     animation = scene_animations.mechanism_animation(version.provenance or {}, visible_ids)
     if animation is None:
         raise ValidationFailedError("the version has no single trusted visible mechanism")
-    duration, language = animation_commands.parse_duration(prompt)
+    command = animation_commands.parse_command(prompt)
     clip = AnimationClip(
-        joint_type=str(animation["kind"]),
+        joint_type=cast(Literal["revolute", "prismatic"], animation["kind"]),
         node_id=str(animation["node_id"]),
-        duration_seconds=duration,
+        duration_seconds=command.duration_seconds,
+        direction=command.direction,
     )
-    return version, project, resolved, clip, language
+    return version, project, resolved, clip, command.language
 
 
 @router.post(

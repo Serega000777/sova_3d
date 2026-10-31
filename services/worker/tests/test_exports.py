@@ -295,7 +295,10 @@ def test_scene_glb_keeps_duplicate_display_names_as_distinct_nodes(tmp_path: Pat
     np.testing.assert_allclose(scene.bounds[:, 0], [-0.01, 0.05], atol=1e-9)
 
 
-def test_scene_glb_embeds_the_trusted_revolute_joint_animation(tmp_path: Path) -> None:
+@pytest.mark.parametrize("direction", ["forward", "reverse"])
+def test_scene_glb_embeds_the_trusted_revolute_joint_animation(
+    tmp_path: Path, direction: str
+) -> None:
     source = fixtures.write_stl_binary(tmp_path / "part.stl")
     output = tmp_path / "hinge.glb"
     lid_transform = np.eye(4)
@@ -324,6 +327,7 @@ def test_scene_glb_embeds_the_trusted_revolute_joint_animation(tmp_path: Path) -
             axis="x",
             min_angle_deg=0,
             max_angle_deg=110,
+            direction=direction,
         ),
         limits=FAST,
     )
@@ -343,6 +347,14 @@ def test_scene_glb_embeds_the_trusted_revolute_joint_animation(tmp_path: Path) -
     assert "matrix" not in animated_node
     assert animated_node["scale"] == pytest.approx([0.001, 0.001, 0.001])
     assert animation["samplers"][0]["interpolation"] == "LINEAR"
+    _document, binary = _glb_document(data)
+    output_accessor = document["accessors"][animation["samplers"][0]["output"]]
+    output_view = document["bufferViews"][output_accessor["bufferView"]]
+    offset = output_view.get("byteOffset", 0) + output_accessor.get("byteOffset", 0)
+    quaternions = np.frombuffer(binary, dtype="<f4", count=8, offset=offset).reshape(2, 4)
+    identity_index = 0 if direction == "forward" else 1
+    np.testing.assert_allclose(quaternions[identity_index], animated_node["rotation"], atol=1e-6)
+    assert not np.allclose(quaternions[1 - identity_index], quaternions[identity_index])
 
 
 def _glb_document(data: bytes) -> tuple[dict[str, Any], bytes]:
