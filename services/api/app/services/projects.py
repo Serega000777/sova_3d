@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
-from app.models.core import Project, User, WorkspaceRole
+from app.models.core import Project, User, WorkspaceMember, WorkspaceRole
 from app.models.versioning import (
     CONTENT_ROLES,
     Asset,
@@ -223,8 +223,19 @@ def list_model_comments(
         .where(ModelComment.version_id == version_id)
         .order_by(ModelComment.created_at, ModelComment.id)
     )
+    raw_rows = rows.all()
+    replies: dict[uuid.UUID, list[Any]] = {}
+    roots: list[Any] = []
+    for row in raw_rows:
+        if row[0].parent_comment_id is None:
+            roots.append(row)
+        else:
+            replies.setdefault(row[0].parent_comment_id, []).append(row)
+    ordered_rows = [row for root in roots for row in (root, *replies.get(root[0].id, []))]
+    if len(ordered_rows) != len(raw_rows):
+        raise ValidationFailedError("model comments contain an invalid reply thread")
     result: list[tuple[ModelComment, str | None, list[uuid.UUID]]] = []
-    for row in rows.all():
+    for row in ordered_rows:
         photo_ids = list(
             db.scalars(
                 sa.select(ModelCommentAsset.asset_id)
@@ -243,14 +254,20 @@ def create_model_comment(
     version_id: uuid.UUID,
     comment: str,
     point_mm: list[float],
+    mentioned_user_ids: list[uuid.UUID],
 ) -> ModelComment:
     version = get_version(db, user_id=user_id, version_id=version_id)
     project = get_project(db, user_id=user_id, project_id=version.project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    mentions = _validated_model_comment_mentions(
+        db, workspace_id=project.workspace_id, mentioned_user_ids=mentioned_user_ids
+    )
     record = ModelComment(
         version_id=version.id,
+        parent_comment_id=None,
         comment=comment,
         point_mm=point_mm,
+        mentioned_user_ids=mentions,
         status="open",
         revision=1,
         created_by=user_id,
@@ -270,6 +287,7 @@ def update_model_comment(
     comment: str,
     status: str,
     base_revision: int,
+    mentioned_user_ids: list[uuid.UUID] | None,
 ) -> ModelComment:
     record = db.get(ModelComment, comment_id)
     if record is None:
@@ -284,10 +302,74 @@ def update_model_comment(
             "the model comment changed; reload before saving",
             {"current_revision": record.revision},
         )
+    mentions = (
+        record.mentioned_user_ids
+        if mentioned_user_ids is None
+        else _validated_model_comment_mentions(
+            db, workspace_id=project.workspace_id, mentioned_user_ids=mentioned_user_ids
+        )
+    )
     record.comment = comment
     record.status = status
+    record.mentioned_user_ids = mentions
     record.revision += 1
     record.updated_by = user_id
+    db.flush()
+    db.refresh(record)
+    return record
+
+
+def _validated_model_comment_mentions(
+    db: Session, *, workspace_id: uuid.UUID, mentioned_user_ids: list[uuid.UUID]
+) -> list[str]:
+    if len(mentioned_user_ids) != len(set(mentioned_user_ids)):
+        raise ValidationFailedError("model comment mentions must be unique")
+    if not mentioned_user_ids:
+        return []
+    members = set(
+        db.scalars(
+            sa.select(WorkspaceMember.user_id).where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id.in_(mentioned_user_ids),
+            )
+        )
+    )
+    if members != set(mentioned_user_ids):
+        raise ValidationFailedError("model comment mentions must be current workspace members")
+    return [str(user_id) for user_id in mentioned_user_ids]
+
+
+def create_model_comment_reply(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    parent_comment_id: uuid.UUID,
+    comment: str,
+    mentioned_user_ids: list[uuid.UUID],
+) -> ModelComment:
+    parent = db.get(ModelComment, parent_comment_id)
+    if parent is None:
+        raise NotFoundError("model_comment", parent_comment_id)
+    version = get_version(db, user_id=user_id, version_id=parent.version_id)
+    project = get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    if parent.parent_comment_id is not None:
+        raise ValidationFailedError("model comment replies support one thread level")
+    mentions = _validated_model_comment_mentions(
+        db, workspace_id=project.workspace_id, mentioned_user_ids=mentioned_user_ids
+    )
+    record = ModelComment(
+        version_id=version.id,
+        parent_comment_id=parent.id,
+        comment=comment,
+        point_mm=list(parent.point_mm),
+        mentioned_user_ids=mentions,
+        status="open",
+        revision=1,
+        created_by=user_id,
+        updated_by=user_id,
+    )
+    db.add(record)
     db.flush()
     db.refresh(record)
     return record

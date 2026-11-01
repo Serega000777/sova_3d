@@ -756,9 +756,18 @@ export class PhysicalAiClient {
     return this.request<ModelComment[]>("GET", `/api/v1/versions/${versionId}/model-comments`);
   }
 
-  createModelComment(versionId: string, comment: string, pointMm: [number, number, number]) {
+  createModelComment(
+    versionId: string,
+    comment: string,
+    pointMm: [number, number, number],
+    mentionedUserIds: string[] = [],
+  ) {
     return this.request<ModelComment>("POST", `/api/v1/versions/${versionId}/model-comments`, {
-      body: { comment, point_mm: pointMm },
+      body: {
+        comment,
+        point_mm: pointMm,
+        ...(mentionedUserIds.length ? { mentioned_user_ids: mentionedUserIds } : {}),
+      },
     });
   }
 
@@ -767,9 +776,25 @@ export class PhysicalAiClient {
     comment: string,
     status: "open" | "resolved",
     baseRevision: number,
+    mentionedUserIds?: string[],
   ) {
     return this.request<ModelComment>("PATCH", `/api/v1/model-comments/${commentId}`, {
-      body: { comment, status, base_revision: baseRevision },
+      body: {
+        comment,
+        status,
+        base_revision: baseRevision,
+        ...(mentionedUserIds ? { mentioned_user_ids: mentionedUserIds } : {}),
+      },
+    });
+  }
+
+  createModelCommentReply(
+    commentId: string,
+    comment: string,
+    mentionedUserIds: string[] = [],
+  ) {
+    return this.request<ModelComment>("POST", `/api/v1/model-comments/${commentId}/replies`, {
+      body: { comment, mentioned_user_ids: mentionedUserIds },
     });
   }
 

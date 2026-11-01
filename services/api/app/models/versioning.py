@@ -145,13 +145,20 @@ class ModelComment(UUIDPrimaryKey, Timestamps, Base):
     __table_args__ = (
         CheckConstraint("status IN ('open', 'resolved')", name="model_comments_status"),
         Index("ix_model_comments_version_created", "version_id", "created_at"),
+        Index("ix_model_comments_parent_created", "parent_comment_id", "created_at"),
     )
 
     version_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("project_versions.id", ondelete="CASCADE"), nullable=False
     )
+    parent_comment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("model_comments.id", ondelete="CASCADE"), nullable=True
+    )
     comment: Mapped[str] = mapped_column(Text, nullable=False)
     point_mm: Mapped[list[float]] = mapped_column(JSONB, nullable=False)
+    mentioned_user_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="open")
     revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     created_by: Mapped[uuid.UUID | None] = mapped_column(

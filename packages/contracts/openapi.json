@@ -2986,6 +2986,75 @@
         }
       }
     },
+    "/api/v1/model-comments/{comment_id}/replies": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Create Model Comment Reply",
+        "operationId": "create_model_comment_reply_api_v1_model_comments__comment_id__replies_post",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCommentReplyCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCommentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/model-comments/{comment_id}/photos": {
       "post": {
         "tags": [
@@ -26629,6 +26698,15 @@
             "maxItems": 3,
             "minItems": 3,
             "title": "Point Mm"
+          },
+          "mentioned_user_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Mentioned User Ids"
           }
         },
         "type": "object",
@@ -26650,6 +26728,18 @@
             "format": "uuid",
             "title": "Version Id"
           },
+          "parent_comment_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Comment Id"
+          },
           "comment": {
             "type": "string",
             "title": "Comment"
@@ -26670,6 +26760,15 @@
             "maxItems": 3,
             "minItems": 3,
             "title": "Point Mm"
+          },
+          "mentioned_user_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Mentioned User Ids"
           },
           "status": {
             "type": "string",
@@ -26742,6 +26841,7 @@
         "required": [
           "id",
           "version_id",
+          "parent_comment_id",
           "comment",
           "point_mm",
           "status",
@@ -26773,6 +26873,30 @@
         ],
         "title": "ModelCommentPhotoAdd"
       },
+      "ModelCommentReplyCreate": {
+        "properties": {
+          "comment": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Comment"
+          },
+          "mentioned_user_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Mentioned User Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "comment"
+        ],
+        "title": "ModelCommentReplyCreate"
+      },
       "ModelCommentUpdate": {
         "properties": {
           "comment": {
@@ -26793,6 +26917,22 @@
             "type": "integer",
             "minimum": 1.0,
             "title": "Base Revision"
+          },
+          "mentioned_user_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mentioned User Ids"
           }
         },
         "type": "object",

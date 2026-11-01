@@ -30,6 +30,11 @@ test("projects without a floor plan persist version-scoped point comments", () =
   assert.match(project, /modelCommentPhotoUrls\[assetId\]/);
   assert.match(project, /function modelCommentPhotos\(comment: ModelComment\)/);
   assert.match(project, /modelCommentPhotos\(comment\)\.length/);
+  assert.match(project, /client\.createModelCommentReply\(/);
+  assert.match(project, /reply\.parent_comment_id === comment\.id/);
+  assert.match(project, /toggleModelReplyMention/);
+  assert.match(project, /modelCommentMentions\(reply\)/);
+  assert.match(project, /workspaceMemberNames/);
   assert.match(project, /comment\.revision/);
   assert.match(project, /Комментарий с выбранной 3D-точкой сохраняется для этой версии модели/);
 });

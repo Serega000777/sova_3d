@@ -174,6 +174,7 @@ class VersionCommentOut(BaseModel):
 class ModelCommentCreate(BaseModel):
     comment: str = Field(min_length=1, max_length=2000)
     point_mm: tuple[float, float, float]
+    mentioned_user_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="after")
     def finite_point(self) -> "ModelCommentCreate":
@@ -188,6 +189,7 @@ class ModelCommentUpdate(BaseModel):
     comment: str = Field(min_length=1, max_length=2000)
     status: Literal["open", "resolved"]
     base_revision: int = Field(ge=1)
+    mentioned_user_ids: list[uuid.UUID] | None = Field(default=None, max_length=10)
 
     @model_validator(mode="after")
     def non_blank_comment(self) -> "ModelCommentUpdate":
@@ -201,11 +203,24 @@ class ModelCommentPhotoAdd(BaseModel):
     base_revision: int = Field(ge=1)
 
 
+class ModelCommentReplyCreate(BaseModel):
+    comment: str = Field(min_length=1, max_length=2000)
+    mentioned_user_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def non_blank_comment(self) -> "ModelCommentReplyCreate":
+        if not self.comment.strip():
+            raise ValueError("comment must not be blank")
+        return self
+
+
 class ModelCommentOut(BaseModel):
     id: uuid.UUID
     version_id: uuid.UUID
+    parent_comment_id: uuid.UUID | None
     comment: str
     point_mm: tuple[float, float, float]
+    mentioned_user_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
     status: Literal["open", "resolved"]
     revision: int
     created_by: uuid.UUID | None
@@ -618,6 +633,7 @@ def create_model_comment(
         version_id=version_id,
         comment=body.comment.strip(),
         point_mm=list(body.point_mm),
+        mentioned_user_ids=body.mentioned_user_ids,
     )
     author_name = db.scalar(sa.select(User.display_name).where(User.id == note.created_by))
     return _model_comment_out(note, author_name, [])
@@ -637,9 +653,32 @@ def update_model_comment(
         comment=body.comment.strip(),
         status=body.status,
         base_revision=body.base_revision,
+        mentioned_user_ids=body.mentioned_user_ids,
     )
     author_name = db.scalar(sa.select(User.display_name).where(User.id == note.created_by))
     return _model_comment_out(note, author_name, _model_comment_photo_ids(db, note.id))
+
+
+@router.post(
+    "/model-comments/{comment_id}/replies",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ModelCommentOut,
+)
+def create_model_comment_reply(
+    comment_id: uuid.UUID,
+    body: ModelCommentReplyCreate,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ModelCommentOut:
+    note = projects.create_model_comment_reply(
+        db,
+        user_id=principal.user_id,
+        parent_comment_id=comment_id,
+        comment=body.comment.strip(),
+        mentioned_user_ids=body.mentioned_user_ids,
+    )
+    author_name = db.scalar(sa.select(User.display_name).where(User.id == note.created_by))
+    return _model_comment_out(note, author_name, [])
 
 
 @router.post("/model-comments/{comment_id}/photos", response_model=ModelCommentOut)

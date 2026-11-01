@@ -330,11 +330,15 @@ def transfer_project(
                     updated_at=source_comment.updated_at,
                 )
             )
-        for model_comment in model_comments_by_version.get(source_version.id, []):
+        source_model_comments = model_comments_by_version.get(source_version.id, [])
+        target_model_comments: dict[uuid.UUID, ModelComment] = {}
+        for model_comment in source_model_comments:
             target_model_comment = ModelComment(
                 version_id=target_version.id,
+                parent_comment_id=None,
                 comment=model_comment.comment,
                 point_mm=model_comment.point_mm,
+                mentioned_user_ids=list(model_comment.mentioned_user_ids),
                 status=model_comment.status,
                 revision=model_comment.revision,
                 created_by=model_comment.created_by,
@@ -344,6 +348,16 @@ def transfer_project(
             )
             db.add(target_model_comment)
             db.flush()
+            target_model_comments[model_comment.id] = target_model_comment
+        for model_comment in source_model_comments:
+            target_model_comment = target_model_comments[model_comment.id]
+            if model_comment.parent_comment_id is not None:
+                target_parent = target_model_comments.get(model_comment.parent_comment_id)
+                if target_parent is None:
+                    raise ValidationFailedError(
+                        "project model comments contain an invalid reply thread"
+                    )
+                target_model_comment.parent_comment_id = target_parent.id
             for comment_asset_link in model_comment_assets.get(model_comment.id, []):
                 db.add(
                     ModelCommentAsset(

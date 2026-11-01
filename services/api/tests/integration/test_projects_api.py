@@ -281,9 +281,7 @@ def test_model_comments_persist_points_and_use_revision_guarded_updates(
     project_id = create_project(api_client, actor, name="Без плана").json()["id"]
     version_id = create_version(api_client, actor, project_id).json()["id"]
 
-    empty = api_client.get(
-        f"/api/v1/versions/{version_id}/model-comments", headers=viewer.headers
-    )
+    empty = api_client.get(f"/api/v1/versions/{version_id}/model-comments", headers=viewer.headers)
     assert empty.status_code == 200 and empty.json() == []
     blocked = api_client.post(
         f"/api/v1/versions/{version_id}/model-comments",
@@ -293,7 +291,11 @@ def test_model_comments_persist_points_and_use_revision_guarded_updates(
     assert blocked.status_code == 403
     created = api_client.post(
         f"/api/v1/versions/{version_id}/model-comments",
-        json={"comment": "  Проверить ребро  ", "point_mm": [1.25, -2, 3]},
+        json={
+            "comment": "  Проверить ребро  ",
+            "point_mm": [1.25, -2, 3],
+            "mentioned_user_ids": [str(viewer.user.id)],
+        },
         headers=actor.headers,
     )
     assert created.status_code == 201, created.text
@@ -301,8 +303,51 @@ def test_model_comments_persist_points_and_use_revision_guarded_updates(
     assert comment["comment"] == "Проверить ребро"
     assert comment["point_mm"] == [1.25, -2.0, 3.0]
     assert comment["status"] == "open" and comment["revision"] == 1
+    assert comment["parent_comment_id"] is None
+    assert comment["mentioned_user_ids"] == [str(viewer.user.id)]
     assert comment["author_name"] == "Ирина Инженер"
     assert comment["photo_asset_ids"] == []
+
+    reply = api_client.post(
+        f"/api/v1/model-comments/{comment['id']}/replies",
+        json={"comment": "Проверю сегодня", "mentioned_user_ids": [str(viewer.user.id)]},
+        headers=actor.headers,
+    )
+    assert reply.status_code == 201, reply.text
+    assert reply.json()["parent_comment_id"] == comment["id"]
+    assert reply.json()["point_mm"] == comment["point_mm"]
+    assert reply.json()["mentioned_user_ids"] == [str(viewer.user.id)]
+    assert (
+        api_client.post(
+            f"/api/v1/model-comments/{reply.json()['id']}/replies",
+            json={"comment": "Слишком глубокий ответ"},
+            headers=actor.headers,
+        ).status_code
+        == 422
+    )
+    assert (
+        api_client.post(
+            f"/api/v1/model-comments/{comment['id']}/replies",
+            json={"comment": "Ответ viewer"},
+            headers=viewer.headers,
+        ).status_code
+        == 403
+    )
+    invalid_mention = api_client.post(
+        f"/api/v1/model-comments/{comment['id']}/replies",
+        json={"comment": "Чужой mention", "mentioned_user_ids": [str(stranger.user.id)]},
+        headers=actor.headers,
+    )
+    assert invalid_mention.status_code == 422
+    duplicate_mention = api_client.post(
+        f"/api/v1/model-comments/{comment['id']}/replies",
+        json={
+            "comment": "Дубликат mention",
+            "mentioned_user_ids": [str(viewer.user.id), str(viewer.user.id)],
+        },
+        headers=actor.headers,
+    )
+    assert duplicate_mention.status_code == 422
 
     photo = Asset(
         workspace_id=actor.workspace.id,
@@ -372,13 +417,14 @@ def test_model_comments_persist_points_and_use_revision_guarded_updates(
     assert stale.status_code == 409
     assert stale.json()["error"]["details"]["current_revision"] == 3
 
-    listed = api_client.get(
-        f"/api/v1/versions/{version_id}/model-comments", headers=viewer.headers
-    )
+    listed = api_client.get(f"/api/v1/versions/{version_id}/model-comments", headers=viewer.headers)
     assert listed.status_code == 200
     assert [(row["comment"], row["status"]) for row in listed.json()] == [
-        ("Ребро проверено", "resolved")
+        ("Ребро проверено", "resolved"),
+        ("Проверю сегодня", "open"),
     ]
+    assert listed.json()[0]["mentioned_user_ids"] == [str(viewer.user.id)]
+    assert listed.json()[1]["parent_comment_id"] == comment["id"]
     assert listed.json()[0]["photo_asset_ids"] == [str(photo.id)]
     removed = api_client.delete(
         f"/api/v1/model-comments/{comment['id']}/photos/{photo.id}",

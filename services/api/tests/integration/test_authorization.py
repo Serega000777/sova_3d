@@ -70,6 +70,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         version_id=version.id,
         comment="private point",
         point_mm=[1.0, 2.0, 3.0],
+        mentioned_user_ids=[],
     )
     model_comment_photo = Asset(
         workspace_id=actor.workspace.id,
@@ -396,6 +397,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         (
             "POST",
+            f"/api/v1/model-comments/{ids['model_comment']}/replies",
+            {"comment": "private reply"},
+        ),
+        (
+            "POST",
             f"/api/v1/model-comments/{ids['model_comment']}/photos",
             {"asset_id": ids["model_comment_photo"], "base_revision": 3},
         ),
@@ -409,6 +415,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects/{project}/graph", None),
         ("POST", f"/api/v1/versions/{version}/finalize", None),
         ("POST", f"/api/v1/models/{version}/repair", None),
+        ("POST", f"/api/v1/models/{version}/quad-remeshes", {"target_faces": 4_000}),
         (
             "POST",
             f"/api/v1/models/{version}/remove-fragments",

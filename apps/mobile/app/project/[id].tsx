@@ -46,6 +46,7 @@ import type {
   Version,
   VersionComparison,
   VersionHistoryItem,
+  WorkspaceMember,
   SurfaceDetailOperation,
 } from "@physical-ai/contracts";
 import {
@@ -305,6 +306,10 @@ function modelCommentPhotos(comment: ModelComment): string[] {
   return comment.photo_asset_ids ?? [];
 }
 
+function modelCommentMentions(comment: ModelComment): string[] {
+  return comment.mentioned_user_ids ?? [];
+}
+
 export default function ProjectScreen() {
   const { id, goal: goalId } = useLocalSearchParams<{ id: string; goal?: string }>();
   const router = useRouter();
@@ -552,6 +557,7 @@ export default function ProjectScreen() {
   useEffect(() => {
     if (!client || !session) {
       setWorkspaceParticipantCount(null);
+      setWorkspaceMembers([]);
       return;
     }
     let cancelled = false;
@@ -562,14 +568,22 @@ export default function ProjectScreen() {
         setExperienceMode(me.user.experience_mode);
         const current = me.workspaces.find((item) => item.id === session.workspaceId);
         if (!current) return null;
-        if (current.kind === "personal") return 1;
-        return (await client.listWorkspaceMembers(session.workspaceId)).length;
+        if (current.kind === "personal") {
+          if (!cancelled) setWorkspaceMembers([]);
+          return 1;
+        }
+        const members = await client.listWorkspaceMembers(session.workspaceId);
+        if (!cancelled) setWorkspaceMembers(members);
+        return members.length;
       })
       .then((count) => {
         if (!cancelled) setWorkspaceParticipantCount(count);
       })
       .catch(() => {
-        if (!cancelled) setWorkspaceParticipantCount(null);
+        if (!cancelled) {
+          setWorkspaceParticipantCount(null);
+          setWorkspaceMembers([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -663,7 +677,19 @@ export default function ProjectScreen() {
   const [liveNotes, setLiveNotes] = useState<Extract<LiveEvent, { type: "note" }>[]>([]);
   const [modelComments, setModelComments] = useState<ModelComment[]>([]);
   const [modelCommentPhotoUrls, setModelCommentPhotoUrls] = useState<Record<string, string>>({});
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
+  const [modelReplyDrafts, setModelReplyDrafts] = useState<Record<string, string>>({});
+  const [modelReplyMentions, setModelReplyMentions] = useState<Record<string, string[]>>({});
   const [noteText, setNoteText] = useState("");
+  const workspaceMemberNames = useMemo(
+    () => Object.fromEntries(
+      workspaceMembers.map((member) => [
+        member.user_id,
+        member.display_name ?? member.email ?? member.user_id.slice(0, 8),
+      ]),
+    ),
+    [workspaceMembers],
+  );
   useEffect(() => {
     if (!client?.token || !id) return;
     let others = new Set<string>();
@@ -719,7 +745,7 @@ export default function ProjectScreen() {
         point: note.point as Vec3,
         kind: "note" as const,
       })),
-    ...modelComments.map((comment) => ({
+    ...modelComments.filter((comment) => comment.parent_comment_id === null).map((comment) => ({
       key: `model-comment-${comment.id}`,
       colour: comment.status === "resolved" ? colors.green : colors.yellow,
       point: comment.point_mm as Vec3,
@@ -745,6 +771,8 @@ export default function ProjectScreen() {
   }, [activeId]);
   const activeModelCheck = modelCheckVersionId === activeId ? modelCheck : null;
   useEffect(() => {
+    setModelReplyDrafts({});
+    setModelReplyMentions({});
     if (!client || !activeId) {
       setModelComments([]);
       return;
@@ -957,6 +985,35 @@ export default function ProjectScreen() {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
   }, [client]);
+
+  const toggleModelReplyMention = useCallback((commentId: string, userId: string) => {
+    setModelReplyMentions((all) => {
+      const current = all[commentId] ?? [];
+      return {
+        ...all,
+        [commentId]: current.includes(userId)
+          ? current.filter((value) => value !== userId)
+          : [...current, userId],
+      };
+    });
+  }, []);
+
+  const postModelCommentReply = useCallback(async (comment: ModelComment) => {
+    const text = (modelReplyDrafts[comment.id] ?? "").trim();
+    if (!client || !text) return;
+    try {
+      const saved = await client.createModelCommentReply(
+        comment.id,
+        text,
+        modelReplyMentions[comment.id] ?? [],
+      );
+      setModelComments((rows) => [...rows, saved]);
+      setModelReplyDrafts((all) => ({ ...all, [comment.id]: "" }));
+      setModelReplyMentions((all) => ({ ...all, [comment.id]: [] }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, [client, modelReplyDrafts, modelReplyMentions]);
 
   const attachModelCommentPhoto = useCallback((comment: ModelComment) => {
     const run = async (source: "camera" | "library") => {
@@ -7082,12 +7139,15 @@ export default function ProjectScreen() {
               <Text style={{ fontWeight: "700" }}>{annotation.author}</Text>: {annotation.note || "Без текста"}
             </Text>
           ))}
-          {modelComments.slice(-5).map((comment) => (
+          {modelComments.filter((comment) => comment.parent_comment_id === null).slice(-5).map((comment) => (
             <View key={comment.id} style={{ gap: 7 }}>
               <View style={[styles.row, { justifyContent: "space-between" }]}>
                 <Text style={[styles.muted, { flex: 1 }]}>
                   <Text style={{ color: comment.status === "resolved" ? colors.green : colors.yellow }}>● </Text>
-                  <Text style={{ fontWeight: "700" }}>{comment.author_name || "Участник"}</Text>: {comment.comment}
+                  <Text style={{ fontWeight: "700" }}>{comment.author_name || "Участник"}</Text>
+                  {modelCommentMentions(comment).length
+                    ? ` → ${modelCommentMentions(comment).map((userId) => `@${workspaceMemberNames[userId] ?? userId.slice(0, 8)}`).join(" ")}`
+                    : ""}: {comment.comment}
                 </Text>
                 <Pressable style={styles.button} onPress={() => void toggleModelComment(comment)}>
                   <Text style={styles.buttonText}>{comment.status === "open" ? "Решено" : "Открыть"}</Text>
@@ -7119,6 +7179,49 @@ export default function ProjectScreen() {
               >
                 <Text style={styles.buttonText}>+ Фото · {modelCommentPhotos(comment).length}/10</Text>
               </Pressable>
+              {modelComments.filter((reply) => reply.parent_comment_id === comment.id).map((reply) => (
+                <View key={reply.id} style={{ marginLeft: 18, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: colors.border, gap: 3 }}>
+                  <Text style={styles.muted}>
+                    <Text style={{ fontWeight: "700" }}>{reply.author_name || "Участник"}</Text>
+                    {modelCommentMentions(reply).length
+                      ? ` → ${modelCommentMentions(reply).map((userId) => `@${workspaceMemberNames[userId] ?? userId.slice(0, 8)}`).join(" ")}`
+                      : ""}: {reply.comment}
+                  </Text>
+                </View>
+              ))}
+              {workspaceMembers.length ? (
+                <ScrollView horizontal contentContainerStyle={{ gap: 6 }}>
+                  {workspaceMembers.map((member) => {
+                    const selected = (modelReplyMentions[comment.id] ?? []).includes(member.user_id);
+                    return (
+                      <Pressable
+                        key={member.user_id}
+                        style={[styles.chip, selected && { borderColor: colors.selection }]}
+                        onPress={() => toggleModelReplyMention(comment.id, member.user_id)}
+                      >
+                        <Text style={styles.chipText}>@{workspaceMemberNames[member.user_id]}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
+              <View style={styles.row}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={modelReplyDrafts[comment.id] ?? ""}
+                  onChangeText={(text) => setModelReplyDrafts((all) => ({ ...all, [comment.id]: text }))}
+                  maxLength={2000}
+                  placeholder={ru ? "Ответить в ветке" : "Reply in thread"}
+                  placeholderTextColor={colors.muted}
+                />
+                <Pressable
+                  style={[styles.button, !(modelReplyDrafts[comment.id] ?? "").trim() && { opacity: 0.5 }]}
+                  disabled={!(modelReplyDrafts[comment.id] ?? "").trim()}
+                  onPress={() => void postModelCommentReply(comment)}
+                >
+                  <Text style={styles.buttonText}>{ru ? "Ответить" : "Reply"}</Text>
+                </Pressable>
+              </View>
             </View>
           ))}
           {liveNotes.slice(0, 5).map((note, index) => (

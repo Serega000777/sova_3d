@@ -190,6 +190,7 @@ test("model comments use version-scoped create and revision-guarded update route
   await client.updateModelComment("comment-1", "Check edge", "resolved", 1);
   await client.addModelCommentPhoto("comment-1", "asset-1", 2);
   await client.removeModelCommentPhoto("comment-1", "asset-1", 3);
+  await client.createModelCommentReply("comment-1", "I will check", ["user-2"]);
   assert.equal(requests[0].url, "https://api.example.test/api/v1/versions/version-1/model-comments");
   assert.equal(requests[0].init.method, "POST");
   assert.deepEqual(JSON.parse(String(requests[0].init.body)), {
@@ -213,6 +214,12 @@ test("model comments use version-scoped create and revision-guarded update route
     requests[3].url,
     "https://api.example.test/api/v1/model-comments/comment-1/photos/asset-1?base_revision=3",
   );
+  assert.equal(requests[4].url, "https://api.example.test/api/v1/model-comments/comment-1/replies");
+  assert.equal(requests[4].init.method, "POST");
+  assert.deepEqual(JSON.parse(String(requests[4].init.body)), {
+    comment: "I will check",
+    mentioned_user_ids: ["user-2"],
+  });
   assert.equal(requests[3].init.method, "DELETE");
 });
 

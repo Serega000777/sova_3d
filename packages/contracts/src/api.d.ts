@@ -662,6 +662,23 @@ export interface paths {
         patch: operations["update_model_comment_api_v1_model_comments__comment_id__patch"];
         trace?: never;
     };
+    "/api/v1/model-comments/{comment_id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Model Comment Reply */
+        post: operations["create_model_comment_reply_api_v1_model_comments__comment_id__replies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/model-comments/{comment_id}/photos": {
         parameters: {
             query?: never;
@@ -7707,6 +7724,8 @@ export interface components {
                 number,
                 number
             ];
+            /** Mentioned User Ids */
+            mentioned_user_ids?: string[];
         };
         /** ModelCommentOut */
         ModelCommentOut: {
@@ -7720,6 +7739,8 @@ export interface components {
              * Format: uuid
              */
             version_id: string;
+            /** Parent Comment Id */
+            parent_comment_id: string | null;
             /** Comment */
             comment: string;
             /** Point Mm */
@@ -7728,6 +7749,8 @@ export interface components {
                 number,
                 number
             ];
+            /** Mentioned User Ids */
+            mentioned_user_ids?: string[];
             /**
              * Status
              * @enum {string}
@@ -7764,6 +7787,13 @@ export interface components {
             /** Base Revision */
             base_revision: number;
         };
+        /** ModelCommentReplyCreate */
+        ModelCommentReplyCreate: {
+            /** Comment */
+            comment: string;
+            /** Mentioned User Ids */
+            mentioned_user_ids?: string[];
+        };
         /** ModelCommentUpdate */
         ModelCommentUpdate: {
             /** Comment */
@@ -7775,6 +7805,8 @@ export interface components {
             status: "open" | "resolved";
             /** Base Revision */
             base_revision: number;
+            /** Mentioned User Ids */
+            mentioned_user_ids?: string[] | null;
         };
         /** ModerationDecisionBody */
         ModerationDecisionBody: {
@@ -12578,6 +12610,43 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_model_comment_reply_api_v1_model_comments__comment_id__replies_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelCommentReplyCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
