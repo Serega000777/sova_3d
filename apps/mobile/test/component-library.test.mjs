@@ -31,3 +31,16 @@ test("mobile component library uses the typed catalogue and terminal enclosure j
   assert.match(source, /job\.status !== "succeeded"/);
   assert.match(source, /монтажный габарит/);
 });
+
+test("a built component or enclosure model can be inserted as a new node in another scene", () => {
+  const source = readFileSync(new URL("../app/components.tsx", import.meta.url), "utf8");
+  assert.match(source, /result\?\.model_asset_id/);
+  assert.match(source, /\.listProjects\(session\.workspaceId\)/);
+  assert.match(source, /project\.id !== createdModel\.projectId && project\.head_version_id/);
+  assert.match(source, /client\.getScene\(target\.head_version_id\)/);
+  assert.match(source, /client\.updateScene\(target\.head_version_id, body\)/);
+  // existing scene nodes must round-trip without a forged appearance key
+  assert.doesNotMatch(source, /node\.appearance/);
+  assert.match(source, /asset_id: createdModel\.modelAssetId/);
+  assert.match(source, /Вставить в выбранный проект/);
+});
