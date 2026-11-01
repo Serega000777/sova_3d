@@ -5458,10 +5458,16 @@ export default function ProjectPage() {
                   <label>{ru ? "Поворот дома, °" : "House rotation, °"}
                     <input className="input" type="number" min="-180" max="180" step="5" value={sitePlan.house_rotation_deg} onChange={(event) => setSitePlan((value) => ({ ...value, house_rotation_deg: Number(event.target.value) }))} />
                   </label>
+                  <label>{ru ? "Заданный отступ до границы" : "Requested boundary clearance"}
+                    <input className="input" type="number" min="500" max="50000" step="100" value={sitePlan.minimum_boundary_clearance_mm} onChange={(event) => setSitePlan((value) => ({ ...value, minimum_boundary_clearance_mm: Number(event.target.value) }))} />
+                  </label>
                   <label>{ru ? "Ширина дорожки" : "Path width"}
                     <input className="input" type="number" min="300" max="5000" step="100" value={sitePlan.path_width_mm} onChange={(event) => setSitePlan((value) => ({ ...value, path_width_mm: Number(event.target.value) }))} />
                   </label>
                 </div>
+                <span className="muted">{ru
+                  ? "Сервер проверит геометрический отступ повёрнутого контура дома по всем четырём сторонам. Это заданное вами ограничение, не автоматически определённая строительная норма."
+                  : "The server checks the rotated house footprint against all four plot boundaries. This is your requested constraint, not an inferred building regulation."}</span>
                 <strong>{ru ? "Отметки рельефа по углам" : "Corner terrain elevations"}</strong>
                 <div className="form-grid furniture-position">
                   {(["SW", "SE", "NE", "NW"] as const).map((corner, index) => (

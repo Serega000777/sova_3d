@@ -7,6 +7,7 @@ export const DEFAULT_SITE_PLAN: SitePlan = {
   house_x_mm: 0,
   house_y_mm: 0,
   house_rotation_deg: 0,
+  minimum_boundary_clearance_mm: 500,
   path_points_mm: [[0, -10000], [0, -3000]],
   path_width_mm: 1200,
   fence_sides: ["north", "east", "south", "west"],
@@ -33,6 +34,10 @@ export function sitePlanFromProvenance(value: unknown): SitePlan | null {
     "house_rotation_deg", "path_width_mm", "fence_height_mm", "fence_post_spacing_mm",
   ] as const;
   if (numericKeys.some((key) => !finite(source[key]))) return null;
+  const minimumClearance = source.minimum_boundary_clearance_mm === undefined
+    ? 500
+    : source.minimum_boundary_clearance_mm;
+  if (!finite(minimumClearance)) return null;
   const elevations = source.corner_elevations_mm;
   if (!Array.isArray(elevations) || elevations.length !== 4 || !elevations.every(finite)) return null;
   const points = source.path_points_mm;
@@ -50,6 +55,7 @@ export function sitePlanFromProvenance(value: unknown): SitePlan | null {
     house_x_mm: source.house_x_mm as number,
     house_y_mm: source.house_y_mm as number,
     house_rotation_deg: source.house_rotation_deg as number,
+    minimum_boundary_clearance_mm: minimumClearance,
     path_points_mm: points.map((point) => [...point] as number[]),
     path_width_mm: source.path_width_mm as number,
     fence_sides: [...sides] as SitePlan["fence_sides"],

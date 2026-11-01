@@ -7448,6 +7448,10 @@ export interface components {
             house_rotation_deg: number;
             /** House Dimensions Mm */
             house_dimensions_mm: number[];
+            /** Minimum Boundary Clearance Mm */
+            minimum_boundary_clearance_mm: number;
+            /** House Boundary Clearances Mm */
+            house_boundary_clearances_mm: number[];
             /** Path Points Mm */
             path_points_mm: number[][];
             /** Path Width Mm */
@@ -9926,6 +9930,11 @@ export interface components {
              * @default 0
              */
             house_rotation_deg: number;
+            /**
+             * Minimum Boundary Clearance Mm
+             * @default 500
+             */
+            minimum_boundary_clearance_mm: number;
             /** Path Points Mm */
             path_points_mm: number[][];
             /**

@@ -36,6 +36,7 @@ class SitePlanBody(BaseModel):
     house_x_mm: float = Field(default=0, ge=-100_000, le=100_000)
     house_y_mm: float = Field(default=0, ge=-100_000, le=100_000)
     house_rotation_deg: float = Field(default=0, ge=-180, le=180)
+    minimum_boundary_clearance_mm: float = Field(default=500, ge=500, le=50_000)
     path_points_mm: Annotated[list[Point2], Field(min_length=2, max_length=16)]
     path_width_mm: float = Field(default=1_200, ge=300, le=5_000)
     fence_sides: list[FenceSide] = Field(default_factory=_all_fence_sides, max_length=4)

@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 from xml.etree import ElementTree
 
+import pytest
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -1443,6 +1444,7 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
             "house_x_mm": 1_000,
             "house_y_mm": 0,
             "house_rotation_deg": 15,
+            "minimum_boundary_clearance_mm": 2_500,
             "path_points_mm": [[-15_000, -5_000], [-5_000, -2_000], [-3_000, 0]],
             "path_width_mm": 1_200,
             "fence_sides": ["north", "east", "south", "west"],
@@ -1472,6 +1474,10 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         "house_y_mm": 0.0,
         "house_rotation_deg": 15.0,
         "house_dimensions_mm": [10_000.0, 8_000.0],
+        "minimum_boundary_clearance_mm": 2_500.0,
+        "house_boundary_clearances_mm": pytest.approx(
+            [4_842.201469331123, 8_135.094688144575, 4_842.201469331123, 10_135.094688144574]
+        ),
         "path_points_mm": [[-15_000.0, -5_000.0], [-5_000.0, -2_000.0], [-3_000.0, 0.0]],
         "path_width_mm": 1_200.0,
         "fence_sides": ["north", "east", "south", "west"],
@@ -1521,6 +1527,7 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
             "house_x_mm": -1_000,
             "house_y_mm": 500,
             "house_rotation_deg": -10,
+            "minimum_boundary_clearance_mm": 2_500,
             "path_points_mm": [[-16_000, -5_000], [-6_000, -2_000], [-4_000, 0]],
             "path_width_mm": 1_000,
             "fence_sides": ["north", "south"],

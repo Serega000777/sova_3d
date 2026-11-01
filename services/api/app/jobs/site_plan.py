@@ -168,6 +168,8 @@ def handle_site_plan(ctx: JobContext) -> dict[str, Any]:
         "house_x_mm": spec["house_x_mm"],
         "house_y_mm": spec["house_y_mm"],
         "house_rotation_deg": spec["house_rotation_deg"],
+        "minimum_boundary_clearance_mm": spec["minimum_boundary_clearance_mm"],
+        "house_boundary_clearances_mm": spec["house_boundary_clearances_mm"],
         "house_z_mm": spec["house_z_mm"],
         "pad_bottom_mm": spec["pad_bottom_mm"],
         "path_points_mm": spec["path_points_mm"],

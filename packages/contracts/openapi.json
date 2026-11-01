@@ -25786,6 +25786,21 @@
             "minItems": 2,
             "title": "House Dimensions Mm"
           },
+          "minimum_boundary_clearance_mm": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": 500.0,
+            "title": "Minimum Boundary Clearance Mm"
+          },
+          "house_boundary_clearances_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "House Boundary Clearances Mm"
+          },
           "path_points_mm": {
             "items": {
               "items": {
@@ -25841,6 +25856,8 @@
           "house_y_mm",
           "house_rotation_deg",
           "house_dimensions_mm",
+          "minimum_boundary_clearance_mm",
+          "house_boundary_clearances_mm",
           "path_points_mm",
           "path_width_mm",
           "fence_sides",
@@ -32824,6 +32841,13 @@
             "minimum": -180.0,
             "title": "House Rotation Deg",
             "default": 0
+          },
+          "minimum_boundary_clearance_mm": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": 500.0,
+            "title": "Minimum Boundary Clearance Mm",
+            "default": 500
           },
           "path_points_mm": {
             "items": {

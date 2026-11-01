@@ -27,6 +27,9 @@ export function MarketplaceSitePlan({ site, language }: { site: SitePlan; langua
   const houseHeight = site.house_dimensions_mm[1] * scaleY;
   const path = site.path_points_mm.map((value) => point(value).join(",")).join(" ");
   const fence = new Set(site.fence_sides);
+  const clearanceInsetX = site.minimum_boundary_clearance_mm * scaleX;
+  const clearanceInsetY = site.minimum_boundary_clearance_mm * scaleY;
+  const minimumMeasuredClearance = Math.min(...site.house_boundary_clearances_mm);
 
   return (
     <section className="card stack" aria-label={ru ? "План участка" : "Site plan"}>
@@ -40,6 +43,7 @@ export function MarketplaceSitePlan({ site, language }: { site: SitePlan; langua
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ru ? "План участка с домом, дорожкой и ограждением" : "Plot with house, path and fence"}>
         <rect x={padding} y={padding} width={width - 2 * padding} height={height - 2 * padding} rx="4" fill="var(--panel-2)" stroke="var(--border)" />
+        <rect x={padding + clearanceInsetX} y={padding + clearanceInsetY} width={width - 2 * (padding + clearanceInsetX)} height={height - 2 * (padding + clearanceInsetY)} fill="none" stroke="var(--muted)" strokeDasharray="7 5" />
         {fence.has("north") && <line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke="var(--accent)" strokeWidth="5" />}
         {fence.has("south") && <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="var(--accent)" strokeWidth="5" />}
         {fence.has("west") && <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="var(--accent)" strokeWidth="5" />}
@@ -54,7 +58,11 @@ export function MarketplaceSitePlan({ site, language }: { site: SitePlan; langua
         <span className="chip mono">{(site.plot_length_mm / 1000).toFixed(1)} × {(site.plot_width_mm / 1000).toFixed(1)} m</span>
         <span className="chip mono">{ru ? "Поворот дома" : "House rotation"}: {site.house_rotation_deg.toFixed(0)}°</span>
         <span className="chip mono">{ru ? "Перепад" : "Elevation range"}: {(Math.max(...site.corner_elevations_mm) - Math.min(...site.corner_elevations_mm)).toFixed(0)} mm</span>
+        <span className="chip mono">{ru ? "Мин. отступ" : "Min clearance"}: {minimumMeasuredClearance.toFixed(0)} mm ≥ {site.minimum_boundary_clearance_mm.toFixed(0)} mm</span>
       </div>
+      <div className="muted">{ru
+        ? "Пунктир — заданный владельцем минимальный отступ. Сервер измерил север/восток/юг/запад; это геометрическое доказательство, не проверка местных строительных норм."
+        : "The dashed envelope is the owner-requested minimum clearance. The server measured north/east/south/west; this is geometric evidence, not a local building-code check."}</div>
       <div className="row">
         {site.object_roles.map((role) => <span className="chip" key={role}>{OBJECT_LABELS[role][language]}</span>)}
       </div>

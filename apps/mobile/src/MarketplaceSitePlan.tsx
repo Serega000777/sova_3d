@@ -27,6 +27,9 @@ export function MarketplaceSitePlan({ site }: { site: SitePlan }) {
   const path = site.path_points_mm.map((value) => point(value).join(",")).join(" ");
   const fence = new Set(site.fence_sides);
   const elevationRange = Math.max(...site.corner_elevations_mm) - Math.min(...site.corner_elevations_mm);
+  const clearanceInsetX = site.minimum_boundary_clearance_mm * scaleX;
+  const clearanceInsetY = site.minimum_boundary_clearance_mm * scaleY;
+  const minimumMeasuredClearance = Math.min(...site.house_boundary_clearances_mm);
 
   return (
     <View style={[styles.card, { gap: 10 }]} accessibilityLabel="План участка">
@@ -37,6 +40,7 @@ export function MarketplaceSitePlan({ site }: { site: SitePlan }) {
       <View style={{ width: "100%", aspectRatio: 3 / 2, borderRadius: radii.control, overflow: "hidden", backgroundColor: colors.viewport }}>
         <Svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} accessibilityLabel="Участок с домом, дорожкой и ограждением">
           <Rect x={padding} y={padding} width={width - 2 * padding} height={height - 2 * padding} rx={4} fill={colors.panel} stroke={colors.border} />
+          <Rect x={padding + clearanceInsetX} y={padding + clearanceInsetY} width={width - 2 * (padding + clearanceInsetX)} height={height - 2 * (padding + clearanceInsetY)} fill="none" stroke={colors.muted} strokeDasharray="7 5" />
           {fence.has("north") ? <Line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke={colors.accent} strokeWidth={5} /> : null}
           {fence.has("south") ? <Line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke={colors.accent} strokeWidth={5} /> : null}
           {fence.has("west") ? <Line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke={colors.accent} strokeWidth={5} /> : null}
@@ -52,7 +56,9 @@ export function MarketplaceSitePlan({ site }: { site: SitePlan }) {
         <View style={styles.chip}><Text style={styles.chipText}>{(site.plot_length_mm / 1000).toFixed(1)} × {(site.plot_width_mm / 1000).toFixed(1)} м</Text></View>
         <View style={styles.chip}><Text style={styles.chipText}>Дом: {site.house_rotation_deg.toFixed(0)}°</Text></View>
         <View style={styles.chip}><Text style={styles.chipText}>Перепад: {elevationRange.toFixed(0)} мм</Text></View>
+        <View style={styles.chip}><Text style={styles.chipText}>Мин. отступ: {minimumMeasuredClearance.toFixed(0)} ≥ {site.minimum_boundary_clearance_mm.toFixed(0)} мм</Text></View>
       </View>
+      <Text style={styles.sectionSubtitle}>Пунктир — заданный владельцем минимальный отступ. Сервер измерил четыре стороны; это геометрическая проверка, не подтверждение местных строительных норм.</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {site.object_roles.map((role) => <View key={role} style={styles.statusBadge}><Text style={styles.statusText}>{ROLE_LABELS[role]}</Text></View>)}
       </View>

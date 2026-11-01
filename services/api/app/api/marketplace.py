@@ -253,6 +253,8 @@ class MarketplaceSitePlanOut(BaseModel):
     house_y_mm: float
     house_rotation_deg: float = Field(ge=-180, le=180)
     house_dimensions_mm: list[float] = Field(min_length=2, max_length=2)
+    minimum_boundary_clearance_mm: float = Field(ge=500, le=50_000)
+    house_boundary_clearances_mm: list[float] = Field(min_length=4, max_length=4)
     path_points_mm: list[list[float]] = Field(min_length=2, max_length=16)
     path_width_mm: float = Field(ge=300, le=5_000)
     fence_sides: list[Literal["north", "east", "south", "west"]]
@@ -720,6 +722,10 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                         house_y_mm=site_plan.house_y_mm,
                         house_rotation_deg=site_plan.house_rotation_deg,
                         house_dimensions_mm=list(site_plan.house_dimensions_mm),
+                        minimum_boundary_clearance_mm=site_plan.minimum_boundary_clearance_mm,
+                        house_boundary_clearances_mm=list(
+                            site_plan.house_boundary_clearances_mm
+                        ),
                         path_points_mm=[list(point) for point in site_plan.path_points_mm],
                         path_width_mm=site_plan.path_width_mm,
                         fence_sides=list(site_plan.fence_sides),

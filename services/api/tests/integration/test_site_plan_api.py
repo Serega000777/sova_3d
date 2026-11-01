@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401
 from app.jobs import runner
-from app.models import Asset, ProjectVersion
+from app.models import Asset, Project, ProjectVersion
 from app.models.execution import JobStatus
 from app.models.versioning import AssetRole
-from app.services import projects
+from app.services import projects, site_plans
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_exports_api import box_stl
@@ -64,6 +64,7 @@ def _body() -> dict[str, object]:
         "house_x_mm": 1_000,
         "house_y_mm": 0,
         "house_rotation_deg": 15,
+        "minimum_boundary_clearance_mm": 2_500,
         "path_points_mm": [[-15_000, -5_000], [-5_000, -2_000], [-3_000, 0]],
         "path_width_mm": 1_200,
         "fence_sides": ["north", "east", "south", "west"],
@@ -90,6 +91,15 @@ def test_site_plan_builds_real_scene_objects_and_preserves_house(
     made = db_session.get(ProjectVersion, uuid.UUID(result["version_id"]))
     assert made is not None and made.parent_version_id == source.id
     assert (made.provenance or {})["site_plan"]["house_dimensions_mm"] == [10_000.0, 8_000.0]
+    clearances = (made.provenance or {})["site_plan"]["house_boundary_clearances_mm"]
+    assert clearances == pytest.approx(
+        {
+            "north": 4_842.201469331123,
+            "east": 8_135.094688144575,
+            "south": 4_842.201469331123,
+            "west": 10_135.094688144574,
+        }
+    )
     scene = api_client.get(f"/api/v1/models/{made.id}/scene", headers=actor.headers).json()
     by_id = {node["id"]: node for node in scene["nodes"]}
     assert {
@@ -147,6 +157,24 @@ def test_site_plan_builds_real_scene_objects_and_preserves_house(
         cleanup_keys.append(asset.storage_key)
 
 
+def test_legacy_queued_site_spec_keeps_the_former_500_mm_rule(
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    source = _house_version(db_session, storage, actor, cleanup_keys)
+    project = db_session.get(Project, source.project_id)
+    assert project is not None
+    legacy = _body()
+    legacy.pop("minimum_boundary_clearance_mm")
+
+    validated = site_plans.validate_spec(project=project, version=source, spec=legacy)
+
+    assert validated["minimum_boundary_clearance_mm"] == 500.0
+    assert min(validated["house_boundary_clearances_mm"].values()) > 500
+
+
 def test_site_plan_fails_closed_for_auth_lineage_fit_and_stale_head(
     api_client: TestClient,
     actor: Actor,
@@ -163,6 +191,11 @@ def test_site_plan_fails_closed_for_auth_lineage_fit_and_stale_head(
 
     too_small = {**_body(), "plot_length_mm": 10_000, "plot_width_mm": 8_000}
     assert api_client.post(url, json=too_small, headers=actor.headers).status_code == 422
+
+    excessive_clearance = {**_body(), "minimum_boundary_clearance_mm": 5_000}
+    rejected = api_client.post(url, json=excessive_clearance, headers=actor.headers)
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["details"]["failed_sides"] == ["north", "south"]
 
     accepted = api_client.post(url, json=_body(), headers=actor.headers)
     assert accepted.status_code == 202

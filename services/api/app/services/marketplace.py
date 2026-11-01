@@ -57,7 +57,7 @@ from app.models.marketplace import (
 )
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import Asset, AssetRole, ProjectVersion, VersionAsset, VersionState
-from app.services import fit, licensing, projects, scenes
+from app.services import fit, licensing, projects, scenes, site_plans
 from app.services.asset_copies import copy_asset_to_workspace
 from app.services.authz import require_workspace_role
 from app.storage import ObjectStorage
@@ -264,6 +264,8 @@ class MarketplaceSitePlanMetadata:
     house_y_mm: float
     house_rotation_deg: float
     house_dimensions_mm: tuple[float, float]
+    minimum_boundary_clearance_mm: float
+    house_boundary_clearances_mm: tuple[float, float, float, float]
     path_points_mm: tuple[tuple[float, float], ...]
     path_width_mm: float
     fence_sides: tuple[Literal["north", "east", "south", "west"], ...]
@@ -695,10 +697,38 @@ def site_plan_metadata_for_versions(
             numbers = {key: float(details[key]) for key in numeric_keys}
             elevations = tuple(float(value) for value in details["corner_elevations_mm"])
             dimensions = tuple(float(value) for value in details["house_dimensions_mm"])
+            minimum_clearance = float(details.get("minimum_boundary_clearance_mm", 500.0))
             path = tuple((float(point[0]), float(point[1])) for point in details["path_points_mm"])
             sides = tuple(str(side) for side in details["fence_sides"])
         except (KeyError, TypeError, ValueError, IndexError):
             continue
+        if len(dimensions) != 2:
+            continue
+        measured_clearances = site_plans.house_boundary_clearances(
+            plot_length_mm=numbers["plot_length_mm"],
+            plot_width_mm=numbers["plot_width_mm"],
+            house_length_mm=dimensions[0],
+            house_width_mm=dimensions[1],
+            house_x_mm=numbers["house_x_mm"],
+            house_y_mm=numbers["house_y_mm"],
+            house_rotation_deg=numbers["house_rotation_deg"],
+        )
+        recorded_clearances = details.get("house_boundary_clearances_mm")
+        if recorded_clearances is not None:
+            if not isinstance(recorded_clearances, dict):
+                continue
+            try:
+                saved_clearances = {
+                    side: float(recorded_clearances[side])
+                    for side in ("north", "east", "south", "west")
+                }
+            except (KeyError, TypeError, ValueError):
+                continue
+            if any(
+                not math.isclose(saved_clearances[side], measured_clearances[side], abs_tol=0.001)
+                for side in measured_clearances
+            ):
+                continue
         if (
             version.parent_version_id != source_id
             or job.project_version_id != source_id
@@ -710,10 +740,18 @@ def site_plan_metadata_for_versions(
             for key in (*numeric_keys, "corner_elevations_mm", "path_points_mm", "fence_sides")
         ):
             continue
+        try:
+            requested_clearance = float(raw_spec.get("minimum_boundary_clearance_mm", 500.0))
+        except (TypeError, ValueError):
+            continue
+        if requested_clearance != minimum_clearance:
+            continue
         flattened = [
             *numbers.values(),
             *elevations,
             *dimensions,
+            minimum_clearance,
+            *measured_clearances.values(),
             *(value for point in path for value in point),
         ]
         if (
@@ -726,6 +764,8 @@ def site_plan_metadata_for_versions(
             or not 5_000 <= numbers["plot_length_mm"] <= 200_000
             or not 5_000 <= numbers["plot_width_mm"] <= 200_000
             or not 300 <= numbers["path_width_mm"] <= 5_000
+            or not 500 <= minimum_clearance <= 50_000
+            or min(measured_clearances.values()) < minimum_clearance
             or any(value <= 0 for value in dimensions)
         ):
             continue
@@ -756,6 +796,13 @@ def site_plan_metadata_for_versions(
             house_y_mm=numbers["house_y_mm"],
             house_rotation_deg=numbers["house_rotation_deg"],
             house_dimensions_mm=dimensions,
+            minimum_boundary_clearance_mm=minimum_clearance,
+            house_boundary_clearances_mm=(
+                measured_clearances["north"],
+                measured_clearances["east"],
+                measured_clearances["south"],
+                measured_clearances["west"],
+            ),
             path_points_mm=path,
             path_width_mm=numbers["path_width_mm"],
             fence_sides=cast(tuple[Literal["north", "east", "south", "west"], ...], sides),
@@ -1716,8 +1763,10 @@ def enqueue_facade_fit(
     facade_centre = [(facade_min[index] + facade_max[index]) / 2 for index in range(3)]
     placement = fit.Placement(
         align="centre",
-        offset_mm=tuple(
-            round(target_centre[index] - facade_centre[index], 6) for index in range(3)
+        offset_mm=(
+            round(target_centre[0] - facade_centre[0], 6),
+            round(target_centre[1] - facade_centre[1], 6),
+            round(target_centre[2] - facade_centre[2], 6),
         ),
         rotate_z_deg=rotate_z_deg,
     )

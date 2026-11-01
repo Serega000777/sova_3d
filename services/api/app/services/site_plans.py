@@ -15,6 +15,37 @@ SITE_NODE_IDS = frozenset(
 )
 
 
+def house_boundary_clearances(
+    *,
+    plot_length_mm: float,
+    plot_width_mm: float,
+    house_length_mm: float,
+    house_width_mm: float,
+    house_x_mm: float,
+    house_y_mm: float,
+    house_rotation_deg: float,
+) -> dict[str, float]:
+    """Measure the rotated house footprint to each rectangular plot boundary."""
+    angle = math.radians(house_rotation_deg)
+    cosine, sine = math.cos(angle), math.sin(angle)
+    footprint = [
+        (
+            house_x_mm + cosine * x - sine * y,
+            house_y_mm + sine * x + cosine * y,
+        )
+        for x in (-house_length_mm / 2, house_length_mm / 2)
+        for y in (-house_width_mm / 2, house_width_mm / 2)
+    ]
+    xs = [point[0] for point in footprint]
+    ys = [point[1] for point in footprint]
+    return {
+        "north": plot_width_mm / 2 - max(ys),
+        "east": plot_length_mm / 2 - max(xs),
+        "south": plot_width_mm / 2 + min(ys),
+        "west": plot_length_mm / 2 + min(xs),
+    }
+
+
 def _terrain_elevation(
     x: float,
     y: float,
@@ -125,9 +156,20 @@ def validate_spec(
     plot_width = float(spec["plot_width_mm"])
     house_x = float(spec["house_x_mm"])
     house_y = float(spec["house_y_mm"])
-    angle = math.radians(float(spec["house_rotation_deg"]))
+    house_rotation = float(spec["house_rotation_deg"])
+    angle = math.radians(house_rotation)
+    # Queued schema-v1 jobs did not carry this field; preserve their former fixed 500 mm rule.
+    minimum_clearance = float(spec.get("minimum_boundary_clearance_mm", 500.0))
     if not all(
-        math.isfinite(value) for value in (plot_length, plot_width, house_x, house_y, angle)
+        math.isfinite(value)
+        for value in (
+            plot_length,
+            plot_width,
+            house_x,
+            house_y,
+            angle,
+            minimum_clearance,
+        )
     ):
         raise ValidationFailedError("site dimensions and placement must be finite")
     elevations = [float(value) for value in spec["corner_elevations_mm"]]
@@ -136,13 +178,25 @@ def validate_spec(
     if max(elevations) - min(elevations) > 10_000:
         raise ValidationFailedError("terrain corner elevation range exceeds 10000 mm")
     house_length, house_width = request["length_mm"], request["width_mm"]
-    span_x = abs(math.cos(angle)) * house_length + abs(math.sin(angle)) * house_width
-    span_y = abs(math.sin(angle)) * house_length + abs(math.cos(angle)) * house_width
-    margin = 500.0
-    if abs(house_x) + span_x / 2 + margin > plot_length / 2:
-        raise ValidationFailedError("the house and a 500 mm margin must fit inside the plot length")
-    if abs(house_y) + span_y / 2 + margin > plot_width / 2:
-        raise ValidationFailedError("the house and a 500 mm margin must fit inside the plot width")
+    clearances = house_boundary_clearances(
+        plot_length_mm=plot_length,
+        plot_width_mm=plot_width,
+        house_length_mm=house_length,
+        house_width_mm=house_width,
+        house_x_mm=house_x,
+        house_y_mm=house_y,
+        house_rotation_deg=house_rotation,
+    )
+    failed_sides = [side for side, clearance in clearances.items() if clearance < minimum_clearance]
+    if failed_sides:
+        raise ValidationFailedError(
+            "the rotated house footprint violates the requested plot-boundary clearance",
+            {
+                "failed_sides": failed_sides,
+                "minimum_boundary_clearance_mm": minimum_clearance,
+                "house_boundary_clearances_mm": clearances,
+            },
+        )
     path = spec["path_points_mm"]
     if not 2 <= len(path) <= 16:
         raise ValidationFailedError("a site path needs 2 to 16 points")
@@ -177,6 +231,8 @@ def validate_spec(
     return {
         **spec,
         "house": request,
+        "minimum_boundary_clearance_mm": minimum_clearance,
+        "house_boundary_clearances_mm": clearances,
         "house_z_mm": house_z,
         "pad_bottom_mm": pad_bottom,
         "pad_height_mm": house_z - pad_bottom,
