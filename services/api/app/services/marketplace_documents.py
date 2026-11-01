@@ -1,8 +1,8 @@
-"""Deterministic PDF/XLSX documents for job-proven marketplace houses.
+"""Deterministic PDF/XLSX/DXF documents for job-proven marketplace houses.
 
-The renderers intentionally have no browser or office-suite dependency. They emit a small
-standards-compliant vector PDF and Office Open XML workbook from the same validated metadata used
-by the public listing.
+The renderers intentionally have no browser, office-suite or CAD dependency. They emit a small
+standards-compliant vector PDF, Office Open XML workbook and ASCII DXF drawing from the same
+validated metadata used by the public listing.
 """
 
 from __future__ import annotations
@@ -20,6 +20,8 @@ from app.services.marketplace import MarketplaceHouseMetadata
 PAGE_WIDTH = 595.0
 PAGE_HEIGHT = 842.0
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+DXF_MIME = "application/dxf"
+_DXF_FLOOR_GAP_MM = 1_000.0
 
 
 def _pdf_text(value: object) -> str:
@@ -445,3 +447,205 @@ def render_house_xlsx(
         for index, (_, rows) in enumerate(sheets, start=1):
             _write_zip_entry(archive, f"xl/worksheets/sheet{index}.xml", _sheet_xml(rows))
     return output.getvalue()
+
+
+def _dxf_pair(code: int, value: object) -> str:
+    return f"{code}\r\n{value}\r\n"
+
+
+def _dxf_line(layer: str, x1: float, y1: float, x2: float, y2: float) -> str:
+    return (
+        _dxf_pair(0, "LINE")
+        + _dxf_pair(8, layer)
+        + _dxf_pair(10, f"{x1:.3f}")
+        + _dxf_pair(20, f"{y1:.3f}")
+        + _dxf_pair(30, "0.0")
+        + _dxf_pair(11, f"{x2:.3f}")
+        + _dxf_pair(21, f"{y2:.3f}")
+        + _dxf_pair(31, "0.0")
+    )
+
+
+def _dxf_polyline(layer: str, points: Iterable[tuple[float, float]], *, closed: bool) -> str:
+    rows = list(points)
+    if len(rows) < 2:
+        return ""
+    chunks = [
+        _dxf_pair(0, "POLYLINE")
+        + _dxf_pair(8, layer)
+        + _dxf_pair(66, 1)
+        + _dxf_pair(70, 1 if closed else 0)
+    ]
+    for x, y in rows:
+        chunks.append(
+            _dxf_pair(0, "VERTEX")
+            + _dxf_pair(8, layer)
+            + _dxf_pair(10, f"{x:.3f}")
+            + _dxf_pair(20, f"{y:.3f}")
+            + _dxf_pair(30, "0.0")
+        )
+    chunks.append(_dxf_pair(0, "SEQEND") + _dxf_pair(8, layer))
+    return "".join(chunks)
+
+
+def _dxf_text(layer: str, x: float, y: float, height: float, value: object) -> str:
+    safe = str(value).replace("\n", " ").replace("\r", " ")
+    return (
+        _dxf_pair(0, "TEXT")
+        + _dxf_pair(8, layer)
+        + _dxf_pair(10, f"{x:.3f}")
+        + _dxf_pair(20, f"{y:.3f}")
+        + _dxf_pair(30, "0.0")
+        + _dxf_pair(40, f"{height:.3f}")
+        + _dxf_pair(1, safe)
+    )
+
+
+def _dxf_layer_table(names: Iterable[str]) -> str:
+    unique = list(dict.fromkeys(names))
+    rows = [
+        _dxf_pair(0, "SECTION")
+        + _dxf_pair(2, "TABLES")
+        + _dxf_pair(0, "TABLE")
+        + _dxf_pair(2, "LAYER")
+        + _dxf_pair(70, len(unique))
+    ]
+    for layer_name in unique:
+        rows.append(
+            _dxf_pair(0, "LAYER")
+            + _dxf_pair(2, layer_name)
+            + _dxf_pair(70, 0)
+            + _dxf_pair(62, 7)
+            + _dxf_pair(6, "CONTINUOUS")
+        )
+    rows.append(_dxf_pair(0, "ENDTAB") + _dxf_pair(0, "ENDSEC"))
+    return "".join(rows)
+
+
+def _floor_layers(floor_index: int) -> list[str]:
+    base = f"FLOOR_{floor_index + 1}"
+    return [f"{base}_WALLS", f"{base}_ROOMS", f"{base}_OPENINGS", f"{base}_STAIRS", f"{base}_TEXT"]
+
+
+def _plan_points(plan: FloorPlan) -> list[tuple[float, float]]:
+    points = [point for wall in plan.walls for point in (wall.a, wall.b)]
+    points.extend(point for room in plan.rooms for point in room.outline)
+    points.extend(point for stair in plan.stairs for point in stair.outline)
+    return points
+
+
+def _plan_dxf_entities(
+    *,
+    floor_index: int,
+    name: str,
+    elevation_mm: float,
+    plan: FloorPlan,
+    y_offset: float,
+    label_y: float,
+) -> tuple[str, list[str]]:
+    walls_layer, rooms_layer, openings_layer, stairs_layer, text_layer = _floor_layers(floor_index)
+
+    def shift(point: tuple[float, float]) -> tuple[float, float]:
+        return (point[0], point[1] + y_offset)
+
+    chunks = [
+        _dxf_text(
+            text_layer,
+            0.0,
+            label_y,
+            180.0,
+            f"Floor {floor_index + 1} | {name} | elevation {elevation_mm:.0f} mm",
+        )
+    ]
+    for wall in plan.walls:
+        a = shift(wall.a)
+        b = shift(wall.b)
+        chunks.append(_dxf_line(walls_layer, a[0], a[1], b[0], b[1]))
+    for room in plan.rooms:
+        outline = [shift(point) for point in room.outline]
+        chunks.append(_dxf_polyline(rooms_layer, outline, closed=True))
+        if outline:
+            centre_x = sum(point[0] for point in outline) / len(outline)
+            centre_y = sum(point[1] for point in outline) / len(outline)
+            chunks.append(
+                _dxf_text(text_layer, centre_x, centre_y, 120.0, room.kind or room.name)
+            )
+    for opening in plan.openings:
+        if opening.wall >= len(plan.walls):
+            continue
+        segment = _opening_segment(plan.walls[opening.wall], opening)
+        if len(segment) != 2:
+            continue
+        a, b = (shift(point) for point in segment)
+        chunks.append(_dxf_line(openings_layer, a[0], a[1], b[0], b[1]))
+        chunks.append(
+            _dxf_text(
+                text_layer,
+                (a[0] + b[0]) / 2,
+                (a[1] + b[1]) / 2 + 20.0,
+                90.0,
+                opening.kind[:1].upper(),
+            )
+        )
+    for stair in plan.stairs:
+        outline = [shift(point) for point in stair.outline]
+        chunks.append(_dxf_polyline(stairs_layer, outline, closed=True))
+    return "".join(chunks), [walls_layer, rooms_layer, openings_layer, stairs_layer, text_layer]
+
+
+def render_house_dxf(
+    *, title: str, listing_id: uuid.UUID, version_id: uuid.UUID, house: MarketplaceHouseMetadata
+) -> bytes:
+    """Render one ASCII DXF R12 drawing stacking every proven floor's walls/rooms/openings/stairs.
+
+    This is a real, open CAD-interchange format (millimetre units, every mainstream CAD
+    application imports it), not a proprietary binary DWG file and not construction
+    documentation on its own.
+    """
+    layer_names: list[str] = []
+    body_chunks: list[str] = []
+    cumulative_y = 0.0
+    for level in house.floor_plans:
+        points = _plan_points(level.plan)
+        min_y = min((point[1] for point in points), default=0.0)
+        max_y = max((point[1] for point in points), default=0.0)
+        offset = cumulative_y - min_y
+        entities, layers = _plan_dxf_entities(
+            floor_index=level.floor_index,
+            name=level.name,
+            elevation_mm=level.elevation_mm,
+            plan=level.plan,
+            y_offset=offset,
+            label_y=cumulative_y + (max_y - min_y) + 150.0,
+        )
+        body_chunks.append(entities)
+        layer_names.extend(layers)
+        cumulative_y += (max_y - min_y) + _DXF_FLOOR_GAP_MM
+
+    title_block = _dxf_text(
+        "TITLE",
+        0.0,
+        cumulative_y,
+        220.0,
+        f"Sova 3D house | {title} | listing {listing_id} | version {version_id} | units mm | "
+        "technical schedule only, not construction documentation",
+    )
+    header_section = (
+        _dxf_pair(0, "SECTION")
+        + _dxf_pair(2, "HEADER")
+        + _dxf_pair(9, "$ACADVER")
+        + _dxf_pair(1, "AC1009")
+        + _dxf_pair(9, "$INSUNITS")
+        + _dxf_pair(70, 4)
+        + _dxf_pair(0, "ENDSEC")
+    )
+    layer_table = _dxf_layer_table(["TITLE", *layer_names])
+    entities_section = (
+        _dxf_pair(0, "SECTION")
+        + _dxf_pair(2, "ENTITIES")
+        + title_block
+        + "".join(body_chunks)
+        + _dxf_pair(0, "ENDSEC")
+    )
+    document = header_section + layer_table + entities_section + _dxf_pair(0, "EOF")
+    return document.encode("ascii", "replace")

@@ -1301,6 +1301,17 @@ export class PhysicalAiClient {
     );
   }
 
+  /**
+   * An ASCII DXF drawing rendered only from the listing's validated immutable house evidence.
+   * This is an open CAD-interchange format, not a proprietary binary DWG file.
+   */
+  downloadHouseDrawing(listingId: string) {
+    return this.requestBlob(
+      `/api/v1/listings/${listingId}/documents/house.dxf`,
+      "application/dxf",
+    );
+  }
+
   /** Compare a facade bundle's persisted envelopes with one authorized exact-facade project. */
   facadeCompatibility(listingId: string, projectId: string) {
     return this.request<FacadeCompatibility>(

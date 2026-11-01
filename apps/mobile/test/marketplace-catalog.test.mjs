@@ -78,9 +78,11 @@ test("house listings render canonical metadata and interactive immutable floor p
 test("house listing documents remain authenticated, immutable, and fail closed before native sharing", () => {
   assert.match(detail, /shareHouseDocument\(client, listing\.id\)/);
   assert.match(detail, /shareHouseSpreadsheet\(client, listing\.id\)/);
-  assert.match(detail, /PDF и XLSX строятся сервером только из доказательств опубликованной неизменяемой версии/);
+  assert.match(detail, /shareHouseDrawing\(client, listing\.id\)/);
+  assert.match(detail, /PDF, XLSX и DXF строятся сервером только из доказательств опубликованной неизменяемой версии/);
   assert.match(marketplaceFiles, /client\.downloadHouseDocument\(listingId\)/);
   assert.match(marketplaceFiles, /client\.downloadHouseSpreadsheet\(listingId\)/);
+  assert.match(marketplaceFiles, /client\.downloadHouseDrawing\(listingId\)/);
   assert.match(marketplaceFiles, /blob\.size > 0 && mime === expectedMime/);
   assert.match(marketplaceFiles, /new File\(Paths\.cache, value\.fileName\)/);
   assert.match(marketplaceFiles, /await shareAsync\(file\.uri/);

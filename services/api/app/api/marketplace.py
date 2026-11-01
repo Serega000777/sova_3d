@@ -1230,6 +1230,46 @@ def download_house_spreadsheet(item_id: uuid.UUID, db: DbDep, principal: Princip
     )
 
 
+@router.get(
+    "/listings/{item_id}/documents/house.dxf",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"application/dxf": {"schema": {"type": "string", "format": "binary"}}},
+            "description": (
+                "An ASCII DXF drawing generated from validated immutable house evidence."
+            ),
+        }
+    },
+)
+def download_house_drawing(item_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> Response:
+    """Download a real DXF drawing only when the listing has a job-proven house and floor plans."""
+    from app.services.marketplace_documents import DXF_MIME, render_house_dxf
+
+    item = marketplace.get_listing(db, user_id=principal.user_id, item_id=item_id)
+    house = marketplace.house_metadata_for_versions(db, [item.version_id]).get(item.version_id)
+    if house is None or not house.floor_plans:
+        raise ValidationFailedError(
+            "listing has no validated house floor plan for a DXF drawing",
+            {"listing_id": str(item.id), "version_id": str(item.version_id)},
+        )
+    document = render_house_dxf(
+        title=item.title,
+        listing_id=item.id,
+        version_id=item.version_id,
+        house=house,
+    )
+    return Response(
+        content=document,
+        media_type=DXF_MIME,
+        headers={
+            "Content-Disposition": f'attachment; filename="sova-house-{item.id}.dxf"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.get("/listings/{item_id}/facade-compatibility", response_model=FacadeCompatibilityOut)
 def get_facade_compatibility(
     item_id: uuid.UUID,

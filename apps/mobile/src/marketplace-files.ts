@@ -3,11 +3,13 @@ import { isAvailableAsync, shareAsync } from "expo-sharing";
 
 export const HOUSE_PDF_MIME = "application/pdf";
 export const HOUSE_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+export const HOUSE_DXF_MIME = "application/dxf";
 export const SOVA_PACKAGE_MIME = "application/vnd.sova.project+zip";
 
 interface MarketplaceFileClient {
   downloadHouseDocument(listingId: string): Promise<Blob>;
   downloadHouseSpreadsheet(listingId: string): Promise<Blob>;
+  downloadHouseDrawing(listingId: string): Promise<Blob>;
   downloadOrderSovaPackage(orderId: string): Promise<Blob>;
 }
 
@@ -67,6 +69,20 @@ export async function shareHouseSpreadsheet(
     mimeType: HOUSE_XLSX_MIME,
     uti: "org.openxmlformats.spreadsheetml.sheet",
     dialogTitle: "Ведомость дома Sova 3D",
+  });
+}
+
+/** Share the authenticated, server-rendered DXF drawing for one immutable house listing. */
+export async function shareHouseDrawing(
+  client: MarketplaceFileClient,
+  listingId: string,
+): Promise<void> {
+  await shareMarketplaceFile({
+    blob: await client.downloadHouseDrawing(listingId),
+    fileName: `sova-house-${listingId}.dxf`,
+    mimeType: HOUSE_DXF_MIME,
+    uti: "com.autodesk.dxf",
+    dialogTitle: "Чертёж дома Sova 3D",
   });
 }
 

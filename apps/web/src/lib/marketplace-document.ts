@@ -1,5 +1,6 @@
 export const HOUSE_PDF_MIME = "application/pdf";
 export const HOUSE_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+export const HOUSE_DXF_MIME = "application/dxf";
 
 /** Refuse an empty or mislabeled marketplace document before saving it under a trusted suffix. */
 export function verifiedMarketplaceDocument(blob: Blob, expectedMime: string): Blob | null {

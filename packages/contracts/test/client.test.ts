@@ -398,6 +398,29 @@ test("house schedule requests an authenticated XLSX blob", async () => {
   assert.equal(headers.get("Accept"), mime);
 });
 
+test("house drawing requests an authenticated DXF blob", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const mime = "application/dxf";
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "market-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return new Response(new Uint8Array([0x30, 0x0d, 0x0a]), {
+        headers: { "content-type": mime },
+      });
+    },
+  });
+
+  const document = await client.downloadHouseDrawing("listing-1");
+  assert.equal(document.type, mime);
+  assert.equal(document.size, 3);
+  assert.equal(request!.url, "https://api.example.test/api/v1/listings/listing-1/documents/house.dxf");
+  const headers = new Headers(request!.init.headers);
+  assert.equal(headers.get("Authorization"), "Bearer market-token");
+  assert.equal(headers.get("Accept"), mime);
+});
+
 test("buyer Sova package requests the authenticated order archive", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const mime = "application/vnd.sova.project+zip";

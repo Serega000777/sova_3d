@@ -11,7 +11,7 @@ import { MarketplaceFloorPlans } from "@/src/MarketplaceFloorPlans";
 import { MarketplaceSiteCompatibility } from "@/src/MarketplaceSiteCompatibility";
 import { MarketplaceSitePlan } from "@/src/MarketplaceSitePlan";
 import { ModelViewer, type Size } from "@/src/ModelViewer";
-import { shareHouseDocument, shareHouseSpreadsheet } from "@/src/marketplace-files";
+import { shareHouseDocument, shareHouseDrawing, shareHouseSpreadsheet } from "@/src/marketplace-files";
 import { type MarketplaceModelPreview, verifiedMarketplaceModelPreview } from "@/src/marketplace-model-preview";
 import { listingPrice } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
@@ -45,7 +45,7 @@ export default function MarketplaceListing() {
   const [angle, setAngle] = useState("iso");
   const [favorite, setFavorite] = useState(false);
   const [inCart, setInCart] = useState(false);
-  const [busy, setBusy] = useState<"acquire" | "favorite" | "pdf" | "xlsx" | null>(null);
+  const [busy, setBusy] = useState<"acquire" | "favorite" | "pdf" | "xlsx" | "dxf" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -153,13 +153,14 @@ export default function MarketplaceListing() {
     }
   }
 
-  async function shareHouseFile(kind: "pdf" | "xlsx") {
+  async function shareHouseFile(kind: "pdf" | "xlsx" | "dxf") {
     if (!client || !listing || busy) return;
     setBusy(kind);
     setError(null);
     try {
       if (kind === "pdf") await shareHouseDocument(client, listing.id);
-      else await shareHouseSpreadsheet(client, listing.id);
+      else if (kind === "xlsx") await shareHouseSpreadsheet(client, listing.id);
+      else await shareHouseDrawing(client, listing.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -308,7 +309,7 @@ export default function MarketplaceListing() {
                 <MarketplaceFloorPlans levels={listing.floor_plans} />
                 <View style={[styles.card, { gap: 10 }]}>
                   <Text style={styles.heading}>Документы проекта</Text>
-                  <Text style={styles.sectionSubtitle}>PDF и XLSX строятся сервером только из доказательств опубликованной неизменяемой версии.</Text>
+                  <Text style={styles.sectionSubtitle}>PDF, XLSX и DXF строятся сервером только из доказательств опубликованной неизменяемой версии.</Text>
                   <Pressable
                     accessibilityRole="button"
                     disabled={busy !== null}
@@ -324,6 +325,14 @@ export default function MarketplaceListing() {
                     style={({ pressed }) => [styles.button, (busy || pressed) && { opacity: 0.65 }]}
                   >
                     <Text style={styles.buttonText}>{busy === "xlsx" ? "Готовим XLSX…" : "Открыть ведомость XLSX"}</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy !== null}
+                    onPress={() => void shareHouseFile("dxf")}
+                    style={({ pressed }) => [styles.button, (busy || pressed) && { opacity: 0.65 }]}
+                  >
+                    <Text style={styles.buttonText}>{busy === "dxf" ? "Готовим DXF…" : "Открыть чертёж DXF"}</Text>
                   </Pressable>
                 </View>
               </>

@@ -1402,6 +1402,24 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         headers=actor.headers,
     )
     assert repeated_spreadsheet.content == house_spreadsheet.content
+    house_drawing = api_client.get(
+        f"/api/v1/listings/{house_listing['id']}/documents/house.dxf",
+        headers=actor.headers,
+    )
+    assert house_drawing.status_code == 200, house_drawing.text
+    assert house_drawing.headers["content-type"] == "application/dxf"
+    assert house_drawing.headers["content-disposition"].endswith(
+        f'filename="sova-house-{house_listing["id"]}.dxf"'
+    )
+    assert house_drawing.content.startswith(b"0\r\nSECTION\r\n2\r\nHEADER\r\n")
+    assert house_drawing.content.rstrip().endswith(b"0\r\nEOF")
+    assert b"FLOOR_1_WALLS" in house_drawing.content
+    assert b"FLOOR_2_WALLS" in house_drawing.content
+    repeated_drawing = api_client.get(
+        f"/api/v1/listings/{house_listing['id']}/documents/house.dxf",
+        headers=actor.headers,
+    )
+    assert repeated_drawing.content == house_drawing.content
     anonymous_document = api_client.get(
         f"/api/v1/listings/{house_listing['id']}/documents/house.pdf"
     )
@@ -1410,6 +1428,10 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         f"/api/v1/listings/{house_listing['id']}/documents/house.xlsx"
     )
     assert anonymous_spreadsheet.status_code == 401
+    anonymous_drawing = api_client.get(
+        f"/api/v1/listings/{house_listing['id']}/documents/house.dxf"
+    )
+    assert anonymous_drawing.status_code == 401
     for shape, expected_area in (("l_shape", 120.0), ("t_shape", 88.889)):
         shaped_version_id = house_box(api_client, actor, db_session, storage, shape)
         shaped_version = db_session.get(ProjectVersion, uuid.UUID(shaped_version_id))
@@ -1977,3 +1999,8 @@ def test_marketplace_rooms_require_typed_auto_layout_and_immutable_operation(
     )
     assert forged_document.status_code == 422
     assert "no validated house floor plan" in forged_document.json()["error"]["message"]
+    forged_drawing = api_client.get(
+        f"/api/v1/listings/{forged_listing['id']}/documents/house.dxf", headers=actor.headers
+    )
+    assert forged_drawing.status_code == 422
+    assert "no validated house floor plan" in forged_drawing.json()["error"]["message"]

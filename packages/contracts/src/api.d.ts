@@ -2219,6 +2219,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/listings/{item_id}/documents/house.dxf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download House Drawing
+         * @description Download a real DXF drawing only when the listing has a job-proven house and floor plans.
+         */
+        get: operations["download_house_drawing_api_v1_listings__item_id__documents_house_dxf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/listings/{item_id}/facade-compatibility": {
         parameters: {
             query?: never;
@@ -16038,6 +16058,39 @@ export interface operations {
                 };
                 content: {
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_house_drawing_api_v1_listings__item_id__documents_house_dxf_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An ASCII DXF drawing generated from validated immutable house evidence. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/dxf": string;
                 };
             };
             /** @description Validation Error */

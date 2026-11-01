@@ -16,6 +16,7 @@ import { MarketplaceFloorPlans } from "@/components/MarketplaceFloorPlans";
 import { MarketplaceSitePlan } from "@/components/MarketplaceSitePlan";
 import { verifiedFacadeCompatibility } from "@/lib/facade-compatibility";
 import {
+  HOUSE_DXF_MIME,
   HOUSE_PDF_MIME,
   HOUSE_XLSX_MIME,
   verifiedMarketplaceDocument,
@@ -334,6 +335,22 @@ export default function ListingPage() {
     }
   }
 
+  async function downloadHouseDrawing() {
+    if (!client || !listing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const document = await client.downloadHouseDrawing(listing.id);
+      const verified = verifiedMarketplaceDocument(document, HOUSE_DXF_MIME);
+      if (!verified) throw new Error(ru ? "Сервер вернул некорректный DXF." : "The server returned an invalid DXF.");
+      saveBlob(`sova-house-${listing.id}.dxf`, verified);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runFitTest(body: Omit<FitTestBody, "version_a_id">): Promise<Job | null> {
     if (!client || !targetProject?.head_version_id) return null;
     setError(null);
@@ -501,6 +518,9 @@ export default function ListingPage() {
                   </button>
                   <button className="btn" type="button" disabled={busy} onClick={() => void downloadHouseSpreadsheet()}>
                     {ru ? "Скачать ведомость XLSX" : "Download XLSX schedule"}
+                  </button>
+                  <button className="btn" type="button" disabled={busy} onClick={() => void downloadHouseDrawing()}>
+                    {ru ? "Скачать чертёж DXF" : "Download DXF drawing"}
                   </button>
                 </div>
               </>
