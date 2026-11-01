@@ -206,8 +206,8 @@ export function GameReadySheet({
                   ? "Проверяемая треугольная decimation сохраняет GLB, LOD, UV и коллайдер."
                   : "Verified triangle decimation keeps the GLB, LODs, UVs and collider.")
               : (ru
-                  ? "Blender QuadriFlow перестраивает один mesh в quad-dominant FBX и проецирует активную UV-карту, если она есть. Швы не перестраиваются, покраска не перепекается; операция может занять несколько минут."
-                  : "Blender QuadriFlow rebuilds one mesh as a quad-dominant FBX and projects its active UV map when present. Seams are not rebuilt, paint is not rebaked, and the operation may take several minutes.")}
+                  ? "Blender QuadriFlow перестраивает каждый mesh в quad-dominant FBX, проецирует активную UV-карту и сохраняет material slots с встроенными исходными текстурами. Швы и текстуры не перестраиваются; операция может занять несколько минут."
+                  : "Blender QuadriFlow rebuilds each mesh as a quad-dominant FBX, projects its active UV map and preserves material slots with embedded source textures. Seams and textures are not rebuilt, and the operation may take several minutes.")}
           </Text>
         </View>
 
@@ -355,6 +355,13 @@ export function GameReadySheet({
                     ? (ru ? "UV · разная у каждого объекта, см. список ниже" : "UV · differs per object, see the list below")
                     : (ru ? "UV · старый отчёт не содержит доказательства переноса" : "UV · the legacy report has no transfer evidence")}
             </Text>
+            <Text style={styles.sectionSubtitle}>
+              {quadResult.report.materials === null
+                ? (ru ? "Материалы · старый отчёт без доказательства упаковки" : "Materials · legacy report without packaging evidence")
+                : (ru
+                    ? `Материалы · ${quadResult.report.materials.length} слотов, ${quadResult.report.materials.reduce((total, material) => total + material.textureSha256s.length, 0)} встроенных текстур`
+                    : `Materials · ${quadResult.report.materials.length} slots, ${quadResult.report.materials.reduce((total, material) => total + material.textureSha256s.length, 0)} embedded textures`)}
+            </Text>
             {quadResult.objects.length > 1 && (
               <View style={{ gap: 5 }}>
                 <Text style={styles.sectionSubtitle}>
@@ -367,6 +374,9 @@ export function GameReadySheet({
                     {entry.uvTransfer === "active_surface_projected"
                       ? (ru ? "UV перенесён" : "UV transferred")
                       : (ru ? "без UV" : "no UV")}
+                    {entry.materials === null
+                      ? ""
+                      : ` · ${entry.materials.length} ${ru ? "мат." : "mat."} · ${entry.materials.reduce((total, material) => total + material.textureSha256s.length, 0)} ${ru ? "текстур" : "textures"}`}
                   </Text>
                 ))}
               </View>

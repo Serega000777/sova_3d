@@ -562,9 +562,9 @@ export class PhysicalAiClient {
     );
   }
 
-  /** Quad-dominant retopology (Blender QuadriFlow, sandboxed) for a finalized single-mesh
-   *  version, delivered as an FBX derived asset. glTF/GLB cannot carry quad faces, so this
-   *  is a separate artifact from the triangle-only game-ready GLB export. */
+  /** Quad-dominant retopology (Blender QuadriFlow, sandboxed) for a finalized model or
+   *  explicit scene, delivered as a material-preserving FBX derived asset. glTF/GLB cannot
+   *  carry quad faces, so this is separate from the triangle-only game-ready GLB export. */
   createQuadRemesh(
     versionId: string,
     body: Schemas["QuadRemeshCreate"] = { target_faces: 4000 },

@@ -3454,7 +3454,10 @@ export default function ProjectPage() {
         objects?: number;
         // v1/v2 (single mesh) carried this at the top level; v3 moved it per-object.
         uv_transfer?: "none" | "active_surface_projected";
-        per_object?: { uv_transfer?: "none" | "active_surface_projected" }[];
+        per_object?: {
+          uv_transfer?: "none" | "active_surface_projected";
+          materials?: { texture_sha256s?: string[] }[];
+        }[];
       };
     };
     const download = await client.download(result.asset_id);
@@ -3470,11 +3473,17 @@ export default function ProjectPage() {
         : uvTransfer === "none"
           ? (ru ? " У исходника не было UV-карты." : " The source had no UV map.")
           : "";
+      const materialEntries = result.report.per_object?.flatMap((entry) => entry.materials ?? []);
+      const materialNote = materialEntries
+        ? (ru
+            ? ` Материалы: ${materialEntries.length} слотов, ${materialEntries.reduce((total, material) => total + (material.texture_sha256s?.length ?? 0), 0)} встроенных текстур.`
+            : ` Materials: ${materialEntries.length} slots, ${materialEntries.reduce((total, material) => total + (material.texture_sha256s?.length ?? 0), 0)} embedded textures.`)
+        : "";
       const objectsNote = objects > 1 ? (ru ? ` (${objects} объекта)` : ` (${objects} objects)`) : "";
       setNotice(
         ru
-          ? `Готово: ${result.report.faces} граней${objectsNote}, ${percent}% quad.${uv}`
-          : `Done: ${result.report.faces} faces${objectsNote}, ${percent}% quad.${uv}`,
+          ? `Готово: ${result.report.faces} граней${objectsNote}, ${percent}% quad.${uv}${materialNote}`
+          : `Done: ${result.report.faces} faces${objectsNote}, ${percent}% quad.${uv}${materialNote}`,
       );
     }
   }
@@ -6525,8 +6534,8 @@ export default function ProjectPage() {
             </button>
             <span className="muted" style={{ fontSize: 12 }}>
               {ru
-                ? "Отдельный FBX: Blender QuadriFlow перестраивает сетку в quad-доминантную топологию и проецирует активную UV-карту исходника на новую поверхность. Швы не перестраиваются и качество проекции зависит от формы. glTF/GLB не умеет хранить quad-грани, поэтому обычный GLB-экспорт остаётся triangle-only."
-                : "A separate FBX: Blender's QuadriFlow rebuilds the mesh as quad-dominant topology and projects the source's active UV map onto the new surface. Seams are not rebuilt and projection quality depends on shape. glTF/GLB cannot store quad faces, so the regular GLB export stays triangle-only."}
+                ? "Отдельный FBX: Blender QuadriFlow перестраивает сетку в quad-доминантную топологию, проецирует активную UV-карту, сохраняет material slots и встраивает исходные текстуры. Швы и текстуры не перестраиваются; качество проекции зависит от формы. glTF/GLB не умеет хранить quad-грани, поэтому обычный GLB-экспорт остаётся triangle-only."
+                : "A separate FBX: Blender's QuadriFlow rebuilds the mesh as quad-dominant topology, projects the active UV map, preserves material slots and embeds source textures. Seams and textures are not rebuilt; projection quality depends on shape. glTF/GLB cannot store quad faces, so the regular GLB export stays triangle-only."}
             </span>
             <strong>{ru ? "Видео обзора" : "Turntable video"}</strong>
             <span className="muted" style={{ fontSize: 12 }}>

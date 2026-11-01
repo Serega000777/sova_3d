@@ -45,6 +45,8 @@ def _object_report(name: str, faces: int) -> quad_remesh.QuadRemeshObjectReport:
         uv_coordinates=faces * 4,
         uv_bounds=[0.0, 0.0, 1.0, 1.0],
         uv_transfer="active_surface_projected",
+        materials=[],
+        material_transfer="none",
     )
 
 
@@ -74,7 +76,7 @@ def _fake_pipeline(
         return quad_remesh.QuadRemeshOutcome(
             ok=True,
             report=quad_remesh.QuadRemeshReport(
-                schema_version=3,
+                schema_version=4,
                 operation="quad_remesh",
                 blender_version="4.3.3",
                 target_faces=faces,

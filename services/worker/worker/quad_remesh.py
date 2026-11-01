@@ -26,6 +26,29 @@ from worker import sandbox
 from worker.blender_handoff import _copy_regular, _read_regular
 
 
+class QuadRemeshMaterialReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    name: str = Field(min_length=1, max_length=200)
+    diffuse_rgba: list[float] = Field(min_length=4, max_length=4)
+    texture_sha256s: list[str] = Field(max_length=32)
+    source_faces: int = Field(ge=0, le=300_000)
+    output_faces: int = Field(ge=0, le=200_000)
+
+    @model_validator(mode="after")
+    def validate_material_evidence(self) -> QuadRemeshMaterialReport:
+        if any(value < 0 or value > 1 for value in self.diffuse_rgba):
+            raise ValueError("quad-remesh diffuse colour is outside 0..1")
+        if any(
+            len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value)
+            for value in self.texture_sha256s
+        ):
+            raise ValueError("quad-remesh texture digest is invalid")
+        if self.texture_sha256s != sorted(set(self.texture_sha256s)):
+            raise ValueError("quad-remesh texture digests are not canonical")
+        return self
+
+
 class QuadRemeshObjectReport(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
@@ -41,6 +64,8 @@ class QuadRemeshObjectReport(BaseModel):
     uv_coordinates: int = Field(ge=0, le=4_000_000)
     uv_bounds: list[float] | None = Field(default=None, min_length=4, max_length=4)
     uv_transfer: Literal["none", "active_surface_projected"]
+    materials: list[QuadRemeshMaterialReport] = Field(max_length=64)
+    material_transfer: Literal["none", "single_slot_preserved", "nearest_source_polygon"]
 
     @model_validator(mode="after")
     def validate_uv_evidence(self) -> QuadRemeshObjectReport:
@@ -52,8 +77,7 @@ class QuadRemeshObjectReport(BaseModel):
                 or self.uv_transfer != "none"
             ):
                 raise ValueError("quad-remesh UV evidence invents data for the source")
-            return self
-        if (
+        elif (
             self.uv_layers != 1
             or self.uv_coordinates <= 0
             or self.uv_bounds is None
@@ -62,13 +86,32 @@ class QuadRemeshObjectReport(BaseModel):
             or self.uv_bounds[1] > self.uv_bounds[3]
         ):
             raise ValueError("quad-remesh UV transfer evidence is inconsistent")
+        expected_material_transfer = (
+            "none"
+            if not self.materials
+            else "single_slot_preserved"
+            if len(self.materials) == 1
+            else "nearest_source_polygon"
+        )
+        if self.material_transfer != expected_material_transfer:
+            raise ValueError("quad-remesh material transfer evidence is inconsistent")
+        if (
+            any(material.texture_sha256s for material in self.materials)
+            and self.source_uv_layers == 0
+        ):
+            raise ValueError("quad-remesh texture evidence requires source UVs")
+        if (
+            self.materials
+            and sum(material.output_faces for material in self.materials) != self.faces
+        ):
+            raise ValueError("quad-remesh output material assignments do not cover every face")
         return self
 
 
 class QuadRemeshReport(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
-    schema_version: int = Field(ge=3, le=3)
+    schema_version: int = Field(ge=4, le=4)
     operation: str = Field(pattern=r"^quad_remesh$")
     blender_version: str = Field(min_length=1, max_length=80)
     target_faces: int = Field(ge=100, le=100_000)

@@ -30,7 +30,7 @@ test("game-ready sheet reuses shared budgets and separates triangle GLB from qua
   assert.match(sheet, /lods && parsedLods\.ok \? parsedLods\.ratios : \[\]/);
   assert.match(sheet, /Quad · FBX/);
   assert.match(sheet, /Проверяемая треугольная decimation сохраняет GLB/);
-  assert.match(sheet, /Blender QuadriFlow перестраивает один mesh/);
+  assert.match(sheet, /Blender QuadriFlow перестраивает каждый mesh/);
   assert.match(sheet, /Linking\.openURL\(result\.downloadUrl\)/);
 });
 

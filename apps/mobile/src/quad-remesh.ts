@@ -21,6 +21,16 @@ export interface QuadRemeshObjectEvidence {
   uvCoordinates: number | null;
   uvBounds: [number, number, number, number] | null;
   uvTransfer: "none" | "active_surface_projected" | null;
+  materials: QuadRemeshMaterialEvidence[] | null;
+  materialTransfer: "none" | "single_slot_preserved" | "nearest_source_polygon" | null;
+}
+
+export interface QuadRemeshMaterialEvidence {
+  name: string;
+  diffuseRgba: [number, number, number, number];
+  textureSha256s: string[];
+  sourceFaces: number;
+  outputFaces: number;
 }
 
 export interface VerifiedQuadRemesh {
@@ -28,9 +38,9 @@ export interface VerifiedQuadRemesh {
   byteSize: number;
   sourceVersionId: string;
   targetFaces: number;
-  /** The whole report's aggregate (sum across every object for schema v3). */
+  /** The whole report's aggregate (sum across every object for schema v3/v4). */
   report: QuadRemeshObjectEvidence & { blenderVersion: string };
-  /** One entry per remeshed object; always at least one. Only schema v3 can report more
+  /** One entry per remeshed object; always at least one. Only schema v3/v4 can report more
    *  than one — a v1/v2 report is exactly this same aggregate as its single object. */
   objects: QuadRemeshObjectEvidence[];
 }
@@ -50,12 +60,13 @@ export function parseQuadTargetFaces(value: string): QuadTargetFaces {
     : { ok: false };
 }
 
-/** One object's face counts + UV evidence, shared by the v1/v2 whole report and every
- *  schema v3 per_object entry. `hasUvFields` is false only for schema v1, which predates UV
+/** One object's face counts + UV/material evidence, shared by the v1/v2 whole report and every
+ *  schema v3/v4 per_object entry. `hasUvFields` is false only for schema v1, which predates UV
  *  transfer entirely and carries no such evidence one way or the other. */
 function parseObjectEvidence(
   source: Record<string, unknown>,
   hasUvFields: boolean,
+  hasMaterialFields: boolean,
   faceUpperBound: number,
   vertexUpperBound: number,
 ): QuadRemeshObjectEvidence | null {
@@ -96,6 +107,8 @@ function parseObjectEvidence(
       uvCoordinates: null,
       uvBounds: null,
       uvTransfer: null,
+      materials: null,
+      materialTransfer: null,
     };
   }
 
@@ -125,6 +138,63 @@ function parseObjectEvidence(
   );
   if (!uvEvidenceValid) return null;
 
+  let materials: QuadRemeshMaterialEvidence[] | null = null;
+  let materialTransfer: QuadRemeshObjectEvidence["materialTransfer"] = null;
+  if (hasMaterialFields) {
+    const rawMaterials = source.materials;
+    const rawTransfer = source.material_transfer;
+    if (!Array.isArray(rawMaterials) || rawMaterials.length > 64) return null;
+    const parsed: QuadRemeshMaterialEvidence[] = [];
+    for (const raw of rawMaterials) {
+      const material = record(raw);
+      const rgba = material?.diffuse_rgba;
+      const digests = material?.texture_sha256s;
+      const sourceFaces = material?.source_faces;
+      const outputFaces = material?.output_faces;
+      if (
+        !material
+        || typeof material.name !== "string"
+        || material.name.length < 1
+        || material.name.length > 200
+        || !Array.isArray(rgba)
+        || rgba.length !== 4
+        || rgba.some((value) => typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1)
+        || !Array.isArray(digests)
+        || digests.length > 32
+        || digests.some((value) => typeof value !== "string" || !SHA256.test(value))
+        || new Set(digests).size !== digests.length
+        || [...digests].sort().some((value, index) => value !== digests[index])
+        || !Number.isSafeInteger(sourceFaces)
+        || (sourceFaces as number) < 0
+        || (sourceFaces as number) > 300_000
+        || !Number.isSafeInteger(outputFaces)
+        || (outputFaces as number) < 0
+        || (outputFaces as number) > 200_000
+      ) return null;
+      parsed.push({
+        name: material.name,
+        diffuseRgba: rgba as [number, number, number, number],
+        textureSha256s: digests as string[],
+        sourceFaces: sourceFaces as number,
+        outputFaces: outputFaces as number,
+      });
+    }
+    const expectedTransfer = parsed.length === 0
+      ? "none"
+      : parsed.length === 1
+        ? "single_slot_preserved"
+        : "nearest_source_polygon";
+    if (rawTransfer !== expectedTransfer) return null;
+    if (parsed.length > 0 && parsed.reduce((total, material) => total + material.outputFaces, 0) !== faces) {
+      return null;
+    }
+    if (parsed.some((material) => material.textureSha256s.length > 0) && sourceUvLayers === 0) {
+      return null;
+    }
+    materials = parsed;
+    materialTransfer = expectedTransfer;
+  }
+
   const name = source.name;
   return {
     name: typeof name === "string" && name.length > 0 ? name : null,
@@ -139,12 +209,14 @@ function parseObjectEvidence(
     uvCoordinates: uvCoordinates as number,
     uvBounds: Array.isArray(uvBounds) ? (uvBounds as [number, number, number, number]) : null,
     uvTransfer: source.uv_transfer as "none" | "active_surface_projected",
+    materials,
+    materialTransfer,
   };
 }
 
 /** Bind the mobile download surface to the exact immutable version, request and sandbox report.
  * QuadriFlow is quad-dominant rather than guaranteed all-quad, so a valid ratio may be below 1.
- * A schema v3 scene result carries one evidence entry per remeshed object; every entry (and the
+ * A schema v3/v4 scene result carries one evidence entry per remeshed object; every entry (and the
  * aggregate's cross-sum against them) is verified, not just the first. */
 export function verifiedQuadRemeshJob(
   job: Job,
@@ -165,10 +237,10 @@ export function verifiedQuadRemeshJob(
   if (!result || !report) return null;
 
   const schemaVersion = report.schema_version;
-  if (schemaVersion !== 1 && schemaVersion !== 2 && schemaVersion !== 3) return null;
+  if (schemaVersion !== 1 && schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4) return null;
 
   let objects: QuadRemeshObjectEvidence[];
-  if (schemaVersion === 3) {
+  if (schemaVersion === 3 || schemaVersion === 4) {
     const objectCount = report.objects;
     const perObjectRaw = report.per_object;
     if (
@@ -183,13 +255,19 @@ export function verifiedQuadRemeshJob(
     for (const entry of perObjectRaw) {
       const entryRecord = record(entry);
       if (!entryRecord) return null;
-      const evidence = parseObjectEvidence(entryRecord, true, 200_000, 1_000_000);
+      const evidence = parseObjectEvidence(
+        entryRecord,
+        true,
+        schemaVersion === 4,
+        200_000,
+        1_000_000,
+      );
       if (!evidence || evidence.name === null || seenNames.has(evidence.name)) return null;
       seenNames.add(evidence.name);
       parsed.push(evidence);
     }
     objects = parsed;
-    const aggregate = parseObjectEvidence(report, false, 12_800_000, 64_000_000);
+    const aggregate = parseObjectEvidence(report, false, false, 12_800_000, 64_000_000);
     if (!aggregate) return null;
     const sum = (key: "faces" | "quadFaces" | "triangleFaces" | "otherFaces" | "vertices") =>
       objects.reduce((total, entry) => total + entry[key], 0);
@@ -201,7 +279,7 @@ export function verifiedQuadRemeshJob(
       || aggregate.vertices !== sum("vertices")
     ) return null;
   } else {
-    const whole = parseObjectEvidence(report, schemaVersion === 2, 200_000, 1_000_000);
+    const whole = parseObjectEvidence(report, schemaVersion === 2, false, 200_000, 1_000_000);
     if (!whole) return null;
     objects = [whole];
   }
@@ -260,6 +338,8 @@ export function verifiedQuadRemeshJob(
       uvCoordinates: objects.length === 1 ? objects[0]!.uvCoordinates : null,
       uvBounds: objects.length === 1 ? objects[0]!.uvBounds : null,
       uvTransfer: objects.length === 1 ? objects[0]!.uvTransfer : null,
+      materials: objects.length === 1 ? objects[0]!.materials : null,
+      materialTransfer: objects.length === 1 ? objects[0]!.materialTransfer : null,
     },
     objects,
   };

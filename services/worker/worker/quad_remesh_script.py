@@ -20,6 +20,7 @@ _SYSTEM_DIST_PACKAGES = "/usr/lib/python3/dist-packages"
 if _SYSTEM_DIST_PACKAGES not in sys.path:
     sys.path.append(_SYSTEM_DIST_PACKAGES)
 import numpy as np  # noqa: E402
+from mathutils.bvhtree import BVHTree  # type: ignore[import-not-found]  # noqa: E402
 
 WORK = Path("/work")
 SOURCE = WORK / "input.glb"
@@ -102,7 +103,56 @@ def _mesh_stats(obj: Any) -> dict[str, object]:
     }
 
 
-def _object_report(name: str, stats: dict[str, object], source_uv_layers: int) -> dict[str, object]:
+def _packed_image_sha256(image: Any) -> str:
+    packed = getattr(image, "packed_file", None)
+    if packed is None:
+        raise RuntimeError("quad-remesh material references an unpacked texture")
+    return hashlib.sha256(bytes(packed.data)).hexdigest()
+
+
+def _material_evidence(obj: Any) -> list[dict[str, object]]:
+    evidence: list[dict[str, object]] = []
+    for material in obj.data.materials:
+        if material is None:
+            raise RuntimeError("quad-remesh source has an empty material slot")
+        texture_sha256s: set[str] = set()
+        if material.use_nodes and material.node_tree is not None:
+            for node in material.node_tree.nodes:
+                image = getattr(node, "image", None)
+                if image is not None:
+                    texture_sha256s.add(_packed_image_sha256(image))
+        diffuse = [round(float(value), 6) for value in material.diffuse_color]
+        if len(diffuse) != 4 or not all(math.isfinite(value) for value in diffuse):
+            raise RuntimeError("quad-remesh material has an invalid diffuse colour")
+        evidence.append(
+            {
+                "name": str(material.name),
+                "diffuse_rgba": diffuse,
+                "texture_sha256s": sorted(texture_sha256s),
+            }
+        )
+    return evidence
+
+
+def _material_face_counts(obj: Any) -> list[int]:
+    counts = [0] * len(obj.data.materials)
+    if not counts:
+        return counts
+    for polygon in obj.data.polygons:
+        material_index = int(polygon.material_index)
+        if not 0 <= material_index < len(counts):
+            raise RuntimeError("quad-remesh polygon material index is outside its slots")
+        counts[material_index] += 1
+    return counts
+
+
+def _object_report(
+    name: str,
+    stats: dict[str, object],
+    source_uv_layers: int,
+    source_materials: list[dict[str, object]],
+    source_material_faces: list[int],
+) -> dict[str, object]:
     output_uv_layers = stats["uv_layers"]
     output_uv_coordinates = stats["uv_coordinates"]
     if not isinstance(output_uv_layers, int) or not isinstance(output_uv_coordinates, int):
@@ -115,7 +165,37 @@ def _object_report(name: str, stats: dict[str, object], source_uv_layers: int) -
         if output_uv_layers != 0 or output_uv_coordinates != 0:
             raise RuntimeError("quad-remesh invented UV data for an untextured source")
         uv_transfer = "none"
-    return {"name": name, "source_uv_layers": source_uv_layers, "uv_transfer": uv_transfer, **stats}
+    materials = _material_evidence(bpy.data.objects[name])
+    if materials != source_materials:
+        raise RuntimeError("quad-remesh did not preserve the source material package")
+    if any(material["texture_sha256s"] for material in materials) and source_uv_layers == 0:
+        raise RuntimeError("quad-remesh cannot package a texture without source UVs")
+    output_material_faces = _material_face_counts(bpy.data.objects[name])
+    if len(source_material_faces) != len(materials):
+        raise RuntimeError("quad-remesh source material assignment evidence is inconsistent")
+    materials = [
+        {
+            **material,
+            "source_faces": source_material_faces[index],
+            "output_faces": output_material_faces[index],
+        }
+        for index, material in enumerate(materials)
+    ]
+    material_transfer = (
+        "none"
+        if not materials
+        else "single_slot_preserved"
+        if len(materials) == 1
+        else "nearest_source_polygon"
+    )
+    return {
+        "name": name,
+        "source_uv_layers": source_uv_layers,
+        "uv_transfer": uv_transfer,
+        "materials": materials,
+        "material_transfer": material_transfer,
+        **stats,
+    }
 
 
 def _report(per_object: list[dict[str, object]], target_faces: int) -> dict[str, object]:
@@ -124,7 +204,7 @@ def _report(per_object: list[dict[str, object]], target_faces: int) -> dict[str,
 
     faces = total("faces")
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "operation": "quad_remesh",
         "blender_version": bpy.app.version_string,
         "target_faces": target_faces,
@@ -159,7 +239,7 @@ def _import_source() -> list[Any]:
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
     if not hasattr(np, "bool"):
         np.__dict__["bool"] = np.bool_
-    result = bpy.ops.import_scene.gltf(filepath=str(SOURCE))
+    result = bpy.ops.import_scene.gltf(filepath=str(SOURCE), import_pack_images=True)
     if "FINISHED" not in result:
         raise RuntimeError("Blender did not import the validated GLB")
     return _mesh_objects()
@@ -184,15 +264,35 @@ def _transfer_active_uv(source: Any, remeshed: Any) -> None:
         raise RuntimeError("Blender did not apply the fixed active-UV transfer")
 
 
+def _transfer_material_indices(source: Any, remeshed: Any) -> None:
+    tree = BVHTree.FromPolygons(
+        [vertex.co.copy() for vertex in source.data.vertices],
+        [list(polygon.vertices) for polygon in source.data.polygons],
+        all_triangles=False,
+    )
+    for polygon in remeshed.data.polygons:
+        nearest = tree.find_nearest(polygon.center)
+        if nearest is None or nearest[2] is None:
+            raise RuntimeError("quad-remesh could not project a source material index")
+        source_index = int(nearest[2])
+        material_index = int(source.data.polygons[source_index].material_index)
+        if not 0 <= material_index < len(remeshed.data.materials):
+            raise RuntimeError("quad-remesh source material index is outside its slots")
+        polygon.material_index = material_index
+
+
 def _remesh_one(obj: Any, target_faces: int) -> dict[str, object]:
     """Quadriflow-remesh one mesh object in place; its world transform is untouched."""
     source_uv_layers = len(obj.data.uv_layers)
-    uv_source = None
-    if source_uv_layers:
-        uv_source = obj.copy()
-        uv_source.data = obj.data.copy()
-        uv_source.name = f"{obj.name}.SovaUVSource"
-        bpy.context.collection.objects.link(uv_source)
+    source_material_slots = list(obj.data.materials)
+    source_materials = _material_evidence(obj)
+    source_material_faces = _material_face_counts(obj)
+    transfer_source = None
+    if source_uv_layers or len(source_material_slots) > 1:
+        transfer_source = obj.copy()
+        transfer_source.data = obj.data.copy()
+        transfer_source.name = f"{obj.name}.SovaSurfaceSource"
+        bpy.context.collection.objects.link(transfer_source)
 
     view_layer = bpy.context.view_layer
     bpy.ops.object.select_all(action="DESELECT")
@@ -212,15 +312,27 @@ def _remesh_one(obj: Any, target_faces: int) -> dict[str, object]:
     if "FINISHED" not in result:
         raise RuntimeError("Blender's QuadriFlow remesh did not finish")
 
-    if uv_source is not None:
-        _transfer_active_uv(uv_source, obj)
-        source_mesh = uv_source.data
-        bpy.data.objects.remove(uv_source, do_unlink=True)
+    obj.data.materials.clear()
+    for material in source_material_slots:
+        obj.data.materials.append(material)
+    if transfer_source is not None and source_uv_layers:
+        _transfer_active_uv(transfer_source, obj)
+    if transfer_source is not None and len(source_material_slots) > 1:
+        _transfer_material_indices(transfer_source, obj)
+    if transfer_source is not None:
+        source_mesh = transfer_source.data
+        bpy.data.objects.remove(transfer_source, do_unlink=True)
         bpy.data.meshes.remove(source_mesh)
     stats = _mesh_stats(obj)
     if stats["faces"] == 0:
         raise RuntimeError("quad-remesh produced an empty mesh")
-    return _object_report(obj.name, stats, source_uv_layers)
+    return _object_report(
+        obj.name,
+        stats,
+        source_uv_layers,
+        source_materials,
+        source_material_faces,
+    )
 
 
 def _remesh(target_faces: int) -> None:
@@ -249,7 +361,8 @@ def _remesh(target_faces: int) -> None:
         mesh_smooth_type="FACE",
         add_leaf_bones=False,
         bake_anim=False,
-        embed_textures=False,
+        path_mode="COPY",
+        embed_textures=True,
     )
     REPORT.write_text(
         json.dumps(_report(per_object, target_faces), sort_keys=True),
@@ -259,19 +372,32 @@ def _remesh(target_faces: int) -> None:
 
 def _verify(target_faces: int) -> None:
     source_objects = _import_source()
-    source_uv_by_name = {obj.name: len(obj.data.uv_layers) for obj in source_objects}
+    source_evidence = {
+        obj.name: (
+            len(obj.data.uv_layers),
+            _material_evidence(obj),
+            _material_face_counts(obj),
+        )
+        for obj in source_objects
+    }
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
     if not hasattr(np, "bool"):
         np.__dict__["bool"] = np.bool_
-    result = bpy.ops.import_scene.fbx(filepath=str(OUTPUT))
+    result = bpy.ops.import_scene.fbx(filepath=str(OUTPUT), use_image_search=False)
     if "FINISHED" not in result:
         raise RuntimeError("Blender did not reopen its own quad-remesh output")
     reopened = _mesh_objects()
-    if {obj.name for obj in reopened} != set(source_uv_by_name):
+    if {obj.name for obj in reopened} != set(source_evidence):
         raise RuntimeError("quad-remesh output does not name the same objects as the source")
     per_object = [
-        _object_report(obj.name, _mesh_stats(obj), source_uv_by_name[obj.name])
+        _object_report(
+            obj.name,
+            _mesh_stats(obj),
+            source_evidence[obj.name][0],
+            source_evidence[obj.name][1],
+            source_evidence[obj.name][2],
+        )
         for obj in reopened
     ]
     VERIFY.write_text(

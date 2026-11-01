@@ -17,8 +17,17 @@ def _object(
     quad_faces: int = 1900,
     source_uv_layers: int = 0,
     uv_coordinates: int = 0,
+    materials: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     has_uv = source_uv_layers > 0
+    material_evidence = [
+        {
+            **material,
+            "source_faces": material.get("source_faces", faces),
+            "output_faces": material.get("output_faces", faces),
+        }
+        for material in (materials or [])
+    ]
     return {
         "name": name,
         "faces": faces,
@@ -32,6 +41,14 @@ def _object(
         "uv_coordinates": uv_coordinates if has_uv else 0,
         "uv_bounds": [0.0, 0.0, 1.0, 1.0] if has_uv else None,
         "uv_transfer": "active_surface_projected" if has_uv else "none",
+        "materials": material_evidence,
+        "material_transfer": (
+            "none"
+            if not materials
+            else "single_slot_preserved"
+            if len(materials) == 1
+            else "nearest_source_polygon"
+        ),
     }
 
 
@@ -43,7 +60,7 @@ def _report(
     script = Path(quad_remesh.__file__).with_name("quad_remesh_script.py")
     objects = per_object if per_object is not None else [_object()]
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "operation": "quad_remesh",
         "blender_version": "4.3.3",
         "target_faces": target_faces,
@@ -124,6 +141,47 @@ def test_remesh_aggregates_multiple_objects_and_preserves_distinct_uv_state(
     names = {entry.name: entry for entry in result.report.per_object}
     assert names["Textured"].uv_transfer == "active_surface_projected"
     assert names["Plain"].uv_transfer == "none"
+
+
+def test_remesh_report_preserves_material_and_embedded_texture_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "model.glb"
+    source.write_bytes(b"glTF" + b"\0" * 32)
+    output = tmp_path / "model.fbx"
+    texture = "a" * 64
+    materials = [
+        {
+            "name": "Paint",
+            "diffuse_rgba": [0.2, 0.4, 0.6, 1.0],
+            "texture_sha256s": [texture],
+            "source_faces": 1980,
+            "output_faces": 1980,
+        }
+    ]
+    textured = _object(
+        "Textured",
+        source_uv_layers=1,
+        uv_coordinates=2010,
+        materials=materials,
+    )
+
+    def fake_run(_module: str, args: list[str], **_kwargs: Any) -> sandbox.SandboxResult:
+        workdir = Path(args[0])
+        report = _report(workdir / "input.glb", per_object=[textured])
+        (workdir / "output.fbx").write_bytes(b"Kaydara FBX Binary" + b"\0" * 32)
+        (workdir / "report.json").write_text(json.dumps(report))
+        (workdir / "verify.json").write_text(json.dumps(report))
+        return sandbox.SandboxResult(ok=True, output={"ok": True})
+
+    monkeypatch.setattr(sandbox, "run", fake_run)
+    result = quad_remesh.remesh_quads(source, output, 2000)
+
+    assert result.ok and result.report is not None
+    evidence = result.report.per_object[0]
+    assert evidence.material_transfer == "single_slot_preserved"
+    assert evidence.materials[0].name == "Paint"
+    assert evidence.materials[0].texture_sha256s == [texture]
 
 
 def test_remesh_rejects_reopen_mismatch_and_removes_no_external_output(
@@ -287,6 +345,33 @@ def test_parent_rejects_unsafe_child_attestation(tmp_path: Path) -> None:
         quad_remesh.QuadRemeshReport.model_validate(report)
     report = _report(source, per_object=[_object("A"), _object("A")])
     with pytest.raises(ValueError, match="not unique"):
+        quad_remesh.QuadRemeshReport.model_validate(report)
+    report = _report(source)
+    report["per_object"][0]["materials"] = [
+        {
+            "name": "Paint",
+            "diffuse_rgba": [1.0, 1.0, 1.0, 1.0],
+            "texture_sha256s": [],
+            "source_faces": 1980,
+            "output_faces": 1980,
+        }
+    ]
+    with pytest.raises(ValueError, match="material transfer"):
+        quad_remesh.QuadRemeshReport.model_validate(report)
+    report = _report(source)
+    report["per_object"][0].update(
+        materials=[
+            {
+                "name": "Paint",
+                "diffuse_rgba": [1.0, 1.0, 1.0, 1.0],
+                "texture_sha256s": ["a" * 64],
+                "source_faces": 1980,
+                "output_faces": 1980,
+            }
+        ],
+        material_transfer="single_slot_preserved",
+    )
+    with pytest.raises(ValueError, match="requires source UVs"):
         quad_remesh.QuadRemeshReport.model_validate(report)
 
 

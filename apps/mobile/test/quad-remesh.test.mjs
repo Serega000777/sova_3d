@@ -198,6 +198,58 @@ test("mobile verifies a schema v3 single-object report and a multi-object scene"
   assert.equal(verifiedQuadRemeshJob(duplicateNames, versionId, 4000), null);
 });
 
+test("mobile verifies schema v4 material slots and embedded texture evidence", () => {
+  const texture = "c".repeat(64);
+  const object = {
+    name: "Painted",
+    faces: 4000,
+    quad_faces: 3800,
+    triangle_faces: 200,
+    other_faces: 0,
+    vertices: 4200,
+    quad_ratio: 0.95,
+    source_uv_layers: 1,
+    uv_layers: 1,
+    uv_coordinates: 16000,
+    uv_bounds: [0, 0, 1, 1],
+    uv_transfer: "active_surface_projected",
+    materials: [{
+      name: "Paint",
+      diffuse_rgba: [0.2, 0.4, 0.6, 1],
+      texture_sha256s: [texture],
+      source_faces: 4000,
+      output_faces: 4000,
+    }],
+    material_transfer: "single_slot_preserved",
+  };
+  const v4 = succeededJob({
+    report: { schema_version: 4, objects: 1, per_object: [object] },
+  });
+  for (const field of ["source_uv_layers", "uv_layers", "uv_coordinates", "uv_bounds", "uv_transfer"]) {
+    delete v4.result.report[field];
+  }
+  const verified = verifiedQuadRemeshJob(v4, versionId, 4000);
+  assert.ok(verified);
+  assert.equal(verified.report.materialTransfer, "single_slot_preserved");
+  assert.deepEqual(verified.report.materials?.[0].textureSha256s, [texture]);
+
+  const wrongTransfer = structuredClone(v4);
+  wrongTransfer.result.report.per_object[0].material_transfer = "none";
+  assert.equal(verifiedQuadRemeshJob(wrongTransfer, versionId, 4000), null);
+
+  const missingAssignment = structuredClone(v4);
+  missingAssignment.result.report.per_object[0].materials[0].output_faces = 3999;
+  assert.equal(verifiedQuadRemeshJob(missingAssignment, versionId, 4000), null);
+
+  const missingUv = structuredClone(v4);
+  missingUv.result.report.per_object[0].source_uv_layers = 0;
+  missingUv.result.report.per_object[0].uv_layers = 0;
+  missingUv.result.report.per_object[0].uv_coordinates = 0;
+  missingUv.result.report.per_object[0].uv_bounds = null;
+  missingUv.result.report.per_object[0].uv_transfer = "none";
+  assert.equal(verifiedQuadRemeshJob(missingUv, versionId, 4000), null);
+});
+
 test("mobile exposes real QuadriFlow as a separate honest FBX action", () => {
   assert.match(project, /client\.createQuadRemesh\(/);
   assert.match(project, /verifiedQuadRemeshJob\(job, versionId, targetFaces\)/);
@@ -206,7 +258,8 @@ test("mobile exposes real QuadriFlow as a separate honest FBX action", () => {
   assert.match(sheet, /Quad · FBX/);
   assert.match(sheet, /onRunQuad\(parsedQuadTarget\.value\)/);
   assert.match(sheet, /проецирует активную UV-карту/);
-  assert.match(sheet, /Швы не перестраиваются, покраска не перепекается/);
+  assert.match(sheet, /сохраняет material slots с встроенными исходными текстурами/);
+  assert.match(sheet, /quadResult\.report\.materials/);
   assert.match(sheet, /не обещание точного числа или 100% quad/);
   assert.match(sheet, /quadResult\.report\.quadRatio/);
   assert.match(sheet, /active map was surface-projected/);
