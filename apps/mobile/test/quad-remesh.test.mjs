@@ -105,6 +105,53 @@ test("mobile accepts only the exact version-bound FBX and sandbox report", () =>
   assert.equal(verifiedQuadRemeshJob(succeededJob({ report: { uv_bounds: [1, 0, 0, 1] } }), versionId, 4000), null);
 });
 
+test("mobile verifies a schema v3 single-object report and leaves multi-object unverified", () => {
+  const v3Object = {
+    name: "Part",
+    faces: 4000,
+    quad_faces: 3800,
+    triangle_faces: 200,
+    other_faces: 0,
+    vertices: 4200,
+    quad_ratio: 0.95,
+    source_uv_layers: 1,
+    uv_layers: 1,
+    uv_coordinates: 16000,
+    uv_bounds: [0, 0, 1, 1],
+    uv_transfer: "active_surface_projected",
+  };
+  const v3Single = succeededJob({
+    report: { schema_version: 3, objects: 1, per_object: [v3Object] },
+  });
+  delete v3Single.result.report.source_uv_layers;
+  delete v3Single.result.report.uv_layers;
+  delete v3Single.result.report.uv_coordinates;
+  delete v3Single.result.report.uv_bounds;
+  delete v3Single.result.report.uv_transfer;
+  const verifiedV3 = verifiedQuadRemeshJob(v3Single, versionId, 4000);
+  assert.ok(verifiedV3);
+  assert.equal(verifiedV3.report.faces, 4000);
+  assert.equal(verifiedV3.report.uvTransfer, "active_surface_projected");
+
+  const v3Multi = succeededJob({
+    report: {
+      schema_version: 3,
+      objects: 2,
+      per_object: [v3Object, { ...v3Object, name: "Copy" }],
+      faces: 8000,
+      quad_faces: 7600,
+      triangle_faces: 400,
+      vertices: 8400,
+    },
+  });
+  delete v3Multi.result.report.source_uv_layers;
+  delete v3Multi.result.report.uv_layers;
+  delete v3Multi.result.report.uv_coordinates;
+  delete v3Multi.result.report.uv_bounds;
+  delete v3Multi.result.report.uv_transfer;
+  assert.equal(verifiedQuadRemeshJob(v3Multi, versionId, 4000), null);
+});
+
 test("mobile exposes real QuadriFlow as a separate honest FBX action", () => {
   assert.match(project, /client\.createQuadRemesh\(/);
   assert.match(project, /verifiedQuadRemeshJob\(job, versionId, targetFaces\)/);

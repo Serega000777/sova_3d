@@ -3451,22 +3451,30 @@ export default function ProjectPage() {
       report?: {
         quad_ratio?: number;
         faces?: number;
+        objects?: number;
+        // v1/v2 (single mesh) carried this at the top level; v3 moved it per-object.
         uv_transfer?: "none" | "active_surface_projected";
+        per_object?: { uv_transfer?: "none" | "active_surface_projected" }[];
       };
     };
     const download = await client.download(result.asset_id);
     setDownloads((d) => [{ format: "fbx (quad)", url: download.url }, ...d]);
     if (result.report?.quad_ratio != null && result.report.faces != null) {
       const percent = Math.round(result.report.quad_ratio * 100);
-      const uv = result.report.uv_transfer === "active_surface_projected"
+      const objects = result.report.objects ?? 1;
+      const uvTransfer = objects === 1
+        ? result.report.uv_transfer ?? result.report.per_object?.[0]?.uv_transfer
+        : undefined; // multiple objects can each have their own UV state; no single answer
+      const uv = uvTransfer === "active_surface_projected"
         ? (ru ? " Активная UV-карта перенесена проекцией." : " The active UV map was projected onto the new mesh.")
-        : result.report.uv_transfer === "none"
+        : uvTransfer === "none"
           ? (ru ? " У исходника не было UV-карты." : " The source had no UV map.")
           : "";
+      const objectsNote = objects > 1 ? (ru ? ` (${objects} объекта)` : ` (${objects} objects)`) : "";
       setNotice(
         ru
-          ? `Готово: ${result.report.faces} граней, ${percent}% quad.${uv}`
-          : `Done: ${result.report.faces} faces, ${percent}% quad.${uv}`,
+          ? `Готово: ${result.report.faces} граней${objectsNote}, ${percent}% quad.${uv}`
+          : `Done: ${result.report.faces} faces${objectsNote}, ${percent}% quad.${uv}`,
       );
     }
   }
