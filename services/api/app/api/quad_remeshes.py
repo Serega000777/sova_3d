@@ -1,5 +1,7 @@
-"""Quad-dominant retopology (P1 gap: smart low-poly preset) for a finalized single-mesh
-version, exported as FBX via the same fixed sandboxed Blender boundary as the handoff."""
+"""Quad-dominant retopology (P1 gap: smart low-poly preset) for a finalized version,
+exported as FBX via the same fixed sandboxed Blender boundary as the handoff. An explicit
+multi-object scene remeshes every visible object independently, same as the Blender
+handoff's scene path."""
 
 from __future__ import annotations
 
@@ -13,7 +15,7 @@ from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
 from app.models.versioning import VersionState
-from app.services import jobs, projects
+from app.services import jobs, projects, scenes
 from app.services.assets import model_asset_of, preview_asset_of
 from app.services.authz import require_workspace_role
 
@@ -45,14 +47,18 @@ def create_quad_remesh(
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
     if version.state is not VersionState.finalized:
         raise ValidationFailedError("quad-remesh requires a finalized immutable version")
-    if isinstance((version.provenance or {}).get("scene"), dict):
-        raise ValidationFailedError(
-            "quad-remesh currently supports one canonical model; export a multi-object "
-            "scene as GLB until scene-preserving quad-remesh is available"
-        )
-    source = preview_asset_of(db, version) or model_asset_of(db, version)
-    if source is None or source.format is None:
-        raise ValidationFailedError("version has no model asset for quad-remesh")
+    provenance = version.provenance or {}
+    has_scene = "scene" in provenance
+    if has_scene and not scenes.has_explicit_scene(version):
+        raise ValidationFailedError("the scene schema is not supported for quad-remesh")
+    if has_scene:
+        resolved = scenes.resolve_scene(db, version=version, workspace_id=project.workspace_id)
+        if not any(node["kind"] == "object" and node["effective_visible"] for node in resolved):
+            raise ValidationFailedError("the scene has no visible geometry for quad-remesh")
+    else:
+        source = preview_asset_of(db, version) or model_asset_of(db, version)
+        if source is None or source.format is None:
+            raise ValidationFailedError("version has no model asset for quad-remesh")
 
     job = jobs.enqueue(
         db,

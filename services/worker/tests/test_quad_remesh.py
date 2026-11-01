@@ -10,24 +10,55 @@ import pytest
 from worker import blender_runner, quad_remesh, quad_remesh_child, sandbox
 
 
-def _report(source: Path, target_faces: int = 2000) -> dict[str, Any]:
-    script = Path(quad_remesh.__file__).with_name("quad_remesh_script.py")
+def _object(
+    name: str = "Part",
+    *,
+    faces: int = 1980,
+    quad_faces: int = 1900,
+    source_uv_layers: int = 0,
+    uv_coordinates: int = 0,
+) -> dict[str, Any]:
+    has_uv = source_uv_layers > 0
     return {
-        "schema_version": 2,
+        "name": name,
+        "faces": faces,
+        "quad_faces": quad_faces,
+        "triangle_faces": faces - quad_faces,
+        "other_faces": 0,
+        "vertices": faces + 30,
+        "quad_ratio": round(quad_faces / faces, 4),
+        "source_uv_layers": source_uv_layers,
+        "uv_layers": 1 if has_uv else 0,
+        "uv_coordinates": uv_coordinates if has_uv else 0,
+        "uv_bounds": [0.0, 0.0, 1.0, 1.0] if has_uv else None,
+        "uv_transfer": "active_surface_projected" if has_uv else "none",
+    }
+
+
+def _report(
+    source: Path,
+    target_faces: int = 2000,
+    per_object: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    script = Path(quad_remesh.__file__).with_name("quad_remesh_script.py")
+    objects = per_object if per_object is not None else [_object()]
+    return {
+        "schema_version": 3,
         "operation": "quad_remesh",
         "blender_version": "4.3.3",
         "target_faces": target_faces,
-        "faces": 1980,
-        "quad_faces": 1900,
-        "triangle_faces": 80,
-        "other_faces": 0,
-        "vertices": 2010,
-        "quad_ratio": 0.9596,
-        "source_uv_layers": 0,
-        "uv_layers": 0,
-        "uv_coordinates": 0,
-        "uv_bounds": None,
-        "uv_transfer": "none",
+        "objects": len(objects),
+        "faces": sum(entry["faces"] for entry in objects),
+        "quad_faces": sum(entry["quad_faces"] for entry in objects),
+        "triangle_faces": sum(entry["triangle_faces"] for entry in objects),
+        "other_faces": sum(entry["other_faces"] for entry in objects),
+        "vertices": sum(entry["vertices"] for entry in objects),
+        "quad_ratio": round(
+            sum(entry["quad_faces"] for entry in objects)
+            / sum(entry["faces"] for entry in objects),
+            4,
+        ),
+        "per_object": objects,
         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "script_sha256": hashlib.sha256(script.read_bytes()).hexdigest(),
         "sandbox_network_interfaces": ["lo"],
@@ -67,6 +98,34 @@ def test_remesh_uses_fixed_sandbox_contract(
     assert observed["kwargs"]["input_path"].name == "input.glb"
 
 
+def test_remesh_aggregates_multiple_objects_and_preserves_distinct_uv_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "model.glb"
+    source.write_bytes(b"glTF" + b"\0" * 32)
+    output = tmp_path / "model.fbx"
+    textured = _object("Textured", source_uv_layers=1, uv_coordinates=2010)
+    plain = _object("Plain")
+
+    def fake_run(_module: str, args: list[str], **_kwargs: Any) -> sandbox.SandboxResult:
+        workdir = Path(args[0])
+        report = _report(workdir / "input.glb", per_object=[textured, plain])
+        (workdir / "output.fbx").write_bytes(b"Kaydara FBX Binary" + b"\0" * 32)
+        (workdir / "report.json").write_text(json.dumps(report))
+        (workdir / "verify.json").write_text(json.dumps(report))
+        return sandbox.SandboxResult(ok=True, output={"ok": True})
+
+    monkeypatch.setattr(sandbox, "run", fake_run)
+    result = quad_remesh.remesh_quads(source, output, 2000)
+
+    assert result.ok and result.report is not None
+    assert result.report.objects == 2
+    assert result.report.faces == textured["faces"] + plain["faces"]
+    names = {entry.name: entry for entry in result.report.per_object}
+    assert names["Textured"].uv_transfer == "active_surface_projected"
+    assert names["Plain"].uv_transfer == "none"
+
+
 def test_remesh_rejects_reopen_mismatch_and_removes_no_external_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -77,7 +136,7 @@ def test_remesh_rejects_reopen_mismatch_and_removes_no_external_output(
     def fake_run(_module: str, args: list[str], **_kwargs: Any) -> sandbox.SandboxResult:
         workdir = Path(args[0])
         report = _report(workdir / "input.glb")
-        changed = {**report, "faces": 1979}
+        changed = _report(workdir / "input.glb", per_object=[_object(faces=1979, quad_faces=1899)])
         (workdir / "output.fbx").write_bytes(b"Kaydara FBX Binary")
         (workdir / "report.json").write_text(json.dumps(report))
         (workdir / "verify.json").write_text(json.dumps(changed))
@@ -207,7 +266,7 @@ def test_parent_rejects_unsafe_child_attestation(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         quad_remesh.QuadRemeshReport.model_validate(report)
     report = _report(source)
-    report.update(
+    report["per_object"][0].update(
         source_uv_layers=1,
         uv_layers=0,
         uv_coordinates=0,
@@ -217,8 +276,17 @@ def test_parent_rejects_unsafe_child_attestation(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         quad_remesh.QuadRemeshReport.model_validate(report)
     report = _report(source)
-    report.update(uv_layers=1, uv_coordinates=4, uv_bounds=[0.0, 0.0, 1.0, 1.0])
+    report["per_object"][0].update(
+        uv_layers=1, uv_coordinates=4, uv_bounds=[0.0, 0.0, 1.0, 1.0]
+    )
     with pytest.raises(ValueError):
+        quad_remesh.QuadRemeshReport.model_validate(report)
+    report = _report(source)
+    report["faces"] += 1
+    with pytest.raises(ValueError, match="aggregate totals"):
+        quad_remesh.QuadRemeshReport.model_validate(report)
+    report = _report(source, per_object=[_object("A"), _object("A")])
+    with pytest.raises(ValueError, match="not unique"):
         quad_remesh.QuadRemeshReport.model_validate(report)
 
 

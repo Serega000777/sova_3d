@@ -31,34 +31,65 @@ def cleanup_keys(storage: S3Storage) -> Iterator[list[str]]:
         storage.delete(key)
 
 
-def _fake_pipeline(monkeypatch: pytest.MonkeyPatch, *, target_faces: int = 4000) -> None:
+def _object_report(name: str, faces: int) -> quad_remesh.QuadRemeshObjectReport:
+    return quad_remesh.QuadRemeshObjectReport(
+        name=name,
+        faces=faces,
+        quad_faces=faces - 50,
+        triangle_faces=50,
+        other_faces=0,
+        vertices=faces + 10,
+        quad_ratio=round((faces - 50) / faces, 4),
+        source_uv_layers=1,
+        uv_layers=1,
+        uv_coordinates=faces * 4,
+        uv_bounds=[0.0, 0.0, 1.0, 1.0],
+        uv_transfer="active_surface_projected",
+    )
+
+
+def _fake_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    object_names: list[str] | None = None,
+) -> None:
     def export_mesh(
         _source: Path, _source_format: str, _target: str, output: Path, **_kwargs: Any
     ) -> exporters.ExportOutcome:
         output.write_bytes(b"glTF" + b"\0" * 64)
         return exporters.ExportOutcome(ok=True, output_path=str(output))
 
+    def export_scene(
+        inputs: list[exporters.SceneMeshInput], target: str, output: Path, **_kwargs: Any
+    ) -> exporters.ExportOutcome:
+        assert target == "glb"
+        output.write_bytes(b"glTF" + b"\0" * 64)
+        return exporters.ExportOutcome(ok=True, output_path=str(output))
+
     def remesh(source: Path, output: Path, faces: int) -> quad_remesh.QuadRemeshOutcome:
         output.write_bytes(b"Kaydara FBX Binary" + b"\0" * 64)
         script = Path(quad_remesh.__file__).with_name("quad_remesh_script.py")
+        names = object_names or ["Part"]
+        per_object = [_object_report(name, faces - 20) for name in names]
         return quad_remesh.QuadRemeshOutcome(
             ok=True,
             report=quad_remesh.QuadRemeshReport(
-                schema_version=2,
+                schema_version=3,
                 operation="quad_remesh",
                 blender_version="4.3.3",
                 target_faces=faces,
-                faces=faces - 20,
-                quad_faces=faces - 100,
-                triangle_faces=80,
-                other_faces=0,
-                vertices=faces,
-                quad_ratio=0.95,
-                source_uv_layers=1,
-                uv_layers=1,
-                uv_coordinates=(faces - 20) * 4,
-                uv_bounds=[0.0, 0.0, 1.0, 1.0],
-                uv_transfer="active_surface_projected",
+                objects=len(per_object),
+                faces=sum(entry.faces for entry in per_object),
+                quad_faces=sum(entry.quad_faces for entry in per_object),
+                triangle_faces=sum(entry.triangle_faces for entry in per_object),
+                other_faces=sum(entry.other_faces for entry in per_object),
+                vertices=sum(entry.vertices for entry in per_object),
+                quad_ratio=round(
+                    sum(entry.quad_faces for entry in per_object)
+                    / sum(entry.faces for entry in per_object),
+                    4,
+                ),
+                per_object=per_object,
                 source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                 script_sha256=hashlib.sha256(script.read_bytes()).hexdigest(),
                 sandbox_network_interfaces=["lo"],
@@ -71,6 +102,7 @@ def _fake_pipeline(monkeypatch: pytest.MonkeyPatch, *, target_faces: int = 4000)
         )
 
     monkeypatch.setattr("app.jobs.quad_remesh.exporters.export_mesh", export_mesh)
+    monkeypatch.setattr("app.jobs.quad_remesh.exporters.export_scene", export_scene)
     monkeypatch.setattr("app.jobs.quad_remesh.quad_remesh.remesh_quads", remesh)
 
 
@@ -152,20 +184,121 @@ def test_quad_remesh_requires_editor_finalized_version_and_strict_body(
     )
     assert foreign.status_code == 404
 
-    scene_version = projects.create_version_internal(
-        db_session,
-        project_id=project.id,
-        parent_version_id=version.id,
-        label="Scene",
-        provenance={"scene": {"schema_version": 1, "nodes": []}},
-        assets={AssetRole.model: source.id},
-        finalize=True,
-        created_by=actor.user.id,
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {
+                    "id": "hidden",
+                    "name": "Hidden",
+                    "kind": "object",
+                    "asset_id": str(source.id),
+                    "visible": False,
+                }
+            ]
+        },
+        headers=actor.headers,
     )
-    scene_rejected = api_client.post(
-        f"/api/v1/models/{scene_version.id}/quad-remeshes", json={}, headers=actor.headers
+    assert scene.status_code == 201, scene.text
+    scene_empty_rejected = api_client.post(
+        f"/api/v1/models/{scene.json()['version_id']}/quad-remeshes",
+        json={},
+        headers=actor.headers,
     )
-    assert scene_rejected.status_code == 422
+    assert scene_empty_rejected.status_code == 422
+    assert "no visible geometry" in scene_empty_rejected.text
+
+
+def test_multi_object_scene_quad_remesh_preserves_every_visible_object(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, version, source = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(source.storage_key)
+    moved = [
+        [1.0, 0.0, 0.0, 40.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {"id": "part", "name": "Part", "kind": "object", "asset_id": str(source.id)},
+                {
+                    "id": "copy",
+                    "name": "Copy",
+                    "kind": "object",
+                    "instance_of": "part",
+                    "transform": moved,
+                },
+                {
+                    "id": "hidden",
+                    "name": "Hidden",
+                    "kind": "object",
+                    "instance_of": "part",
+                    "visible": False,
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+    scene_version_id = scene.json()["version_id"]
+    _fake_pipeline(monkeypatch, object_names=["Part", "Copy"])
+
+    accepted = api_client.post(
+        f"/api/v1/models/{scene_version_id}/quad-remeshes",
+        json={"target_faces": 4000},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    job = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert job is not None and job.status is JobStatus.succeeded, job.error if job else None
+    result = job.result or {}
+    assert result["report"]["objects"] == 2
+    made = db_session.get(Asset, uuid.UUID(result["asset_id"]))
+    assert made is not None
+    cleanup_keys.append(made.storage_key)
+
+
+def test_quad_remesh_rejects_scene_that_drops_a_visible_object(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, version, source = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(source.storage_key)
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {"id": "part", "name": "Part", "kind": "object", "asset_id": str(source.id)},
+                {"id": "copy", "name": "Copy", "kind": "object", "instance_of": "part"},
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+    _fake_pipeline(monkeypatch, object_names=["Part"])
+
+    accepted = api_client.post(
+        f"/api/v1/models/{scene.json()['version_id']}/quad-remeshes",
+        json={},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    job = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert job is not None and job.status is JobStatus.failed
+    assert (job.error or {})["code"] == "scene_structure_mismatch"
 
 
 def test_quad_remesh_idempotency_reuses_job(

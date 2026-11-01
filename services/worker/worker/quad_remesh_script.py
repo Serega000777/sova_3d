@@ -30,6 +30,7 @@ SCRIPT = Path("/runner/quad_remesh_script.py")
 MIN_TARGET_FACES = 100
 MAX_TARGET_FACES = 100_000
 MAX_INPUT_TRIANGLES = 300_000
+MAX_OBJECTS = 64
 
 
 def _sandbox_attestation() -> dict[str, object]:
@@ -101,9 +102,7 @@ def _mesh_stats(obj: Any) -> dict[str, object]:
     }
 
 
-def _report(
-    stats: dict[str, object], target_faces: int, source_uv_layers: int
-) -> dict[str, object]:
+def _object_report(name: str, stats: dict[str, object], source_uv_layers: int) -> dict[str, object]:
     output_uv_layers = stats["uv_layers"]
     output_uv_coordinates = stats["uv_coordinates"]
     if not isinstance(output_uv_layers, int) or not isinstance(output_uv_coordinates, int):
@@ -116,28 +115,46 @@ def _report(
         if output_uv_layers != 0 or output_uv_coordinates != 0:
             raise RuntimeError("quad-remesh invented UV data for an untextured source")
         uv_transfer = "none"
+    return {"name": name, "source_uv_layers": source_uv_layers, "uv_transfer": uv_transfer, **stats}
+
+
+def _report(per_object: list[dict[str, object]], target_faces: int) -> dict[str, object]:
+    def total(key: str) -> int:
+        return sum(int(entry[key]) for entry in per_object)  # type: ignore[call-overload]
+
+    faces = total("faces")
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "operation": "quad_remesh",
         "blender_version": bpy.app.version_string,
         "target_faces": target_faces,
-        "source_uv_layers": source_uv_layers,
-        "uv_transfer": uv_transfer,
+        "objects": len(per_object),
+        "faces": faces,
+        "quad_faces": total("quad_faces"),
+        "triangle_faces": total("triangle_faces"),
+        "other_faces": total("other_faces"),
+        "vertices": total("vertices"),
+        "quad_ratio": round(total("quad_faces") / faces, 4) if faces else 0.0,
+        "per_object": sorted(per_object, key=lambda entry: str(entry["name"])),
         "source_sha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
         "script_sha256": hashlib.sha256(SCRIPT.read_bytes()).hexdigest(),
-        **stats,
         **_sandbox_attestation(),
     }
 
 
-def _single_mesh_object() -> Any:
+def _mesh_objects() -> list[Any]:
     meshes = [obj for obj in bpy.data.objects if obj.type == "MESH"]
-    if len(meshes) != 1:
-        raise RuntimeError("quad-remesh accepts exactly one mesh object, not a multi-part scene")
-    return meshes[0]
+    if not meshes:
+        raise RuntimeError("quad-remesh source has no mesh object")
+    if len(meshes) > MAX_OBJECTS:
+        raise RuntimeError("quad-remesh source exceeds the fixed object-count bound")
+    # Stable, source-independent order: every fixed-script invocation on the same GLB
+    # must walk objects in the same sequence, or per-object stats would not line up
+    # between the package and verify passes.
+    return sorted(meshes, key=lambda obj: str(obj.name))
 
 
-def _import_source() -> Any:
+def _import_source() -> list[Any]:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
     if not hasattr(np, "bool"):
@@ -145,7 +162,7 @@ def _import_source() -> Any:
     result = bpy.ops.import_scene.gltf(filepath=str(SOURCE))
     if "FINISHED" not in result:
         raise RuntimeError("Blender did not import the validated GLB")
-    return _single_mesh_object()
+    return _mesh_objects()
 
 
 def _transfer_active_uv(source: Any, remeshed: Any) -> None:
@@ -167,23 +184,18 @@ def _transfer_active_uv(source: Any, remeshed: Any) -> None:
         raise RuntimeError("Blender did not apply the fixed active-UV transfer")
 
 
-def _remesh(target_faces: int) -> None:
-    if not MIN_TARGET_FACES <= target_faces <= MAX_TARGET_FACES:
-        raise RuntimeError("quad-remesh target_faces is outside the fixed bounds")
-    obj = _import_source()
-    triangle_count = sum(len(p.vertices) - 2 for p in obj.data.polygons if len(p.vertices) >= 3)
-    if not 0 < triangle_count <= MAX_INPUT_TRIANGLES:
-        raise RuntimeError("quad-remesh input exceeds the fixed triangle-count bound")
-
+def _remesh_one(obj: Any, target_faces: int) -> dict[str, object]:
+    """Quadriflow-remesh one mesh object in place; its world transform is untouched."""
     source_uv_layers = len(obj.data.uv_layers)
     uv_source = None
     if source_uv_layers:
         uv_source = obj.copy()
         uv_source.data = obj.data.copy()
-        uv_source.name = "SovaUVSource"
+        uv_source.name = f"{obj.name}.SovaUVSource"
         bpy.context.collection.objects.link(uv_source)
 
     view_layer = bpy.context.view_layer
+    bpy.ops.object.select_all(action="DESELECT")
     view_layer.objects.active = obj
     obj.select_set(True)
     try:
@@ -200,19 +212,36 @@ def _remesh(target_faces: int) -> None:
     if "FINISHED" not in result:
         raise RuntimeError("Blender's QuadriFlow remesh did not finish")
 
-    remeshed = obj
     if uv_source is not None:
-        _transfer_active_uv(uv_source, remeshed)
+        _transfer_active_uv(uv_source, obj)
         source_mesh = uv_source.data
         bpy.data.objects.remove(uv_source, do_unlink=True)
         bpy.data.meshes.remove(source_mesh)
-    stats = _mesh_stats(remeshed)
+    stats = _mesh_stats(obj)
     if stats["faces"] == 0:
         raise RuntimeError("quad-remesh produced an empty mesh")
+    return _object_report(obj.name, stats, source_uv_layers)
+
+
+def _remesh(target_faces: int) -> None:
+    if not MIN_TARGET_FACES <= target_faces <= MAX_TARGET_FACES:
+        raise RuntimeError("quad-remesh target_faces is outside the fixed bounds")
+    objects = _import_source()
+    triangle_count = sum(
+        len(p.vertices) - 2
+        for obj in objects
+        for p in obj.data.polygons
+        if len(p.vertices) >= 3
+    )
+    if not 0 < triangle_count <= MAX_INPUT_TRIANGLES:
+        raise RuntimeError("quad-remesh input exceeds the fixed triangle-count bound")
+
+    per_object = [_remesh_one(obj, target_faces) for obj in objects]
 
     bpy.ops.object.select_all(action="DESELECT")
-    remeshed.select_set(True)
-    view_layer.objects.active = remeshed
+    for obj in objects:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = objects[0]
     bpy.ops.export_scene.fbx(
         filepath=str(OUTPUT),
         use_selection=True,
@@ -223,14 +252,14 @@ def _remesh(target_faces: int) -> None:
         embed_textures=False,
     )
     REPORT.write_text(
-        json.dumps(_report(stats, target_faces, source_uv_layers), sort_keys=True),
+        json.dumps(_report(per_object, target_faces), sort_keys=True),
         encoding="utf-8",
     )
 
 
 def _verify(target_faces: int) -> None:
-    source = _import_source()
-    source_uv_layers = len(source.data.uv_layers)
+    source_objects = _import_source()
+    source_uv_by_name = {obj.name: len(obj.data.uv_layers) for obj in source_objects}
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
     if not hasattr(np, "bool"):
@@ -238,10 +267,15 @@ def _verify(target_faces: int) -> None:
     result = bpy.ops.import_scene.fbx(filepath=str(OUTPUT))
     if "FINISHED" not in result:
         raise RuntimeError("Blender did not reopen its own quad-remesh output")
-    obj = _single_mesh_object()
-    stats = _mesh_stats(obj)
+    reopened = _mesh_objects()
+    if {obj.name for obj in reopened} != set(source_uv_by_name):
+        raise RuntimeError("quad-remesh output does not name the same objects as the source")
+    per_object = [
+        _object_report(obj.name, _mesh_stats(obj), source_uv_by_name[obj.name])
+        for obj in reopened
+    ]
     VERIFY.write_text(
-        json.dumps(_report(stats, target_faces, source_uv_layers), sort_keys=True),
+        json.dumps(_report(per_object, target_faces), sort_keys=True),
         encoding="utf-8",
     )
 

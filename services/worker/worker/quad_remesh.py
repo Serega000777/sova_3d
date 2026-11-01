@@ -26,13 +26,10 @@ from worker import sandbox
 from worker.blender_handoff import _copy_regular, _read_regular
 
 
-class QuadRemeshReport(BaseModel):
+class QuadRemeshObjectReport(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
-    schema_version: int = Field(ge=2, le=2)
-    operation: str = Field(pattern=r"^quad_remesh$")
-    blender_version: str = Field(min_length=1, max_length=80)
-    target_faces: int = Field(ge=100, le=100_000)
+    name: str = Field(min_length=1, max_length=200)
     faces: int = Field(ge=1, le=200_000)
     quad_faces: int = Field(ge=0, le=200_000)
     triangle_faces: int = Field(ge=0, le=200_000)
@@ -44,17 +41,9 @@ class QuadRemeshReport(BaseModel):
     uv_coordinates: int = Field(ge=0, le=4_000_000)
     uv_bounds: list[float] | None = Field(default=None, min_length=4, max_length=4)
     uv_transfer: Literal["none", "active_surface_projected"]
-    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    script_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    sandbox_network_interfaces: list[Literal["lo"]] = Field(max_length=1)
-    sandbox_uid: int = Field(ge=65534, le=65534)
-    capability_effective: Literal["0000000000000000"]
-    capability_permitted: Literal["0000000000000000"]
-    capability_ambient: Literal["0000000000000000"]
-    no_new_privileges: Literal[True]
 
     @model_validator(mode="after")
-    def validate_uv_evidence(self) -> QuadRemeshReport:
+    def validate_uv_evidence(self) -> QuadRemeshObjectReport:
         if self.source_uv_layers == 0:
             if (
                 self.uv_layers != 0
@@ -73,6 +62,51 @@ class QuadRemeshReport(BaseModel):
             or self.uv_bounds[1] > self.uv_bounds[3]
         ):
             raise ValueError("quad-remesh UV transfer evidence is inconsistent")
+        return self
+
+
+class QuadRemeshReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    schema_version: int = Field(ge=3, le=3)
+    operation: str = Field(pattern=r"^quad_remesh$")
+    blender_version: str = Field(min_length=1, max_length=80)
+    target_faces: int = Field(ge=100, le=100_000)
+    objects: int = Field(ge=1, le=64)
+    faces: int = Field(ge=1, le=12_800_000)
+    quad_faces: int = Field(ge=0, le=12_800_000)
+    triangle_faces: int = Field(ge=0, le=12_800_000)
+    other_faces: int = Field(ge=0, le=12_800_000)
+    vertices: int = Field(ge=1, le=64_000_000)
+    quad_ratio: float = Field(ge=0, le=1)
+    per_object: list[QuadRemeshObjectReport] = Field(min_length=1, max_length=64)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    script_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sandbox_network_interfaces: list[Literal["lo"]] = Field(max_length=1)
+    sandbox_uid: int = Field(ge=65534, le=65534)
+    capability_effective: Literal["0000000000000000"]
+    capability_permitted: Literal["0000000000000000"]
+    capability_ambient: Literal["0000000000000000"]
+    no_new_privileges: Literal[True]
+
+    @model_validator(mode="after")
+    def validate_aggregate_matches_objects(self) -> QuadRemeshReport:
+        if len(self.per_object) != self.objects:
+            raise ValueError("quad-remesh objects count does not match per_object entries")
+        if (
+            self.faces != sum(entry.faces for entry in self.per_object)
+            or self.quad_faces != sum(entry.quad_faces for entry in self.per_object)
+            or self.triangle_faces != sum(entry.triangle_faces for entry in self.per_object)
+            or self.other_faces != sum(entry.other_faces for entry in self.per_object)
+            or self.vertices != sum(entry.vertices for entry in self.per_object)
+        ):
+            raise ValueError("quad-remesh aggregate totals do not match per_object entries")
+        expected_ratio = round(self.quad_faces / self.faces, 4) if self.faces else 0.0
+        if abs(self.quad_ratio - expected_ratio) > 1e-9:
+            raise ValueError("quad-remesh quad_ratio does not match the aggregate totals")
+        names = [entry.name for entry in self.per_object]
+        if len(set(names)) != len(names):
+            raise ValueError("quad-remesh per_object names are not unique")
         return self
 
 
@@ -104,7 +138,9 @@ def remesh_quads(
     *,
     limits: sandbox.SandboxLimits = QUAD_REMESH_LIMITS,
 ) -> QuadRemeshOutcome:
-    """Remesh one validated single-mesh GLB into quad-dominant topology, saved as FBX."""
+    """Remesh every mesh object (up to 64) in a validated GLB into quad-dominant topology,
+    each independently targeting `target_faces`, saved together as one FBX. World transforms
+    are untouched; only each object's own mesh data is rebuilt."""
 
     if source_glb.suffix.lower() != ".glb":
         return QuadRemeshOutcome(
