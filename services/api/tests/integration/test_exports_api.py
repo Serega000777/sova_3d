@@ -301,7 +301,7 @@ def test_latest_integrity_report_is_version_scoped_persisted_and_authorized(
     assert document.status_code == 200, document.text
     assert document.headers["content-type"] == "application/pdf"
     assert document.headers["cache-control"] == "private, no-store"
-    assert f'sova-integrity-{version.id}.pdf' in document.headers["content-disposition"]
+    assert f"sova-integrity-{version.id}.pdf" in document.headers["content-disposition"]
     assert document.content.startswith(b"%PDF-1.4")
     assert str(version.id).encode() in document.content
     assert str(job.id).encode() in document.content
@@ -452,3 +452,126 @@ def test_a_game_ready_export_carries_lods_uvs_and_a_collider(
     assert export_asset is not None and export_asset.format == "glb"
     assert export_asset.metadata_["game_ready"] is True
     cleanup_keys.append(export_asset.storage_key)
+
+
+def test_a_game_ready_scene_export_keeps_every_objects_own_lod_and_collider(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _, version, asset = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(asset.storage_key)
+    parent_moved = np.eye(4)
+    parent_moved[0, 3] = 100
+    child_moved = np.eye(4)
+    child_moved[0, 3] = 50
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {"id": "part_a", "name": "Crate A", "kind": "object", "asset_id": str(asset.id)},
+                {
+                    "id": "assembly",
+                    "name": "Assembly",
+                    "kind": "group",
+                    "transform": parent_moved.tolist(),
+                },
+                {
+                    "id": "part_b",
+                    "name": "Crate B",
+                    "kind": "object",
+                    "parent_id": "assembly",
+                    "instance_of": "part_a",
+                    "transform": child_moved.tolist(),
+                },
+                {
+                    "id": "hidden",
+                    "name": "Hidden",
+                    "kind": "group",
+                    "visible": False,
+                },
+                {
+                    "id": "part_hidden",
+                    "name": "Hidden crate",
+                    "kind": "object",
+                    "parent_id": "hidden",
+                    "instance_of": "part_a",
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+    scene_version = scene.json()["version_id"]
+
+    accepted = api_client.post(
+        f"/api/v1/models/{scene_version}/exports",
+        json={"format": "glb", "game": {"lod_ratios": [0.5]}},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    report = result["report"]
+    assert report["objects"] == 2
+    assert report["scene"] == {
+        "visible_objects": 2,
+        "asset_ids": [str(asset.id), str(asset.id)],
+        "transforms_applied": True,
+    }
+    names = {entry["node_id"]: entry["name"] for entry in report["per_object"]}
+    assert set(names) == {"part_a", "part_b"}
+    assert {entry["source_name"] for entry in report["per_object"]} == {"Crate A", "Crate B"}
+    for entry in report["per_object"]:
+        assert len(entry["report"]["lods"]) == 2
+        assert entry["report"]["collider"]["name"] == f"UCX_{entry['name']}_00"
+
+    export_asset = db_session.get(Asset, uuid.UUID(result["asset_id"]))
+    assert export_asset is not None and export_asset.format == "glb"
+    assert export_asset.metadata_["game_ready"] is True
+    cleanup_keys.append(export_asset.storage_key)
+    loaded = trimesh.load(
+        trimesh.util.wrap_as_stream(storage.get(export_asset.storage_key)), file_type="glb"
+    )
+    assert isinstance(loaded, trimesh.Scene)
+    lod0_a = loaded.geometry[f"{names['part_a']}_LOD0"]
+    lod0_b = loaded.geometry[f"{names['part_b']}_LOD0"]
+    # 150 mm of world-space separation survives the shared pivot and the mm-to-m conversion.
+    offset = lod0_b.bounds.mean(axis=0)[0] - lod0_a.bounds.mean(axis=0)[0]
+    assert offset == pytest.approx(0.15, abs=1e-4)
+
+
+def test_game_ready_scene_export_rejects_cad_but_not_game(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _, version, asset = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(asset.storage_key)
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {"id": "part_a", "name": "Crate", "kind": "object", "asset_id": str(asset.id)}
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+    scene_version = scene.json()["version_id"]
+    refused = api_client.post(
+        f"/api/v1/models/{scene_version}/exports", json={"format": "step"}, headers=actor.headers
+    )
+    assert refused.status_code == 422
+    assert "game-ready GLB" in refused.json()["error"]["message"]
+    accepted = api_client.post(
+        f"/api/v1/models/{scene_version}/exports",
+        json={"format": "glb", "game": {}},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text

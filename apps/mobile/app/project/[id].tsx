@@ -153,6 +153,7 @@ import {
   gameReadyColliderMatchesRequest,
   gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
+  gameReadySceneReportMatchesRequest,
   gameReadyUvReportMatchesLods,
 } from "@/src/game-ready";
 import { verifiedQuadRemeshJob } from "@/src/quad-remesh";
@@ -4002,7 +4003,7 @@ export default function ProjectScreen() {
   }
 
   async function exportGameReady(options: GameReadyExportOptions) {
-    if (!client || !active || hasExplicitScene) return;
+    if (!client || !active) return;
     const gameModelName = "SovaModel";
     setError(null);
     setGameReadyResult(null);
@@ -4035,11 +4036,25 @@ export default function ProjectScreen() {
         byte_size?: number;
         report?: GameReadyExportResult["report"];
       } | null;
-      if (
-        !result?.asset_id
-        || !Number.isFinite(result.byte_size)
-        || (result.byte_size ?? 0) <= 0
-        || !gameReadyLodsMatchRequest(
+      if (!result?.asset_id || !Number.isFinite(result.byte_size) || (result.byte_size ?? 0) <= 0) {
+        throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
+      }
+      let sceneObjects: ReturnType<typeof gameReadySceneReportMatchesRequest> = null;
+      if (hasExplicitScene) {
+        sceneObjects = gameReadySceneReportMatchesRequest(
+          result.report,
+          result.byte_size,
+          "base",
+          options.maxTriangles,
+          options.lodRatios.length,
+          options.uv,
+          options.collider,
+        );
+        if (!sceneObjects) {
+          throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
+        }
+      } else if (
+        !gameReadyLodsMatchRequest(
           result.report?.lods,
           gameModelName,
           options.maxTriangles,
@@ -4068,6 +4083,7 @@ export default function ProjectScreen() {
         downloadUrl: download.url,
         byteSize: result.byte_size as number,
         report: result.report ?? null,
+        sceneObjects: sceneObjects ?? undefined,
       });
       setNotice(ru ? "Игровой GLB готов к скачиванию." : "The game-ready GLB is ready to download.");
     } catch (reason) {
@@ -6387,13 +6403,7 @@ export default function ProjectScreen() {
         disabledReason={
           !active ? (ru ? "Сначала откройте версию модели." : "Open a model version first.") : null
         }
-        triangleOnlyReason={
-          hasExplicitScene
-            ? (ru
-                ? "Игровой экспорт сейчас работает с одним объектом. Сделайте нужный объект уникальным и откройте отдельно."
-                : "Game export currently works with one object. Make the target object unique and open it separately.")
-            : null
-        }
+        triangleOnlyReason={null}
         result={gameReadyResult}
         quadResult={quadRemeshResult}
         onClose={() => setGameReadyOpen(false)}

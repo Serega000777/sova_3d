@@ -233,10 +233,10 @@ def create_export(
     painted_3mf = False
     explicit_scene = isinstance((version.provenance or {}).get("scene"), dict)
     if explicit_scene:
-        if body.format in CAD_FORMATS or body.game is not None:
+        if body.format in CAD_FORMATS:
             raise ValidationFailedError(
-                "multi-object scenes currently export as standard mesh STL, 3MF, GLB or FBX; "
-                "make an object unique and open it separately for CAD or game-ready export"
+                "multi-object scenes currently export as standard mesh STL, 3MF, GLB, FBX or "
+                "game-ready GLB; make an object unique and open it separately for CAD export"
             )
         resolved = scenes.resolve_scene(db, version=version, workspace_id=project.workspace_id)
         scene_input = [
@@ -257,6 +257,11 @@ def create_export(
             scene_animation = scene_animations.mechanism_animation(
                 version.provenance or {}, {str(entry["node_id"]) for entry in scene_input}
             )
+            if body.game is not None and scene_animation is not None:
+                raise ValidationFailedError(
+                    "game-ready export does not yet carry a scene's rigid-joint animation; "
+                    "export the plain scene GLB for that mechanism instead"
+                )
     if body.format in CAD_FORMATS:
         asset = brep_asset_of(db, version)
         if asset is None:

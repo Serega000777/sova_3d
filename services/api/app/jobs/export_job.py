@@ -6,7 +6,7 @@ import hashlib
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import sqlalchemy as sa
 from worker import exporters, gameready
@@ -68,6 +68,56 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
             }
             data = (tmp / "cad" / result.file).read_bytes()
             ctx.progress(70, "written")
+        elif game is not None and isinstance(scene, list):
+            # F-083/F-084/F-086 on a scene: every visible object keeps its own LOD/UV/collider
+            # instead of collapsing the whole scene into one game-ready mesh.
+            scene_object_sources: list[gameready.SceneObjectSource] = []
+            game_scene_asset_ids: list[str] = []
+            for index, entry in enumerate(scene):
+                if not isinstance(entry, dict):
+                    raise JobFailureError("scene_invalid", "a scene entry is not an object")
+                scene_asset = ctx.db.get(Asset, uuid.UUID(str(entry.get("asset_id"))))
+                if scene_asset is None or scene_asset.workspace_id != source.workspace_id:
+                    raise JobFailureError("scene_asset_missing", str(entry.get("asset_id")))
+                if scene_asset.format not in ("stl", "glb"):
+                    raise JobFailureError(
+                        "scene_format_invalid", scene_asset.format or "missing format"
+                    )
+                scene_path = tmp / f"game-scene-{index}.{scene_asset.format}"
+                try:
+                    with scene_path.open("wb") as handle:
+                        for chunk in ctx.storage.iter_chunks(scene_asset.storage_key):
+                            handle.write(chunk)
+                except ObjectNotFoundError as exc:
+                    raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
+                scene_object_sources.append(
+                    gameready.SceneObjectSource(
+                        node_id=str(entry.get("node_id")),
+                        name=str(
+                            entry.get("name") or entry.get("node_id") or f"Object {index + 1}"
+                        ),
+                        path=str(scene_path),
+                        format=cast(Literal["stl", "glb"], scene_asset.format),
+                        world_transform=cast(list[list[float]], entry.get("world_transform")),
+                    )
+                )
+                game_scene_asset_ids.append(str(scene_asset.id))
+            output_path = tmp / "export.glb"
+            built_scene = gameready.run_scene_in_sandbox(
+                scene_object_sources,
+                gameready.GameRequest.model_validate(game),
+                output_path,
+            )
+            if not built_scene.ok:
+                raise JobFailureError("export_failed", built_scene.message or "game export failed")
+            report = built_scene.model_dump(mode="json")
+            report["scene"] = {
+                "visible_objects": len(scene_object_sources),
+                "asset_ids": game_scene_asset_ids,
+                "transforms_applied": True,
+            }
+            data = output_path.read_bytes()
+            ctx.progress(70, "converted")
         elif game is not None:
             # F-077: LODs, UVs, a PBR material and a collider — an engine's asset, not a print
             output_path = tmp / "export.glb"

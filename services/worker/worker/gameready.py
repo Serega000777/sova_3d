@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Literal
@@ -19,7 +20,7 @@ from typing import Any, Literal
 import numpy as np
 import trimesh
 from PIL import Image, ImageDraw
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from trimesh.visual.material import PBRMaterial
 
 from worker.decimate import decimated as _decimated
@@ -32,6 +33,7 @@ MAX_COLLIDER_TRIANGLES = 255
 DEVIATION_SAMPLES = 2000
 MIN_LOD_TRIANGLES = 64  # below this, fewer triangles only means a wrong shape
 GAME_LIMITS = SandboxLimits(wall_seconds=300, cpu_seconds=300, max_output_bytes=128 * 1024**2)
+MAX_GAME_SCENE_OBJECTS = 256
 
 
 class GameRequest(BaseModel):
@@ -351,7 +353,127 @@ def build(
     )
 
 
-def export_file(source: Path, source_format: str, request: GameRequest, output: Path) -> GameReport:
+_SCENE_NAME_SANITIZE = re.compile(r"[^A-Za-z0-9_]")
+
+
+def _sanitize_object_name(raw: str, fallback_index: int) -> str:
+    """Turn an arbitrary scene node name into a valid, unique-enough GLB identifier.
+
+    `GameRequest.name` must start with a letter and stay within the LOD/UCX naming
+    convention's character set; an unrelated scene node label (any Unicode, spaces,
+    punctuation) cannot be trusted to already fit that shape.
+    """
+    cleaned = _SCENE_NAME_SANITIZE.sub("_", raw).strip("_")
+    if not cleaned or not cleaned[0].isalpha():
+        cleaned = f"Obj{fallback_index}_{cleaned}" if cleaned else f"Obj{fallback_index}"
+    return cleaned[:40]
+
+
+class ObjectGameReport(BaseModel):
+    node_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    source_name: str = Field(min_length=1, max_length=120)
+    name: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,39}$")
+    report: GameReport
+
+
+class SceneGameReport(BaseModel):
+    ok: bool
+    message: str | None = None
+    objects: int = Field(default=0, ge=0, le=MAX_GAME_SCENE_OBJECTS)
+    triangles_in: int = Field(default=0, ge=0)
+    per_object: list[ObjectGameReport] = Field(default_factory=list)
+    pivot: Literal["base", "centre", "keep"] = "base"
+    file_bytes: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _aggregate_matches_objects(self) -> SceneGameReport:
+        if not self.ok:
+            return self
+        if self.objects < 1:
+            raise ValueError("a successful scene report must contain at least one object")
+        if len(self.per_object) != self.objects:
+            raise ValueError("objects must equal the number of per_object entries")
+        if any(not entry.report.ok for entry in self.per_object):
+            raise ValueError("every per_object report must be successful")
+        if sum(entry.report.triangles_in for entry in self.per_object) != self.triangles_in:
+            raise ValueError("triangles_in must equal the sum of per-object triangles_in")
+        node_ids = [entry.node_id for entry in self.per_object]
+        if len(set(node_ids)) != len(node_ids):
+            raise ValueError("every per_object node_id must be unique")
+        return self
+
+
+def build_scene(
+    objects: list[tuple[str, str, trimesh.Trimesh, np.ndarray | None]],
+    request: GameRequest,
+) -> tuple[trimesh.Scene, SceneGameReport]:
+    """Build one combined game-ready GLB where every scene object keeps its own LOD/UV/collider.
+
+    `objects` are `(node_id, name, mesh_mm, colours)` already in platform millimetres, Z-up,
+    with the scene's own stored world transform applied — so relative object placement is
+    exactly as authored. This function computes one shared pivot for the whole assembly (not
+    one per object, which would scatter every object back to its own local origin), then
+    delegates every object to the unchanged single-object `build()` with `pivot="keep"` so the
+    per-object LOD/UV/collider logic is not duplicated.
+    """
+    if not objects:
+        return trimesh.Scene(), SceneGameReport(
+            ok=False, message="the scene has no visible geometry to export"
+        )
+    combined_lo = np.array([np.inf, np.inf, np.inf])
+    combined_hi = np.array([-np.inf, -np.inf, -np.inf])
+    for _, _, mesh_mm, _ in objects:
+        lo, hi = mesh_mm.bounds
+        combined_lo = np.minimum(combined_lo, lo)
+        combined_hi = np.maximum(combined_hi, hi)
+    centre = (combined_lo + combined_hi) / 2.0
+
+    scene = trimesh.Scene()
+    per_object: list[ObjectGameReport] = []
+    used_names: set[str] = set()
+    triangles_in_total = 0
+    for index, (node_id, name, mesh_mm, colours) in enumerate(objects):
+        base_name = _sanitize_object_name(name, index)
+        object_name = base_name
+        suffix = index
+        while object_name in used_names:
+            marker = f"_{suffix}"
+            object_name = f"{base_name[: 40 - len(marker)]}{marker}"
+            suffix += 1
+        used_names.add(object_name)
+
+        shifted = mesh_mm.copy()
+        if request.pivot == "base":
+            shifted.apply_translation((-centre[0], -centre[1], -combined_lo[2]))
+        elif request.pivot == "centre":
+            shifted.apply_translation(-centre)
+        object_request = request.model_copy(update={"name": object_name, "pivot": "keep"})
+        sub_scene, object_report = build(shifted, object_request, colours)
+        for geom_name, geometry in sub_scene.geometry.items():
+            scene.add_geometry(geometry, node_name=geom_name, geom_name=geom_name)
+        per_object.append(
+            ObjectGameReport(
+                node_id=node_id,
+                source_name=name,
+                name=object_name,
+                report=object_report,
+            )
+        )
+        triangles_in_total += object_report.triangles_in
+
+    return scene, SceneGameReport(
+        ok=True,
+        objects=len(per_object),
+        triangles_in=triangles_in_total,
+        per_object=per_object,
+        pivot=request.pivot,
+    )
+
+
+def _load_platform_mesh_mm(
+    source: Path, source_format: str
+) -> tuple[trimesh.Trimesh | None, np.ndarray | None]:
+    """Parse a source file into a platform-axes, millimetre mesh and its per-face colours."""
     meta = parse(source_format, source)
     loaded = trimesh.load(
         io.BytesIO(source.read_bytes()),
@@ -361,11 +483,18 @@ def export_file(source: Path, source_format: str, request: GameRequest, output: 
     )
     mesh = as_single_mesh(loaded)
     if mesh is None or mesh.is_empty:
-        return GameReport(ok=False, message="the file has no mesh to export")
+        return None, None
     colours = face_colours(mesh)  # before anything can merge or reorder faces
     mesh = to_platform_axes(mesh.copy(), source_format)
     if meta.scale_to_mm != 1.0:
         mesh.apply_scale(meta.scale_to_mm)
+    return mesh, colours
+
+
+def export_file(source: Path, source_format: str, request: GameRequest, output: Path) -> GameReport:
+    mesh, colours = _load_platform_mesh_mm(source, source_format)
+    if mesh is None:
+        return GameReport(ok=False, message="the file has no mesh to export")
     scene, report = build(mesh, request, colours)
     payload = scene.export(file_type="glb")
     data = payload if isinstance(payload, bytes) else bytes(payload)
@@ -394,16 +523,101 @@ def run_in_sandbox(
     return GameReport.model_validate(outcome.output)
 
 
-if __name__ == "__main__":  # sandbox child: gameready <src_fmt> <src> <dst> <request-json>
-    source_format, source_path, output_path, payload = sys.argv[1:5]
+class SceneObjectSource(BaseModel):
+    node_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    name: str = Field(min_length=1, max_length=120)
+    path: str
+    format: Literal["stl", "glb"]
+    world_transform: list[list[float]]
+
+
+class GameSceneManifest(BaseModel):
+    objects: list[SceneObjectSource] = Field(min_length=1, max_length=MAX_GAME_SCENE_OBJECTS)
+    request: GameRequest
+
+
+def export_scene_file(
+    objects: list[SceneObjectSource], request: GameRequest, output: Path
+) -> SceneGameReport:
+    """Load every visible scene object, apply its exact stored world transform, then build."""
+    prepared: list[tuple[str, str, trimesh.Trimesh, np.ndarray | None]] = []
+    for entry in objects:
+        mesh, colours = _load_platform_mesh_mm(Path(entry.path), entry.format)
+        if mesh is None:
+            return SceneGameReport(ok=False, message=f"object {entry.name!r} has no mesh to export")
+        transform = np.asarray(entry.world_transform, dtype=np.float64)
+        if (
+            transform.shape != (4, 4)
+            or not np.isfinite(transform).all()
+            or not np.allclose(transform[3], (0.0, 0.0, 0.0, 1.0), atol=1e-9)
+            or abs(float(np.linalg.det(transform[:3, :3]))) < 1e-12
+        ):
+            return SceneGameReport(ok=False, message=f"invalid world transform for {entry.name!r}")
+        mesh.apply_transform(transform)
+        prepared.append((entry.node_id, entry.name, mesh, colours))
+    scene, report = build_scene(prepared, request)
+    if not report.ok:
+        return report
+    payload = scene.export(file_type="glb")
+    data = payload if isinstance(payload, bytes) else bytes(payload)
+    output.write_bytes(data)
+    report.file_bytes = len(data)
+    return report
+
+
+def run_scene_in_sandbox(
+    objects: list[SceneObjectSource],
+    request: GameRequest,
+    output: Path,
+    limits: Any | None = None,
+) -> SceneGameReport:
+    from worker import sandbox
+
+    effective_limits = limits or GAME_LIMITS
     try:
-        result = export_file(
-            Path(source_path),
-            source_format,
-            GameRequest.model_validate_json(payload),
-            Path(output_path),
+        combined_input_bytes = sum(Path(entry.path).stat().st_size for entry in objects)
+    except OSError as exc:
+        return SceneGameReport(ok=False, message=str(exc))
+    if combined_input_bytes > effective_limits.max_input_bytes:
+        return SceneGameReport(
+            ok=False,
+            message=(
+                f"scene input is {combined_input_bytes} bytes, "
+                f"limit {effective_limits.max_input_bytes}"
+            ),
         )
-        print(json.dumps(result.model_dump(mode="json")))
+    manifest_path = output.parent / "game_scene.json"
+    manifest_path.write_text(
+        GameSceneManifest(objects=objects, request=request).model_dump_json(), encoding="utf-8"
+    )
+    outcome = sandbox.run(
+        "worker.gameready",
+        ["scene", str(manifest_path), str(output)],
+        input_path=manifest_path,
+        limits=effective_limits,
+        cwd=output.parent,
+    )
+    if not outcome.ok:
+        return SceneGameReport(ok=False, message=outcome.message)
+    return SceneGameReport.model_validate(outcome.output)
+
+
+if __name__ == "__main__":  # sandbox child: gameready <src_fmt> <src> <dst> <request-json>
+    #                   or:  gameready scene <manifest.json> <dst>
+    try:
+        if sys.argv[1] == "scene":
+            manifest = GameSceneManifest.model_validate_json(Path(sys.argv[2]).read_text())
+            scene_result = export_scene_file(manifest.objects, manifest.request, Path(sys.argv[3]))
+            print(json.dumps(scene_result.model_dump(mode="json")))
+        else:
+            source_format, source_path, output_path, payload = sys.argv[1:5]
+            result = export_file(
+                Path(source_path),
+                source_format,
+                GameRequest.model_validate_json(payload),
+                Path(output_path),
+            )
+            print(json.dumps(result.model_dump(mode="json")))
     except Exception as exc:  # the parent turns this into a typed failure
         print(json.dumps({"ok": False, "message": f"{type(exc).__name__}: {exc}"}))
         sys.exit(1)

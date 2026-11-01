@@ -3,7 +3,7 @@ import { GAME_BUDGETS } from "@physical-ai/contracts";
 import { useEffect, useState } from "react";
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 
-import { parseLodRatios } from "./game-ready";
+import { parseLodRatios, type VerifiedGameSceneObject } from "./game-ready";
 import { ModelViewer, type ModelAppearance } from "./ModelViewer";
 import { parseQuadTargetFaces, type VerifiedQuadRemesh } from "./quad-remesh";
 import { SheetShell } from "./SheetShell";
@@ -46,7 +46,10 @@ export interface GameReadyExportResult {
       out_of_bounds_vertices: number;
     }[];
     baked_texture_px?: number | null;
+    objects?: number;
   } | null;
+  /** Present only for an explicit-scene export: every visible object's own verified evidence. */
+  sceneObjects?: VerifiedGameSceneObject[];
 }
 
 export interface QuadRemeshResult extends VerifiedQuadRemesh {
@@ -392,14 +395,47 @@ export function GameReadySheet({
             <Text style={[styles.heading, { color: colors.green }]}>{ru ? "Игровой файл готов" : "Game-ready file is ready"}</Text>
             <Text style={styles.muted}>
               {(result.byteSize / 1024 / 1024).toFixed(1)} MB
-              {result.report?.triangles_in ? ` · ${result.report.triangles_in.toLocaleString(ru ? "ru-RU" : "en-US")} → ${result.report.lods?.[0]?.triangles?.toLocaleString(ru ? "ru-RU" : "en-US") ?? "—"} ${ru ? "треуг." : "tris"}` : ""}
+              {result.sceneObjects
+                ? ` · ${ru ? "объектов" : "objects"}: ${result.sceneObjects.length} · ${result.report?.triangles_in?.toLocaleString(ru ? "ru-RU" : "en-US") ?? "—"} ${ru ? "исходных треуг." : "input tris"}`
+                : result.report?.triangles_in
+                  ? ` · ${result.report.triangles_in.toLocaleString(ru ? "ru-RU" : "en-US")} → ${result.report.lods?.[0]?.triangles?.toLocaleString(ru ? "ru-RU" : "en-US") ?? "—"} ${ru ? "треуг." : "tris"}`
+                  : ""}
             </Text>
             {result.report?.size_m?.length === 3 ? (
               <Text style={styles.mono}>
                 {ru ? "Размер в движке X × Y(вверх) × Z" : "Engine size X × Y(up) × Z"}: {result.report.size_m.map((value) => value.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 6 })).join(" × ")} {ru ? "м" : "m"} · pivot: {result.report.pivot}
               </Text>
             ) : null}
-            {result.report?.lods?.length ? (
+            {result.sceneObjects ? (
+              <View style={{ gap: 5 }}>
+                <Text style={styles.sectionSubtitle}>
+                  {ru
+                    ? `Объектов сцены: ${result.sceneObjects.length}; у каждого свой LOD/коллайдер:`
+                    : `${result.sceneObjects.length} scene objects, each with its own LOD/collider:`}
+                </Text>
+                {result.sceneObjects.map((entry) => (
+                  <Text key={entry.node_id} style={styles.mono}>
+                    {entry.name} · {entry.triangles_in.toLocaleString(ru ? "ru-RU" : "en-US")} →{" "}
+                    {entry.lod0Triangles.toLocaleString(ru ? "ru-RU" : "en-US")} {ru ? "треуг." : "tris"}
+                    {entry.colliderTriangles !== null
+                      ? ` · ${ru ? "коллайдер" : "collider"} ${entry.colliderTriangles.toLocaleString(ru ? "ru-RU" : "en-US")}`
+                      : ` · ${ru ? "без коллайдера" : "no collider"}`}
+                    {entry.engineName !== entry.name ? ` · GLB: ${entry.engineName}` : ""}
+                  </Text>
+                ))}
+                <Text style={styles.sectionSubtitle}>
+                  {ru
+                    ? "Относительное положение объектов сохранено; предпросмотр отдельных LOD для сцены пока не открыт — скачайте GLB."
+                    : "Relative object placement is preserved; a per-object LOD preview is not yet open here — download the GLB."}
+                </Text>
+                <Text style={styles.sectionSubtitle}>
+                  {ru
+                    ? "Материалы узлов и анимация механизма в этот игровой GLB пока не переносятся; для них используйте обычный GLB сцены."
+                    : "Per-node materials and mechanism animation are not carried into this game-ready GLB yet; use the regular scene GLB for those."}
+                </Text>
+              </View>
+            ) : null}
+            {!result.sceneObjects && result.report?.lods?.length ? (
               <View
                 accessibilityLabel={ru ? "Проверенные уровни детализации" : "Verified levels of detail"}
                 style={{ gap: 6 }}
@@ -494,7 +530,7 @@ export function GameReadySheet({
                 </Text>
               </View>
             ) : null}
-            {result.report ? (
+            {!result.sceneObjects && result.report ? (
               <View
                 accessibilityLabel={ru ? "Проверенный состав игрового GLB" : "Verified game-ready GLB contents"}
                 style={{ gap: 5, padding: 10, borderRadius: radii.control, backgroundColor: colors.panel }}
@@ -557,8 +593,8 @@ export function GameReadySheet({
             </Text>
             <Text style={styles.sectionSubtitle}>
               {ru
-                ? "Отчёт проверяет один экспортный коллайдер. Столкновения между объектами сцены, массу, гравитацию и динамику он не моделирует."
-                : "The report verifies one exported collider. It does not simulate scene-object collisions, mass, gravity or dynamics."}
+                ? "Отчёт проверяет каждый экспортный коллайдер. Столкновения между объектами сцены, массу, гравитацию и динамику он не моделирует."
+                : "The report verifies every exported collider. It does not simulate scene-object collisions, mass, gravity or dynamics."}
             </Text>
           </>
         ) : (

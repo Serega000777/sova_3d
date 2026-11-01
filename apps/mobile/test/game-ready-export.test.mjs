@@ -6,6 +6,7 @@ import {
   gameReadyColliderMatchesRequest,
   gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
+  gameReadySceneReportMatchesRequest,
   gameReadyUvReportMatchesLods,
   parseLodRatios,
 } from "../src/game-ready.ts";
@@ -147,6 +148,51 @@ test("reference 86 accepts only the exact bounded UCX collider report", () => {
   assert.equal(gameReadyColliderMatchesRequest({ collider: { ...collider, is_convex: false } }, "SovaModel", "convex"), false);
   assert.equal(gameReadyColliderMatchesRequest({ collider: { ...collider, floor_offset_mm: Number.NaN } }, "SovaModel", "convex"), false);
   assert.match(project, /gameReadyColliderMatchesRequest\(/);
+});
+
+test("references 83/84/86 verify every visible scene object's own evidence", () => {
+  const objectReport = (name) => ({
+    ok: true,
+    pivot: "keep",
+    triangles_in: 12,
+    lods: [
+      { name: `${name}_LOD0`, triangles: 12, vertices: 8, max_deviation_mm: 0 },
+      { name: `${name}_LOD1`, triangles: 12, vertices: 8, max_deviation_mm: 0 },
+    ],
+    uv: true,
+    uv_atlases: [
+      { lod: `${name}_LOD0`, triangle_area_pct: 50, degenerate_triangles: 0, out_of_bounds_vertices: 0 },
+      { lod: `${name}_LOD1`, triangle_area_pct: 50, degenerate_triangles: 0, out_of_bounds_vertices: 0 },
+    ],
+    collider: {
+      name: `UCX_${name}_00`, kind: "convex", triangles: 12, triangle_limit: 255,
+      is_convex: true, is_watertight: true, volume_ratio_pct: 100, floor_offset_mm: 0,
+    },
+  });
+  const report = {
+    ok: true,
+    pivot: "base",
+    file_bytes: 4096,
+    objects: 2,
+    triangles_in: 24,
+    per_object: [
+      { node_id: "part_a", source_name: "Crate A", name: "Crate_A", report: objectReport("Crate_A") },
+      { node_id: "part_b", source_name: "Ящик Б", name: "Obj1", report: objectReport("Obj1") },
+    ],
+  };
+  assert.deepEqual(
+    gameReadySceneReportMatchesRequest(report, 4096, "base", 20_000, 1, true, "convex"),
+    [
+      { node_id: "part_a", name: "Crate A", engineName: "Crate_A", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12 },
+      { node_id: "part_b", name: "Ящик Б", engineName: "Obj1", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12 },
+    ],
+  );
+  assert.equal(gameReadySceneReportMatchesRequest({ ...report, triangles_in: 12 }, 4096, "base", 20_000, 1, true, "convex"), null);
+  assert.equal(gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], report.per_object[0]] }, 4096, "base", 20_000, 1, true, "convex"), null);
+  assert.equal(gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], { ...report.per_object[1], report: { ...report.per_object[1].report, ok: false } }] }, 4096, "base", 20_000, 1, true, "convex"), null);
+  assert.match(project, /gameReadySceneReportMatchesRequest\(/);
+  assert.match(sheet, /каждый экспортный коллайдер/);
+  assert.match(sheet, /Материалы узлов и анимация механизма/);
 });
 
 test("project viewer exposes source, clay and wire modes with measured mesh stats", () => {

@@ -244,3 +244,146 @@ def test_a_painted_glb_keeps_its_colours_through_the_sandboxed_export(tmp_path: 
     texels = _texel(lod0.visual, lod0.visual.uv[lod0.faces].mean(axis=1))
     top = lod0.triangles_center[:, 1] > 0.045
     assert (texels[top][:, 0] > 150).mean() > 0.97
+
+
+# --- Reference 83/84/86: scene-preserving game-ready export — every object its own LOD/UV/collider
+
+
+def _world_box(x_mm: float) -> trimesh.Trimesh:
+    box = trimesh.creation.box(extents=fixtures.BOX_MM)
+    box.apply_translation((x_mm, 0.0, 0.0))  # type: ignore[no-untyped-call]
+    return cast(trimesh.Trimesh, box)
+
+
+def test_build_scene_keeps_every_objects_own_lod_uv_and_collider() -> None:
+    objects = [
+        ("node_a", "First", _world_box(0.0), None),
+        ("node_b", "Second", _world_box(200.0), None),
+    ]
+    scene, report = gameready.build_scene(objects, GameRequest(lod_ratios=[0.5]))
+    assert report.ok, report.message
+    assert report.objects == 2
+    assert report.triangles_in == 24  # two boxes, 12 triangles each
+    assert {entry.node_id for entry in report.per_object} == {"node_a", "node_b"}
+    assert {entry.source_name for entry in report.per_object} == {"First", "Second"}
+    for entry in report.per_object:
+        assert entry.report.ok
+        assert len(entry.report.lods) == 2  # LOD0 + one requested ratio
+        collider_name = f"UCX_{entry.name}_00"
+        assert collider_name in scene.geometry
+        assert any(name.startswith(f"{entry.name}_LOD") for name in scene.geometry)
+
+
+def test_build_scene_preserves_relative_world_placement() -> None:
+    objects = [
+        ("node_a", "First", _world_box(0.0), None),
+        ("node_b", "Second", _world_box(200.0), None),
+    ]
+    scene, report = gameready.build_scene(objects, GameRequest(pivot="centre"))
+    first = _mesh(scene, f"{report.per_object[0].name}_LOD0")
+    second = _mesh(scene, f"{report.per_object[1].name}_LOD0")
+    # platform X stays glTF X; the 200 mm world offset becomes 0.2 m, not each object's own origin
+    offset = second.bounds.mean(axis=0)[0] - first.bounds.mean(axis=0)[0]
+    assert offset == pytest.approx(0.2, abs=1e-6)
+
+
+def test_build_scene_disambiguates_colliding_sanitized_names() -> None:
+    objects = [
+        ("node_a", f"Part{'x' * 50}!!", _world_box(0.0), None),
+        ("node_b", f"Part{'x' * 50}??", _world_box(50.0), None),
+    ]
+    _, report = gameready.build_scene(objects, GameRequest())
+    names = [entry.name for entry in report.per_object]
+    assert len(set(names)) == 2
+
+
+def test_build_scene_refuses_an_empty_object_list() -> None:
+    _, report = gameready.build_scene([], GameRequest())
+    assert not report.ok and report.message
+
+
+def test_scene_game_report_rejects_a_forged_aggregate() -> None:
+    object_report = gameready.ObjectGameReport(
+        node_id="node_a",
+        source_name="First",
+        name="First",
+        report=gameready.GameReport(ok=True, triangles_in=12),
+    )
+    with pytest.raises(ValidationError):
+        gameready.SceneGameReport(ok=True, objects=1, triangles_in=999, per_object=[object_report])
+    with pytest.raises(ValidationError):
+        gameready.SceneGameReport(ok=True, objects=2, triangles_in=12, per_object=[object_report])
+    duplicate = gameready.ObjectGameReport(
+        node_id="node_a",
+        source_name="Dup",
+        name="Dup",
+        report=gameready.GameReport(ok=True, triangles_in=12),
+    )
+    with pytest.raises(ValidationError):
+        gameready.SceneGameReport(
+            ok=True, objects=2, triangles_in=24, per_object=[object_report, duplicate]
+        )
+
+
+def test_the_sandboxed_scene_export_combines_two_objects_into_one_glb(tmp_path: Path) -> None:
+    source_a = fixtures.write_stl_binary(tmp_path / "a.stl")
+    source_b = fixtures.write_stl_binary(tmp_path / "b.stl")
+    output = tmp_path / "scene_game.glb"
+    identity = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    offset = [[1, 0, 0, 150], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    objects = [
+        gameready.SceneObjectSource(
+            node_id="node_a",
+            name="Crate A",
+            path=str(source_a),
+            format="stl",
+            world_transform=identity,
+        ),
+        gameready.SceneObjectSource(
+            node_id="node_b",
+            name="Crate B",
+            path=str(source_b),
+            format="stl",
+            world_transform=offset,
+        ),
+    ]
+    report = gameready.run_scene_in_sandbox(objects, GameRequest(), output, FAST)
+    assert report.ok, report.message
+    assert report.objects == 2
+    assert report.file_bytes == output.stat().st_size > 0
+    back = cast(trimesh.Scene, trimesh.load(output))
+    for entry in report.per_object:
+        assert f"{entry.name}_LOD0" in back.geometry
+        assert f"UCX_{entry.name}_00" in back.geometry
+
+
+def test_the_sandboxed_scene_export_refuses_an_invalid_world_transform(tmp_path: Path) -> None:
+    source_a = fixtures.write_stl_binary(tmp_path / "a.stl")
+    output = tmp_path / "scene_game.glb"
+    bad = gameready.SceneObjectSource(
+        node_id="node_a",
+        name="Crate",
+        path=str(source_a),
+        format="stl",
+        world_transform=[[1, 0, 0], [0, 1, 0]],
+    )
+    report = gameready.run_scene_in_sandbox([bad], GameRequest(), output, FAST)
+    assert not report.ok
+    assert report.message
+
+
+def test_the_sandboxed_scene_export_bounds_the_combined_inputs(tmp_path: Path) -> None:
+    source_a = fixtures.write_stl_binary(tmp_path / "a.stl")
+    output = tmp_path / "scene_game.glb"
+    item = gameready.SceneObjectSource(
+        node_id="node_a",
+        name="Crate",
+        path=str(source_a),
+        format="stl",
+        world_transform=[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+    )
+    tiny = sandbox.SandboxLimits(max_input_bytes=1, isolate_network=False)
+    report = gameready.run_scene_in_sandbox([item], GameRequest(), output, tiny)
+    assert not report.ok
+    assert report.message and "scene input" in report.message
+    assert not output.exists()

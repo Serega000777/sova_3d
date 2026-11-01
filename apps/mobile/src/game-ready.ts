@@ -137,6 +137,92 @@ export function gameReadyColliderMatchesRequest(
   );
 }
 
+export interface VerifiedGameSceneObject {
+  node_id: string;
+  /** Original scene-tree label. */
+  name: string;
+  /** Worker-sanitized identifier used by the LOD/UCX nodes in the GLB. */
+  engineName: string;
+  triangles_in: number;
+  lod0Triangles: number;
+  colliderTriangles: number | null;
+}
+
+/** A scene's game-ready report is trustworthy only when every visible object's own LOD/UV/
+ * collider independently passes the same checks a single-object export must pass — reusing
+ * each object's own worker-sanitized name, not a name the client chose. The aggregate triangle
+ * count must also equal the measured sum, so one object's evidence cannot be silently dropped. */
+export function gameReadySceneReportMatchesRequest(
+  reportValue: unknown,
+  byteSize: unknown,
+  requestedPivot: "base" | "centre" | "keep",
+  maxTriangles: number,
+  requestedLighterLevels: number,
+  uvRequested: boolean,
+  colliderRequested: "convex" | "box" | "none",
+): VerifiedGameSceneObject[] | null {
+  if (!reportValue || typeof reportValue !== "object") return null;
+  const report = reportValue as {
+    ok?: unknown;
+    pivot?: unknown;
+    file_bytes?: unknown;
+    objects?: unknown;
+    triangles_in?: unknown;
+    per_object?: unknown;
+  };
+  if (
+    report.ok !== true
+    || report.pivot !== requestedPivot
+    || !Number.isInteger(byteSize)
+    || (byteSize as number) <= 0
+    || report.file_bytes !== byteSize
+    || !Number.isInteger(report.objects)
+    || (report.objects as number) < 1
+    || !Array.isArray(report.per_object)
+    || report.per_object.length !== report.objects
+  ) return null;
+
+  const seen = new Set<string>();
+  const verified: VerifiedGameSceneObject[] = [];
+  let triangleSum = 0;
+  for (const raw of report.per_object) {
+    if (!raw || typeof raw !== "object") return null;
+    const entry = raw as { node_id?: unknown; source_name?: unknown; name?: unknown; report?: unknown };
+    if (typeof entry.node_id !== "string" || seen.has(entry.node_id)) return null;
+    if (typeof entry.source_name !== "string" || entry.source_name.length === 0) return null;
+    if (typeof entry.name !== "string" || entry.name.length === 0) return null;
+    seen.add(entry.node_id);
+    const objectReport = entry.report as {
+      ok?: unknown;
+      pivot?: unknown;
+      lods?: unknown;
+      triangles_in?: unknown;
+    } | undefined;
+    if (objectReport?.ok !== true || objectReport.pivot !== "keep") return null;
+    if (!gameReadyLodsMatchRequest(objectReport?.lods, entry.name, maxTriangles, requestedLighterLevels)) {
+      return null;
+    }
+    const objectLods = objectReport!.lods as VerifiedGameLod[];
+    if (!gameReadyUvReportMatchesLods(entry.report, objectLods, uvRequested)) return null;
+    if (!gameReadyColliderMatchesRequest(entry.report, entry.name, colliderRequested)) return null;
+    if (!Number.isInteger(objectReport!.triangles_in) || (objectReport!.triangles_in as number) <= 0) {
+      return null;
+    }
+    triangleSum += objectReport!.triangles_in as number;
+    const colliderInfo = (entry.report as { collider?: { triangles?: number } | null }).collider;
+    verified.push({
+      node_id: entry.node_id,
+      name: entry.source_name,
+      engineName: entry.name,
+      triangles_in: objectReport!.triangles_in as number,
+      lod0Triangles: objectLods[0]!.triangles,
+      colliderTriangles: colliderInfo ? colliderInfo.triangles ?? null : null,
+    });
+  }
+  if (triangleSum !== report.triangles_in) return null;
+  return verified;
+}
+
 /** The independently checked sections still belong to one trustworthy game asset only when
  * the worker envelope proves the requested pivot, metric engine bounds and exact file size. */
 export function gameReadyEnvelopeMatchesRequest(
