@@ -1,4 +1,9 @@
-import type { Me, WorkspaceMember, WorkspaceMemberRole } from "@physical-ai/contracts";
+import type {
+  Me,
+  WorkspaceMember,
+  WorkspaceMemberRole,
+  WorkspaceTask,
+} from "@physical-ai/contracts";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,10 +18,13 @@ export default function WorkspaceAccessScreen() {
   const { client, session, selectWorkspace } = useSession();
   const [workspaces, setWorkspaces] = useState<WorkspaceBrief[]>([]);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [tasks, setTasks] = useState<WorkspaceTask[]>([]);
+  const [openTaskCount, setOpenTaskCount] = useState<number | null>(null);
   const [projectCount, setProjectCount] = useState<number | null>(null);
   const [workspaceName, setWorkspaceName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<WorkspaceMemberRole>("viewer");
+  const [taskTitle, setTaskTitle] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const workspace = useMemo(
@@ -31,19 +39,26 @@ export default function WorkspaceAccessScreen() {
     const current = me.workspaces.find((item) => item.id === session.workspaceId) ?? null;
     if (!current) throw new Error("Текущее рабочее пространство больше недоступно.");
     setWorkspaces(me.workspaces);
-    const [projects, nextMembers] = await Promise.all([
+    const [projects, nextMembers, taskList] = await Promise.all([
       client.listProjects(session.workspaceId),
       current.kind === "team"
         ? client.listWorkspaceMembers(session.workspaceId)
         : Promise.resolve([]),
+      current.kind === "team"
+        ? client.listWorkspaceTasks(session.workspaceId)
+        : Promise.resolve({ open_count: 0, total_count: 0, tasks: [] }),
     ]);
     setProjectCount(projects.length);
     setMembers(nextMembers);
+    setOpenTaskCount(current.kind === "team" ? taskList.open_count : null);
+    setTasks(taskList.tasks);
   };
 
   useEffect(() => {
     setProjectCount(null);
     setMembers([]);
+    setTasks([]);
+    setOpenTaskCount(null);
     void load().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
     // A workspace switch replaces session/client and reloads the canonical selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,6 +141,39 @@ export default function WorkspaceAccessScreen() {
   );
 
   const manageable = workspace?.kind === "team" && workspace.role === "owner";
+  const tasksManageable = workspace?.kind === "team" && workspace.role !== "viewer";
+
+  const createTask = async () => {
+    if (!client || !session || !tasksManageable || !taskTitle.trim() || busy) return;
+    setBusy("task-create");
+    setError(null);
+    try {
+      await client.createWorkspaceTask(session.workspaceId, { title: taskTitle.trim() });
+      setTaskTitle("");
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const toggleTask = async (task: WorkspaceTask) => {
+    if (!client || !session || !tasksManageable || busy) return;
+    setBusy(`task-${task.id}`);
+    setError(null);
+    try {
+      await client.updateWorkspaceTask(session.workspaceId, task.id, {
+        expected_revision: task.revision,
+        completed: !task.completed,
+      });
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14, maxWidth: 760, width: "100%", alignSelf: "center" }}>
@@ -178,9 +226,60 @@ export default function WorkspaceAccessScreen() {
                 <Text style={styles.statusText}>{members.length} участников</Text>
               </View>
             ) : null}
+            {workspace?.kind === "team" ? (
+              <View style={[styles.statusBadge, { backgroundColor: colors.panel2 }]}>
+                <Text style={styles.statusText}>{openTaskCount ?? "—"} открытых задач</Text>
+              </View>
+            ) : null}
           </View>
-          <Text style={styles.muted}>Задачи не показаны: отдельной серверной модели задач пока нет.</Text>
         </View>
+
+        {workspace?.kind === "team" ? (
+          <View style={{ gap: 10 }}>
+            <Text style={styles.heading}>Задачи команды</Text>
+            {tasksManageable ? (
+              <View style={[styles.card, { gap: 8 }]}>
+                <TextInput
+                  value={taskTitle}
+                  onChangeText={setTaskTitle}
+                  maxLength={300}
+                  placeholder="Новая задача"
+                  placeholderTextColor={colors.muted}
+                  style={styles.input}
+                />
+                <Pressable
+                  disabled={Boolean(busy) || !taskTitle.trim()}
+                  onPress={() => void createTask()}
+                  style={[styles.button, styles.buttonPrimary, (busy || !taskTitle.trim()) && { opacity: 0.5 }]}
+                >
+                  <Text style={styles.buttonText}>Добавить задачу</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Text style={styles.muted}>Viewer видит задачи, но не может менять их.</Text>
+            )}
+            {tasks.length === 0 ? <Text style={styles.muted}>Задач пока нет.</Text> : null}
+            {tasks.slice(0, 12).map((task) => (
+              <Pressable
+                key={task.id}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: task.completed, disabled: !tasksManageable || Boolean(busy) }}
+                disabled={!tasksManageable || Boolean(busy)}
+                onPress={() => void toggleTask(task)}
+                style={[styles.card, styles.row, task.completed && { opacity: 0.62 }]}
+              >
+                <Text style={{ color: task.completed ? colors.green : colors.accent, fontSize: 20 }}>
+                  {task.completed ? "✓" : "○"}
+                </Text>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.heading, task.completed && { textDecorationLine: "line-through" }]}>{task.title}</Text>
+                  <Text style={styles.muted}>rev {task.revision}{task.completed ? " · выполнено" : " · открыто"}</Text>
+                </View>
+              </Pressable>
+            ))}
+            {tasks.length > 12 ? <Text style={styles.muted}>Показаны первые 12 задач из {tasks.length} загруженных.</Text> : null}
+          </View>
+        ) : null}
 
         {workspace?.kind === "team" ? (
           <View style={{ gap: 10 }}>

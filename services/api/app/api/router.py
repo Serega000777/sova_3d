@@ -45,6 +45,7 @@ from app.api import (
     three_d_generation,
     training_consent,
     uploads,
+    workspace_tasks,
     workspaces,
 )
 
@@ -57,6 +58,7 @@ api_v1.include_router(functional_parts.router)
 api_v1.include_router(developer_tokens.router)
 api_v1.include_router(signin.router)
 api_v1.include_router(workspaces.router)
+api_v1.include_router(workspace_tasks.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(interior_materials.router)

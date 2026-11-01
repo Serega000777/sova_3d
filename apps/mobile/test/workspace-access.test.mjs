@@ -16,6 +16,9 @@ test("references 62 and 64 reach canonical team workspace access", () => {
   assert.match(access, /addWorkspaceMember/);
   assert.match(access, /updateWorkspaceMember/);
   assert.match(access, /removeWorkspaceMember/);
+  assert.match(access, /listWorkspaceTasks/);
+  assert.match(access, /createWorkspaceTask/);
+  assert.match(access, /updateWorkspaceTask/);
 });
 
 test("creation, selection and owner-only mutation boundaries stay explicit", () => {
@@ -23,5 +26,8 @@ test("creation, selection and owner-only mutation boundaries stay explicit", () 
   assert.match(access, /Состав команды доступен всем участникам; роли меняет только владелец/);
   assert.match(access, /member\.role === "owner"/);
   assert.match(access, /Добавить зарегистрированного пользователя/);
-  assert.match(access, /Задачи не показаны: отдельной серверной модели задач пока нет/);
+  assert.match(access, /openTaskCount \?\? "—"/);
+  assert.match(access, /expected_revision: task\.revision/);
+  assert.match(access, /workspace\.role !== "viewer"/);
+  assert.match(access, /accessibilityRole="checkbox"/);
 });

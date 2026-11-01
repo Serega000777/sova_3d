@@ -91,6 +91,48 @@ test("team workspace creation posts the normalized typed body", async () => {
   assert.deepEqual(JSON.parse(String(request!.init.body)), { name: "Studio North" });
 });
 
+test("team workspace tasks use the nested typed routes and revision guard", async () => {
+  const requests: { url: string; init: RequestInit }[] = [];
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "team-token",
+    fetch: async (url: string, init: RequestInit) => {
+      requests.push({ url, init });
+      if (init.method === "GET") {
+        return jsonResponse({ open_count: 1, total_count: 1, tasks: [] });
+      }
+      return jsonResponse({
+        id: "task-1",
+        workspace_id: "workspace-2",
+        title: "Review model",
+        completed: init.method === "PATCH",
+        completed_at: init.method === "PATCH" ? "2026-11-02T00:00:00Z" : null,
+        revision: init.method === "PATCH" ? 1 : 0,
+        created_by: "user-1",
+        created_at: "2026-11-02T00:00:00Z",
+        updated_at: "2026-11-02T00:00:00Z",
+      }, { status: init.method === "POST" ? 201 : 200 });
+    },
+  });
+
+  const list = await client.listWorkspaceTasks("workspace-2");
+  assert.equal(list.open_count, 1);
+  await client.createWorkspaceTask("workspace-2", { title: "Review model" });
+  await client.updateWorkspaceTask("workspace-2", "task-1", {
+    expected_revision: 0,
+    completed: true,
+  });
+  assert.deepEqual(requests.map((item) => [item.init.method, item.url]), [
+    ["GET", "https://api.example.test/api/v1/workspaces/workspace-2/tasks"],
+    ["POST", "https://api.example.test/api/v1/workspaces/workspace-2/tasks"],
+    ["PATCH", "https://api.example.test/api/v1/workspaces/workspace-2/tasks/task-1"],
+  ]);
+  assert.deepEqual(JSON.parse(String(requests[2]!.init.body)), {
+    expected_revision: 0,
+    completed: true,
+  });
+});
+
 test("quad remesh posts the bounded target_faces and an idempotency key", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const client = new PhysicalAiClient({

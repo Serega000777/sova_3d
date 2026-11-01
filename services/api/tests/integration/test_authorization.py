@@ -731,6 +731,17 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             f"/api/v1/workspaces/{ids['workspace']}/members/{ids['member']}",
             None,
         ),
+        ("GET", f"/api/v1/workspaces/{ids['workspace']}/tasks", None),
+        (
+            "POST",
+            f"/api/v1/workspaces/{ids['workspace']}/tasks",
+            {"title": "stolen task"},
+        ),
+        (
+            "PATCH",
+            f"/api/v1/workspaces/{ids['workspace']}/tasks/{ids['member']}",
+            {"expected_revision": 0, "completed": True},
+        ),
         (
             "DELETE",
             f"/api/v1/cart/items/{ids['listing']}?workspace_id={ids['workspace']}",
@@ -755,6 +766,7 @@ PUBLIC = {
     # Authenticated listing artifact; it does not expose a selected workspace resource.
     "GET /api/v1/listings/{id}/documents/house.pdf",
     "GET /api/v1/listings/{id}/documents/house.xlsx",
+    "GET /api/v1/listings/{id}/documents/house.dxf",
     "POST /api/v1/listings/{id}/acquire",
     # A published listing id may be added to or removed from each caller's own favorites.
     "POST /api/v1/marketplace/favorites/{id}",

@@ -38,6 +38,7 @@ from app.models.versioning import (
     VersionAsset,
     VersionComment,
 )
+from app.models.workspace_tasks import WorkspaceTask
 
 __all__ = [
     "AIFeedback",
@@ -86,4 +87,5 @@ __all__ = [
     "VersionComment",
     "Workspace",
     "WorkspaceMember",
+    "WorkspaceTask",
 ]

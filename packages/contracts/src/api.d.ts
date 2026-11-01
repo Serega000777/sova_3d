@@ -340,6 +340,41 @@ export interface paths {
         patch: operations["update_member_api_v1_workspaces__workspace_id__members__user_id__patch"];
         trace?: never;
     };
+    "/api/v1/workspaces/{workspace_id}/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workspace Tasks */
+        get: operations["list_workspace_tasks_api_v1_workspaces__workspace_id__tasks_get"];
+        put?: never;
+        /** Create Workspace Task */
+        post: operations["create_workspace_task_api_v1_workspaces__workspace_id__tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspace_id}/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Workspace Task */
+        patch: operations["update_workspace_task_api_v1_workspaces__workspace_id__tasks__task_id__patch"];
+        trace?: never;
+    };
     "/api/v1/uploads": {
         parameters: {
             query?: never;
@@ -11005,6 +11040,62 @@ export interface components {
          * @enum {string}
          */
         WorkspaceRole: "owner" | "admin" | "editor" | "viewer";
+        /** WorkspaceTaskCreate */
+        WorkspaceTaskCreate: {
+            /** Title */
+            title: string;
+        };
+        /** WorkspaceTaskListOut */
+        WorkspaceTaskListOut: {
+            /** Open Count */
+            open_count: number;
+            /** Total Count */
+            total_count: number;
+            /** Tasks */
+            tasks: components["schemas"]["WorkspaceTaskOut"][];
+        };
+        /** WorkspaceTaskOut */
+        WorkspaceTaskOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Title */
+            title: string;
+            /** Completed */
+            completed: boolean;
+            /** Completed At */
+            completed_at: string | null;
+            /** Revision */
+            revision: number;
+            /** Created By */
+            created_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** WorkspaceTaskUpdate */
+        WorkspaceTaskUpdate: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Title */
+            title?: string | null;
+            /** Completed */
+            completed?: boolean | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -11763,6 +11854,114 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workspace_tasks_api_v1_workspaces__workspace_id__tasks_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceTaskListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_workspace_task_api_v1_workspaces__workspace_id__tasks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceTaskCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_workspace_task_api_v1_workspaces__workspace_id__tasks__task_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                workspace_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceTaskUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceTaskOut"];
                 };
             };
             /** @description Validation Error */

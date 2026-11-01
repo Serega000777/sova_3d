@@ -92,6 +92,8 @@ export type UserAccount = Schemas["UserOut"];
 export type WorkspaceMember = Schemas["MemberOut"];
 export type WorkspaceMemberRole = Schemas["MemberUpdate"]["role"];
 export type Workspace = Schemas["WorkspaceOut"];
+export type WorkspaceTask = Schemas["WorkspaceTaskOut"];
+export type WorkspaceTaskList = Schemas["WorkspaceTaskListOut"];
 /** Account tier (F-account-tier): "free" is the basic plan; "pro" is the paid, advanced one. */
 export type AccountTier = UserAccount["plan"];
 export type EnclosureBody = Schemas["EnclosureBody"];
@@ -1571,6 +1573,33 @@ export class PhysicalAiClient {
 
   createTeamWorkspace(body: Schemas["WorkspaceCreate"]) {
     return this.request<Workspace>("POST", "/api/v1/workspaces", { body });
+  }
+
+  listWorkspaceTasks(workspaceId: string) {
+    return this.request<WorkspaceTaskList>(
+      "GET",
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`,
+    );
+  }
+
+  createWorkspaceTask(workspaceId: string, body: Schemas["WorkspaceTaskCreate"]) {
+    return this.request<WorkspaceTask>(
+      "POST",
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`,
+      { body },
+    );
+  }
+
+  updateWorkspaceTask(
+    workspaceId: string,
+    taskId: string,
+    body: Schemas["WorkspaceTaskUpdate"],
+  ) {
+    return this.request<WorkspaceTask>(
+      "PATCH",
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}`,
+      { body },
+    );
   }
 
   addWorkspaceMember(workspaceId: string, body: Schemas["MemberCreate"]) {
