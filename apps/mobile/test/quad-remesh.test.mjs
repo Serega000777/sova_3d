@@ -105,7 +105,7 @@ test("mobile accepts only the exact version-bound FBX and sandbox report", () =>
   assert.equal(verifiedQuadRemeshJob(succeededJob({ report: { uv_bounds: [1, 0, 0, 1] } }), versionId, 4000), null);
 });
 
-test("mobile verifies a schema v3 single-object report and leaves multi-object unverified", () => {
+test("mobile verifies a schema v3 single-object report and a multi-object scene", () => {
   const v3Object = {
     name: "Part",
     faces: 4000,
@@ -149,7 +149,53 @@ test("mobile verifies a schema v3 single-object report and leaves multi-object u
   delete v3Multi.result.report.uv_coordinates;
   delete v3Multi.result.report.uv_bounds;
   delete v3Multi.result.report.uv_transfer;
-  assert.equal(verifiedQuadRemeshJob(v3Multi, versionId, 4000), null);
+  const verifiedMulti = verifiedQuadRemeshJob(v3Multi, versionId, 4000);
+  assert.ok(verifiedMulti);
+  assert.equal(verifiedMulti.objects.length, 2);
+  assert.equal(verifiedMulti.report.faces, 8000);
+  assert.equal(verifiedMulti.report.quadRatio, 0.95);
+  // No single object's UV state speaks for the whole scene, so the aggregate stays null.
+  assert.equal(verifiedMulti.report.uvTransfer, null);
+  assert.deepEqual(verifiedMulti.objects.map((entry) => entry.name), ["Part", "Copy"]);
+  assert.equal(verifiedMulti.objects[0].uvTransfer, "active_surface_projected");
+
+  // The aggregate must match the sum of the per-object entries, or the report is rejected.
+  const mismatched = succeededJob({
+    report: {
+      schema_version: 3,
+      objects: 2,
+      per_object: [v3Object, { ...v3Object, name: "Copy" }],
+      faces: 7999,
+      quad_faces: 7600,
+      triangle_faces: 400,
+      vertices: 8400,
+    },
+  });
+  delete mismatched.result.report.source_uv_layers;
+  delete mismatched.result.report.uv_layers;
+  delete mismatched.result.report.uv_coordinates;
+  delete mismatched.result.report.uv_bounds;
+  delete mismatched.result.report.uv_transfer;
+  assert.equal(verifiedQuadRemeshJob(mismatched, versionId, 4000), null);
+
+  // Duplicate per-object names must be rejected too.
+  const duplicateNames = succeededJob({
+    report: {
+      schema_version: 3,
+      objects: 2,
+      per_object: [v3Object, { ...v3Object }],
+      faces: 8000,
+      quad_faces: 7600,
+      triangle_faces: 400,
+      vertices: 8400,
+    },
+  });
+  delete duplicateNames.result.report.source_uv_layers;
+  delete duplicateNames.result.report.uv_layers;
+  delete duplicateNames.result.report.uv_coordinates;
+  delete duplicateNames.result.report.uv_bounds;
+  delete duplicateNames.result.report.uv_transfer;
+  assert.equal(verifiedQuadRemeshJob(duplicateNames, versionId, 4000), null);
 });
 
 test("mobile exposes real QuadriFlow as a separate honest FBX action", () => {
@@ -166,4 +212,15 @@ test("mobile exposes real QuadriFlow as a separate honest FBX action", () => {
   assert.match(sheet, /active map was surface-projected/);
   assert.match(sheet, /Linking\.openURL\(quadResult\.downloadUrl\)/);
   assert.doesNotMatch(sheet, /Quad · \{ru \? "скоро" : "soon"\}/);
+});
+
+test("mobile quad-remesh reaches explicit-scene versions and shows a per-object breakdown", () => {
+  assert.match(
+    project,
+    /async function exportQuadRemesh\(targetFaces: number\) \{\s*\n\s*if \(!client \|\| !active\) return;/,
+  );
+  assert.match(project, /triangleOnlyReason=\{/);
+  assert.match(sheet, /triangleOnlyReason/);
+  assert.match(sheet, /quadResult\.objects\.length > 1/);
+  assert.match(sheet, /quadResult\.objects\.map/);
 });

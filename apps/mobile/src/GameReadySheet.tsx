@@ -58,6 +58,7 @@ export function GameReadySheet({
   language,
   busy,
   disabledReason,
+  triangleOnlyReason,
   result,
   quadResult,
   onClose,
@@ -67,7 +68,10 @@ export function GameReadySheet({
   visible: boolean;
   language: "ru" | "en";
   busy: boolean;
+  /** Blocks both topologies (e.g. no active version). */
   disabledReason?: string | null;
+  /** Blocks only the triangle game-ready GLB path; quad-remesh supports explicit scenes. */
+  triangleOnlyReason?: string | null;
   result: GameReadyExportResult | null;
   quadResult: QuadRemeshResult | null;
   onClose: () => void;
@@ -100,8 +104,9 @@ export function GameReadySheet({
   const quadError = topology === "quad" && !parsedQuadTarget.ok
     ? (ru ? "Введите целое число граней от 100 до 100 000." : "Enter an integer face count from 100 to 100,000.")
     : null;
+  const effectiveReason = disabledReason ?? (topology === "triangle" ? triangleOnlyReason : null);
   const disabled = busy
-    || Boolean(disabledReason)
+    || Boolean(effectiveReason)
     || (topology === "triangle" ? Boolean(lodError) : Boolean(quadError));
   const previewIsCollider = Boolean(
     previewLod && result?.report?.collider?.name === previewLod,
@@ -293,7 +298,7 @@ export function GameReadySheet({
           </View>
         ) : null}
 
-        {disabledReason && <Text style={[styles.muted, { color: colors.yellow }]}>{disabledReason}</Text>}
+        {effectiveReason && <Text style={[styles.muted, { color: colors.yellow }]}>{effectiveReason}</Text>}
 
         <Pressable
           accessibilityRole="button"
@@ -346,8 +351,26 @@ export function GameReadySheet({
                     : `UV · the active map was surface-projected onto the new mesh (${quadResult.report.uvCoordinates?.toLocaleString("en-US") ?? "—"} coordinates)`)
                 : quadResult.report.uvTransfer === "none"
                   ? (ru ? "UV · у исходной модели не было UV-карты" : "UV · the source model had no UV map")
-                  : (ru ? "UV · старый отчёт не содержит доказательства переноса" : "UV · the legacy report has no transfer evidence")}
+                  : quadResult.objects.length > 1
+                    ? (ru ? "UV · разная у каждого объекта, см. список ниже" : "UV · differs per object, see the list below")
+                    : (ru ? "UV · старый отчёт не содержит доказательства переноса" : "UV · the legacy report has no transfer evidence")}
             </Text>
+            {quadResult.objects.length > 1 && (
+              <View style={{ gap: 5 }}>
+                <Text style={styles.sectionSubtitle}>
+                  {ru ? `${quadResult.objects.length} объекта сцены:` : `${quadResult.objects.length} scene objects:`}
+                </Text>
+                {quadResult.objects.map((entry) => (
+                  <Text key={entry.name ?? ""} style={styles.mono}>
+                    {entry.name} · {entry.faces.toLocaleString(ru ? "ru-RU" : "en-US")} {ru ? "граней" : "faces"} ·{" "}
+                    {(entry.quadRatio * 100).toFixed(1)}% quad ·{" "}
+                    {entry.uvTransfer === "active_surface_projected"
+                      ? (ru ? "UV перенесён" : "UV transferred")
+                      : (ru ? "без UV" : "no UV")}
+                  </Text>
+                ))}
+              </View>
+            )}
             <Pressable style={[styles.button, { borderColor: colors.green }]} onPress={() => void Linking.openURL(quadResult.downloadUrl)}>
               <Text style={[styles.buttonText, { color: colors.green }]}>{ru ? "Открыть / скачать FBX" : "Open / download FBX"}</Text>
             </Pressable>

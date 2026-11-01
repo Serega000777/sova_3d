@@ -4019,7 +4019,7 @@ export default function ProjectScreen() {
   }
 
   async function exportQuadRemesh(targetFaces: number) {
-    if (!client || !active || hasExplicitScene) return;
+    if (!client || !active) return;
     const versionId = active.id;
     setError(null);
     setQuadRemeshResult(null);
@@ -6328,13 +6328,14 @@ export default function ProjectScreen() {
         language={language}
         busy={Boolean(busy)}
         disabledReason={
-          !active
-            ? (ru ? "Сначала откройте версию модели." : "Open a model version first.")
-            : hasExplicitScene
-              ? (ru
-                  ? "Игровой экспорт сейчас работает с одним объектом. Сделайте нужный объект уникальным и откройте отдельно."
-                  : "Game export currently works with one object. Make the target object unique and open it separately.")
-              : null
+          !active ? (ru ? "Сначала откройте версию модели." : "Open a model version first.") : null
+        }
+        triangleOnlyReason={
+          hasExplicitScene
+            ? (ru
+                ? "Игровой экспорт сейчас работает с одним объектом. Сделайте нужный объект уникальным и откройте отдельно."
+                : "Game export currently works with one object. Make the target object unique and open it separately.")
+            : null
         }
         result={gameReadyResult}
         quadResult={quadRemeshResult}
