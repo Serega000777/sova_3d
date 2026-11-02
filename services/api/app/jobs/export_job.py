@@ -90,6 +90,14 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                             handle.write(chunk)
                 except ObjectNotFoundError as exc:
                     raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
+                appearance = entry.get("appearance")
+                game_texture_path: str | None = None
+                if isinstance(appearance, dict) and appearance.get("texture_sha256"):
+                    texture_sha256 = str(appearance["texture_sha256"])
+                    material_texture_path = tmp / f"material-{texture_sha256}.png"
+                    if not material_texture_path.exists():
+                        material_texture_path.write_bytes(texture_bytes(texture_sha256))
+                    game_texture_path = str(material_texture_path)
                 scene_object_sources.append(
                     gameready.SceneObjectSource(
                         node_id=str(entry.get("node_id")),
@@ -99,6 +107,8 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                         path=str(scene_path),
                         format=cast(Literal["stl", "glb"], scene_asset.format),
                         world_transform=cast(list[list[float]], entry.get("world_transform")),
+                        appearance=appearance,
+                        texture_path=game_texture_path,
                     )
                 )
                 game_scene_asset_ids.append(str(scene_asset.id))
@@ -121,6 +131,14 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 "asset_ids": game_scene_asset_ids,
                 "transforms_applied": True,
                 "animations": built_scene.animations,
+                "materials": sum(
+                    entry.report.material is not None for entry in built_scene.per_object
+                ),
+                "textured_materials": sum(
+                    entry.report.material is not None
+                    and entry.report.material.source_texture_sha256 is not None
+                    for entry in built_scene.per_object
+                ),
                 **(
                     {"animation_kind": f"{built_scene.animation_kind}_joint"}
                     if built_scene.animation_kind is not None

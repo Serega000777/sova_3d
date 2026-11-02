@@ -421,6 +421,9 @@ export function GameReadySheet({
                       ? ` · ${ru ? "коллайдер" : "collider"} ${entry.colliderTriangles.toLocaleString(ru ? "ru-RU" : "en-US")}`
                       : ` · ${ru ? "без коллайдера" : "no collider"}`}
                     {entry.animated ? ` · ${ru ? "rigid-анимация" : "rigid animation"}` : ""}
+                    {entry.material
+                      ? ` · ${entry.material.catalogMaterialId}${entry.material.sourceTextureSha256 ? ` · ${ru ? "texture LOD" : "texture LOD"} ${entry.material.embeddedTexturePx.join("/")}` : ""}`
+                      : ""}
                     {entry.engineName !== entry.name ? ` · GLB: ${entry.engineName}` : ""}
                   </Text>
                 ))}
@@ -432,11 +435,20 @@ export function GameReadySheet({
                 <Text style={styles.sectionSubtitle}>
                   {result.sceneObjects.some((entry) => entry.animated)
                     ? (ru
-                        ? "Доверенная rigid-анимация механизма перенесена вместе со всеми LOD и UCX движущегося узла. Материалы узлов пока остаются только в обычном GLB сцены."
-                        : "The trusted rigid mechanism animation is carried with every LOD and UCX child of the moving node. Per-node materials still remain in the regular scene GLB only.")
+                        ? "Доверенная rigid-анимация механизма перенесена вместе со всеми LOD и UCX движущегося узла."
+                        : "The trusted rigid mechanism animation is carried with every LOD and UCX child of the moving node.")
                     : (ru
-                        ? "У этой сцены нет одной доверенной rigid-анимации; материалы узлов пока остаются только в обычном GLB сцены."
-                        : "This scene has no single trusted rigid animation; per-node materials still remain in the regular scene GLB only.")}
+                        ? "У этой сцены нет одной доверенной rigid-анимации."
+                        : "This scene has no single trusted rigid animation.")}
+                </Text>
+                <Text style={styles.sectionSubtitle}>
+                  {result.sceneObjects.some((entry) => entry.material)
+                    ? (ru
+                        ? "Доверенные материалы каталога перенесены по объектам; текстурные покрытия запечены в отдельный нормализованный atlas каждого LOD."
+                        : "Trusted catalogue materials are carried per object; textured finishes are baked into each LOD's own normalized atlas.")
+                    : (ru
+                        ? "У объектов этой сцены нет назначенных материалов каталога."
+                        : "This scene has no assigned catalogue materials.")}
                 </Text>
               </View>
             ) : null}

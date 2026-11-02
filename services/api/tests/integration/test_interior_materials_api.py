@@ -3,16 +3,31 @@
 from __future__ import annotations
 
 import hashlib
+import uuid
+from collections.abc import Iterator
 
+import pytest
+import trimesh
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import Job, ProjectVersion
+import app.jobs.handlers  # noqa: F401 — registers handlers
+from app.models import Asset, Job, ProjectVersion
 from app.models.core import WorkspaceRole
+from app.models.execution import JobStatus
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
+from tests.integration.test_exports_api import run_all
 from tests.integration.test_imports_api import project  # noqa: F401
 from tests.integration.test_painting_api import imported_version
+
+
+@pytest.fixture
+def material_cleanup_keys(storage: S3Storage) -> Iterator[list[str]]:
+    keys: list[str] = []
+    yield keys
+    for key in keys:
+        storage.delete(key)
 
 
 def test_catalogue_and_texture_are_bounded_and_content_addressed(api_client: TestClient) -> None:
@@ -45,6 +60,7 @@ def test_assign_carry_clear_and_drop_interior_material(
     actor: Actor,
     db_session: Session,
     storage: S3Storage,
+    material_cleanup_keys: list[str],
     project: str,  # noqa: F811
 ) -> None:
     source_id = imported_version(api_client, actor, db_session, storage, project)
@@ -74,6 +90,45 @@ def test_assign_carry_clear_and_drop_interior_material(
     export_job = db_session.get(Job, accepted.json()["job_id"])
     assert export_job is not None
     assert export_job.input["scene"][0]["appearance"]["catalog_material_id"] == material_id
+    (ordinary_job,) = run_all(db_session, storage)
+    assert ordinary_job.status is JobStatus.succeeded, ordinary_job.error
+    ordinary_asset = db_session.get(Asset, uuid.UUID(str((ordinary_job.result or {})["asset_id"])))
+    assert ordinary_asset is not None
+    material_cleanup_keys.append(ordinary_asset.storage_key)
+
+    game = api_client.post(
+        f"/api/v1/models/{made_id}/exports",
+        json={"format": "glb", "game": {"lod_ratios": [0.5], "texture_px": 256}},
+        headers=actor.headers,
+    )
+    assert game.status_code == 202, game.text
+    (game_job,) = run_all(db_session, storage)
+    assert game_job.status is JobStatus.succeeded, game_job.error
+    game_result = game_job.result or {}
+    game_report = game_result["report"]
+    assert game_report["scene"]["materials"] == 1
+    assert game_report["scene"]["textured_materials"] == 1
+    material_report = game_report["per_object"][0]["report"]["material"]
+    assert material_report == {
+        "catalog_material_id": material_id,
+        "base_color": node["appearance"]["base_color"],
+        "roughness": node["appearance"]["roughness"],
+        "source_texture_sha256": node["appearance"]["texture_sha256"],
+        "embedded_texture_px": [256, 256],
+    }
+    game_asset = db_session.get(Asset, uuid.UUID(str(game_result["asset_id"])))
+    assert game_asset is not None
+    material_cleanup_keys.append(game_asset.storage_key)
+    loaded = trimesh.load(
+        trimesh.util.wrap_as_stream(storage.get(game_asset.storage_key)),
+        file_type="glb",
+        process=False,
+    )
+    assert isinstance(loaded, trimesh.Scene)
+    lod0_name = game_report["per_object"][0]["report"]["lods"][0]["name"]
+    material = loaded.geometry[lod0_name].visual.material
+    assert material.name == f"{material_id}_LOD0"
+    assert material.baseColorTexture is not None
 
     # A public scene edit cannot forge appearance, but the stable node id carries the exact
     # server snapshot across rename/transform edits.

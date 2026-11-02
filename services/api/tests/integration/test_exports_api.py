@@ -522,6 +522,8 @@ def test_a_game_ready_scene_export_keeps_every_objects_own_lod_and_collider(
         "asset_ids": [str(asset.id), str(asset.id)],
         "transforms_applied": True,
         "animations": 0,
+        "materials": 0,
+        "textured_materials": 0,
     }
     names = {entry["node_id"]: entry["name"] for entry in report["per_object"]}
     assert set(names) == {"part_a", "part_b"}

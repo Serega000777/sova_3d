@@ -14,6 +14,7 @@ import io
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -24,7 +25,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from trimesh.visual.material import PBRMaterial
 
 from worker.decimate import decimated as _decimated
-from worker.exporters import SceneAnimationInput, animated_glb
+from worker.exporters import (
+    SceneAnimationInput,
+    SceneAppearanceInput,
+    animated_glb,
+    load_scene_texture,
+)
 from worker.importers.child import parse
 from worker.importers.common import Z_UP_TO_Y_UP, as_single_mesh, to_platform_axes
 from worker.sandbox import SandboxLimits
@@ -97,6 +103,24 @@ class UvAtlasReport(BaseModel):
     out_of_bounds_vertices: int
 
 
+class GameMaterialReport(BaseModel):
+    catalog_material_id: str = Field(min_length=1, max_length=120)
+    base_color: str = Field(pattern=r"^#[0-9A-F]{6}$")
+    roughness: float = Field(ge=0.04, le=1.0)
+    source_texture_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    embedded_texture_px: list[int] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def _texture_evidence_is_coherent(self) -> GameMaterialReport:
+        if self.source_texture_sha256 is None and self.embedded_texture_px:
+            raise ValueError("a solid material cannot report embedded textures")
+        if self.source_texture_sha256 is not None and not self.embedded_texture_px:
+            raise ValueError("a textured material must report every embedded LOD texture")
+        if any(size < 256 or size > 4096 for size in self.embedded_texture_px):
+            raise ValueError("embedded material texture sizes are outside the game-ready bounds")
+        return self
+
+
 class GameReport(BaseModel):
     ok: bool
     message: str | None = None
@@ -109,7 +133,18 @@ class GameReport(BaseModel):
     pivot: str = "base"
     # the paint, as a texture: its size on LOD0 (None = the model had no colours to keep)
     baked_texture_px: int | None = None
+    material: GameMaterialReport | None = None
     file_bytes: int = 0
+
+    @model_validator(mode="after")
+    def _material_matches_lods(self) -> GameReport:
+        if (
+            self.material is not None
+            and self.material.source_texture_sha256 is not None
+            and len(self.material.embedded_texture_px) != len(self.lods)
+        ):
+            raise ValueError("a textured material must embed one atlas for every LOD")
+        return self
 
 
 def _lighter(lod0: trimesh.Trimesh, previous: trimesh.Trimesh, faces: int) -> trimesh.Trimesh:
@@ -178,7 +213,13 @@ def _bake(uv: np.ndarray, faces: np.ndarray, colours: np.ndarray, size: int) -> 
     for face, colour in zip(faces.tolist(), colours.tolist(), strict=True):
         fill = tuple(int(c) for c in colour[:4])
         draw.polygon([tuple(corners[i]) for i in face], fill=fill, outline=fill)
-    texels = np.asarray(image).copy()
+    return _dilate_texture(image)
+
+
+def _dilate_texture(image: Image.Image) -> Image.Image:
+    """Grow opaque atlas texels into a four-pixel gutter for stable texture filtering."""
+
+    texels = np.asarray(image.convert("RGBA")).copy()
     filled = texels[..., 3] > 0
     for _ in range(4):
         grown = filled.copy()
@@ -190,6 +231,71 @@ def _bake(uv: np.ndarray, faces: np.ndarray, colours: np.ndarray, size: int) -> 
         filled = grown
     texels[..., 3] = 255
     return Image.fromarray(texels, "RGBA")
+
+
+def _bake_tiled_texture(
+    uv: np.ndarray,
+    faces: np.ndarray,
+    vertices_mm: np.ndarray,
+    texture: Image.Image,
+    tile_size_mm: float,
+    size: int,
+) -> Image.Image:
+    """Bake object-local millimetre box projection into one normalized LOD atlas.
+
+    The catalogue tile remains content-addressed input. Baking lets the game-ready asset keep
+    its 0..1 xatlas UV evidence while preserving the catalogue's real-world repeat size.
+    """
+
+    atlas = np.zeros((size, size, 4), dtype=np.uint8)
+    source = np.asarray(texture.convert("RGBA"), dtype=np.uint8)
+    corners = np.c_[uv[:, 0] * (size - 1), (1.0 - uv[:, 1]) * (size - 1)]
+    for face in faces:
+        destination = corners[face]
+        triangle_mm = vertices_mm[face]
+        normal = np.cross(triangle_mm[1] - triangle_mm[0], triangle_mm[2] - triangle_mm[0])
+        axis = int(np.argmax(np.abs(normal)))
+        projected = triangle_mm[:, (1, 2) if axis == 0 else (0, 2) if axis == 1 else (0, 1)]
+        projected /= tile_size_mm
+
+        minimum = np.maximum(np.floor(destination.min(axis=0)).astype(np.int64), 0)
+        maximum = np.minimum(np.ceil(destination.max(axis=0)).astype(np.int64), size - 1)
+        if np.any(maximum < minimum):
+            continue
+        xs, ys = np.meshgrid(
+            np.arange(minimum[0], maximum[0] + 1),
+            np.arange(minimum[1], maximum[1] + 1),
+        )
+        sample_x = xs.astype(np.float64) + 0.5
+        sample_y = ys.astype(np.float64) + 0.5
+        first, second, third = destination
+        denominator = (second[1] - third[1]) * (first[0] - third[0]) + (third[0] - second[0]) * (
+            first[1] - third[1]
+        )
+        if abs(float(denominator)) <= 1e-12:
+            continue
+        weight_first = (
+            (second[1] - third[1]) * (sample_x - third[0])
+            + (third[0] - second[0]) * (sample_y - third[1])
+        ) / denominator
+        weight_second = (
+            (third[1] - first[1]) * (sample_x - third[0])
+            + (first[0] - third[0]) * (sample_y - third[1])
+        ) / denominator
+        weight_third = 1.0 - weight_first - weight_second
+        inside = (weight_first >= -1e-9) & (weight_second >= -1e-9) & (weight_third >= -1e-9)
+        if not np.any(inside):
+            continue
+        tiled = (
+            weight_first[inside, None] * projected[0]
+            + weight_second[inside, None] * projected[1]
+            + weight_third[inside, None] * projected[2]
+        )
+        source_x = np.floor(np.mod(tiled[:, 0], 1.0) * source.shape[1]).astype(np.int64)
+        source_y = np.floor((1.0 - np.mod(tiled[:, 1], 1.0)) * source.shape[0]).astype(np.int64)
+        source_y %= source.shape[0]
+        atlas[ys[inside], xs[inside]] = source[source_y, source_x]
+    return _dilate_texture(Image.fromarray(atlas, "RGBA"))
 
 
 def bake_mesh_texture(
@@ -249,22 +355,35 @@ def _convex_collider(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
 
 
 def build(
-    mesh_mm: trimesh.Trimesh, request: GameRequest, colours: np.ndarray | None = None
+    mesh_mm: trimesh.Trimesh,
+    request: GameRequest,
+    colours: np.ndarray | None = None,
+    *,
+    appearance: SceneAppearanceInput | None = None,
+    catalogue_texture: Image.Image | None = None,
+    texture_space_inverse: np.ndarray | None = None,
 ) -> tuple[trimesh.Scene, GameReport]:
     """A Z-up millimetre mesh in, a Y-up metre scene with LODs and a collider out.
 
     `colours` (RGBA per face of `mesh_mm`) are baked into a texture per LOD when given.
     """
+    if appearance is not None and appearance.texture_sha256 is not None and not request.uv:
+        raise ValueError("a textured catalogue material needs game-ready UV atlases")
+    if (appearance is None or appearance.texture_sha256 is None) != (catalogue_texture is None):
+        raise ValueError("catalogue material texture evidence is incomplete")
     mesh = mesh_mm.copy()
     mesh.merge_vertices()
     mesh.remove_unreferenced_vertices()
     mesh.fix_normals()
     lo, hi = mesh.bounds
     centre = (lo + hi) / 2.0
+    pivot_shift = np.zeros(3, dtype=np.float64)
     if request.pivot == "base":
-        mesh.apply_translation((-centre[0], -centre[1], -lo[2]))
+        pivot_shift = np.asarray((-centre[0], -centre[1], -lo[2]))
+        mesh.apply_translation(pivot_shift)
     elif request.pivot == "centre":
-        mesh.apply_translation(-centre)
+        pivot_shift = -centre
+        mesh.apply_translation(pivot_shift)
     mesh.apply_scale(0.001)
     mesh.apply_transform(Z_UP_TO_Y_UP)
 
@@ -272,16 +391,29 @@ def build(
     lods = [lod0]
     for ratio in request.lod_ratios:
         lods.append(_lighter(lod0, lods[-1], int(len(lod0.faces) * ratio)))
-    material = PBRMaterial(
-        name=f"{request.name}_Material",
-        baseColorFactor=[int(round(c * 255)) for c in request.base_color],
-        metallicFactor=request.metallic,
-        roughnessFactor=request.roughness,
+    base_colour = (
+        [int(appearance.base_color[index : index + 2], 16) for index in (1, 3, 5)] + [255]
+        if appearance is not None
+        else [int(round(c * 255)) for c in request.base_color]
     )
-    bake = colours is not None and request.uv
+    roughness = appearance.roughness if appearance is not None else request.roughness
+    metallic = 0.0 if appearance is not None else request.metallic
+    material_name = (
+        appearance.catalog_material_id if appearance is not None else f"{request.name}_Material"
+    )
+    material = PBRMaterial(
+        name=material_name,
+        baseColorFactor=base_colour,
+        metallicFactor=metallic,
+        roughnessFactor=roughness,
+    )
+    bake = appearance is None and colours is not None and request.uv
     scene = trimesh.Scene()
     lod_reports: list[LodReport] = []
     uv_reports: list[UvAtlasReport] = []
+    material_texture_sizes: list[int] = []
+    engine_to_platform = np.linalg.inv(np.asarray(Z_UP_TO_Y_UP, dtype=np.float64))
+    local_from_effective = texture_space_inverse if texture_space_inverse is not None else np.eye(4)
     for index, lod in enumerate(lods):
         name = f"{request.name}_LOD{index}"
         deviation = 0.0 if index == 0 else _deviation_mm(lod, lod0)
@@ -289,15 +421,38 @@ def build(
         visual = shaded.visual
         uv = visual.uv if isinstance(visual, trimesh.visual.TextureVisuals) else None
         lod_material = material
-        if bake and uv is not None and colours is not None:
+        if appearance is not None and catalogue_texture is not None and uv is not None:
+            size = max(request.texture_px >> index, 256)
+            platform_vertices = (
+                trimesh.transform_points(shaded.vertices, engine_to_platform) * 1000.0
+            )
+            effective_vertices = platform_vertices - pivot_shift
+            local_vertices = trimesh.transform_points(effective_vertices, local_from_effective)
+            texture = _bake_tiled_texture(
+                uv,
+                shaded.faces,
+                local_vertices,
+                catalogue_texture,
+                appearance.texture_tile_size_mm or 1.0,
+                size,
+            )
+            lod_material = PBRMaterial(
+                name=f"{appearance.catalog_material_id}_LOD{index}",
+                baseColorFactor=base_colour,
+                baseColorTexture=texture,
+                metallicFactor=metallic,
+                roughnessFactor=roughness,
+            )
+            material_texture_sizes.append(size)
+        elif bake and uv is not None and colours is not None:
             # merge/fix_normals keep face order, so `colours` still match `mesh` face by face
             size = max(request.texture_px >> index, 256)
             texture = _bake(uv, shaded.faces, _transferred(lod, mesh, colours), size)
             lod_material = PBRMaterial(
                 name=f"{request.name}_LOD{index}_Material",
                 baseColorTexture=texture,
-                metallicFactor=request.metallic,
-                roughnessFactor=request.roughness,
+                metallicFactor=metallic,
+                roughnessFactor=roughness,
             )
         shaded.visual = trimesh.visual.TextureVisuals(uv=uv, material=lod_material)
         scene.add_geometry(shaded, node_name=name, geom_name=name)
@@ -351,6 +506,17 @@ def build(
         ),
         pivot=request.pivot,
         baked_texture_px=request.texture_px if bake else None,
+        material=(
+            GameMaterialReport(
+                catalog_material_id=appearance.catalog_material_id,
+                base_color=appearance.base_color,
+                roughness=appearance.roughness,
+                source_texture_sha256=appearance.texture_sha256,
+                embedded_texture_px=material_texture_sizes,
+            )
+            if appearance is not None
+            else None
+        ),
     )
 
 
@@ -412,14 +578,25 @@ class SceneGameReport(BaseModel):
         return self
 
 
+@dataclass(slots=True)
+class PreparedSceneObject:
+    node_id: str
+    name: str
+    mesh_mm: trimesh.Trimesh
+    colours: np.ndarray | None
+    world_origin_mm: np.ndarray
+    appearance: SceneAppearanceInput | None = None
+    catalogue_texture: Image.Image | None = None
+    texture_space_inverse: np.ndarray | None = None
+
+
 def build_scene(
-    objects: list[tuple[str, str, trimesh.Trimesh, np.ndarray | None, np.ndarray]],
-    request: GameRequest,
+    objects: list[PreparedSceneObject], request: GameRequest
 ) -> tuple[trimesh.Scene, SceneGameReport]:
     """Build one combined game-ready GLB where every scene object keeps its own LOD/UV/collider.
 
-    `objects` are `(node_id, name, mesh_mm, colours, world_origin_mm)` in platform millimetres,
-    Z-up. The linear portion of the stored world transform is already applied to `mesh_mm`,
+    Objects are in platform millimetres, Z-up. The linear portion of the stored world
+    transform is already applied to `mesh_mm`,
     while translation stays on a parent scene node. That keeps the exact authored placement
     and gives every object's LODs and UCX collider one shared pivot for a rigid animation.
     This function computes one shared assembly pivot, then delegates every object's local
@@ -431,10 +608,10 @@ def build_scene(
         )
     combined_lo = np.array([np.inf, np.inf, np.inf])
     combined_hi = np.array([-np.inf, -np.inf, -np.inf])
-    for _, _, mesh_mm, _, origin_mm in objects:
-        lo, hi = mesh_mm.bounds
-        combined_lo = np.minimum(combined_lo, lo + origin_mm)
-        combined_hi = np.maximum(combined_hi, hi + origin_mm)
+    for entry in objects:
+        lo, hi = entry.mesh_mm.bounds
+        combined_lo = np.minimum(combined_lo, lo + entry.world_origin_mm)
+        combined_hi = np.maximum(combined_hi, hi + entry.world_origin_mm)
     centre = (combined_lo + combined_hi) / 2.0
     shared_shift = np.zeros(3, dtype=np.float64)
     if request.pivot == "base":
@@ -446,8 +623,8 @@ def build_scene(
     per_object: list[ObjectGameReport] = []
     used_names: set[str] = set()
     triangles_in_total = 0
-    for index, (node_id, name, mesh_mm, colours, origin_mm) in enumerate(objects):
-        base_name = _sanitize_object_name(name, index)
+    for index, entry in enumerate(objects):
+        base_name = _sanitize_object_name(entry.name, index)
         object_name = base_name
         suffix = index
         while object_name in used_names:
@@ -457,8 +634,15 @@ def build_scene(
         used_names.add(object_name)
 
         object_request = request.model_copy(update={"name": object_name, "pivot": "keep"})
-        sub_scene, object_report = build(mesh_mm, object_request, colours)
-        platform_origin_m = (origin_mm + shared_shift) * 0.001
+        sub_scene, object_report = build(
+            entry.mesh_mm,
+            object_request,
+            entry.colours,
+            appearance=entry.appearance,
+            catalogue_texture=entry.catalogue_texture,
+            texture_space_inverse=entry.texture_space_inverse,
+        )
+        platform_origin_m = (entry.world_origin_mm + shared_shift) * 0.001
         engine_origin = trimesh.transform_points([platform_origin_m], Z_UP_TO_Y_UP)[0]
         parent_transform = np.eye(4)
         parent_transform[:3, 3] = engine_origin
@@ -472,8 +656,8 @@ def build_scene(
             )
         per_object.append(
             ObjectGameReport(
-                node_id=node_id,
-                source_name=name,
+                node_id=entry.node_id,
+                source_name=entry.name,
                 name=object_name,
                 report=object_report,
             )
@@ -548,6 +732,15 @@ class SceneObjectSource(BaseModel):
     path: str
     format: Literal["stl", "glb"]
     world_transform: list[list[float]]
+    appearance: SceneAppearanceInput | None = None
+    texture_path: str | None = None
+
+    @model_validator(mode="after")
+    def _appearance_texture_pair(self) -> SceneObjectSource:
+        needs_texture = self.appearance is not None and self.appearance.texture_sha256 is not None
+        if needs_texture != (self.texture_path is not None):
+            raise ValueError("scene material texture path does not match its immutable snapshot")
+        return self
 
 
 class GameSceneManifest(BaseModel):
@@ -563,7 +756,7 @@ def export_scene_file(
     animation: SceneAnimationInput | None = None,
 ) -> SceneGameReport:
     """Load every visible scene object, apply its exact stored world transform, then build."""
-    prepared: list[tuple[str, str, trimesh.Trimesh, np.ndarray | None, np.ndarray]] = []
+    prepared: list[PreparedSceneObject] = []
     for entry in objects:
         mesh, colours = _load_platform_mesh_mm(Path(entry.path), entry.format)
         if mesh is None:
@@ -585,8 +778,24 @@ def export_scene_file(
         linear = transform.copy()
         origin_mm = linear[:3, 3].copy()
         linear[:3, 3] = 0.0
+        texture_space_inverse = np.linalg.inv(linear)
         mesh.apply_transform(linear)
-        prepared.append((entry.node_id, entry.name, mesh, colours, origin_mm))
+        prepared.append(
+            PreparedSceneObject(
+                node_id=entry.node_id,
+                name=entry.name,
+                mesh_mm=mesh,
+                colours=colours,
+                world_origin_mm=origin_mm,
+                appearance=entry.appearance,
+                catalogue_texture=(
+                    load_scene_texture(entry.appearance, entry.texture_path, entry.name)
+                    if entry.appearance is not None
+                    else None
+                ),
+                texture_space_inverse=texture_space_inverse,
+            )
+        )
     scene, report = build_scene(prepared, request)
     if not report.ok:
         return report
@@ -619,7 +828,9 @@ def run_scene_in_sandbox(
 
     effective_limits = limits or GAME_LIMITS
     try:
-        combined_input_bytes = sum(Path(entry.path).stat().st_size for entry in objects)
+        input_paths = {Path(entry.path) for entry in objects}
+        input_paths.update(Path(entry.texture_path) for entry in objects if entry.texture_path)
+        combined_input_bytes = sum(path.stat().st_size for path in input_paths)
     except OSError as exc:
         return SceneGameReport(ok=False, message=str(exc))
     if combined_input_bytes > effective_limits.max_input_bytes:

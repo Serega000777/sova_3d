@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import struct
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 import trimesh
+from PIL import Image
 from pydantic import ValidationError
 
 from tests import fixtures
@@ -270,10 +272,22 @@ def _world_box(x_mm: float) -> trimesh.Trimesh:
     return cast(trimesh.Trimesh, box)
 
 
+def _scene_object(
+    node_id: str, name: str, mesh: trimesh.Trimesh, origin: np.ndarray | None = None
+) -> gameready.PreparedSceneObject:
+    return gameready.PreparedSceneObject(
+        node_id=node_id,
+        name=name,
+        mesh_mm=mesh,
+        colours=None,
+        world_origin_mm=np.zeros(3) if origin is None else origin,
+    )
+
+
 def test_build_scene_keeps_every_objects_own_lod_uv_and_collider() -> None:
     objects = [
-        ("node_a", "First", _world_box(0.0), None, np.zeros(3)),
-        ("node_b", "Second", _world_box(200.0), None, np.zeros(3)),
+        _scene_object("node_a", "First", _world_box(0.0)),
+        _scene_object("node_b", "Second", _world_box(200.0)),
     ]
     scene, report = gameready.build_scene(objects, GameRequest(lod_ratios=[0.5]))
     assert report.ok, report.message
@@ -291,8 +305,8 @@ def test_build_scene_keeps_every_objects_own_lod_uv_and_collider() -> None:
 
 def test_build_scene_preserves_relative_world_placement() -> None:
     objects = [
-        ("node_a", "First", _world_box(0.0), None, np.zeros(3)),
-        ("node_b", "Second", _world_box(0.0), None, np.asarray((200.0, 0.0, 0.0))),
+        _scene_object("node_a", "First", _world_box(0.0)),
+        _scene_object("node_b", "Second", _world_box(0.0), np.asarray((200.0, 0.0, 0.0))),
     ]
     scene, report = gameready.build_scene(objects, GameRequest(pivot="centre"))
     first = _world_mesh(scene, f"{report.per_object[0].name}_LOD0")
@@ -304,12 +318,36 @@ def test_build_scene_preserves_relative_world_placement() -> None:
 
 def test_build_scene_disambiguates_colliding_sanitized_names() -> None:
     objects = [
-        ("node_a", f"Part{'x' * 50}!!", _world_box(0.0), None, np.zeros(3)),
-        ("node_b", f"Part{'x' * 50}??", _world_box(50.0), None, np.zeros(3)),
+        _scene_object("node_a", f"Part{'x' * 50}!!", _world_box(0.0)),
+        _scene_object("node_b", f"Part{'x' * 50}??", _world_box(50.0)),
     ]
     _, report = gameready.build_scene(objects, GameRequest())
     names = [entry.name for entry in report.per_object]
     assert len(set(names)) == 2
+
+
+def test_build_scene_carries_a_solid_catalogue_material_to_every_lod() -> None:
+    appearance = gameready.SceneAppearanceInput(
+        schema_version=1,
+        catalog_material_id="interior.paint.warm-white-matte.v1",
+        base_color="#F2EBDD",
+        gloss_pct=8,
+        roughness=0.92,
+    )
+    entry = _scene_object("node_a", "Painted cabinet", _world_box(0.0))
+    entry.appearance = appearance
+    scene, report = gameready.build_scene([entry], GameRequest(lod_ratios=[0.5]))
+    material_report = report.per_object[0].report.material
+    assert material_report is not None
+    assert material_report.catalog_material_id == appearance.catalog_material_id
+    assert material_report.source_texture_sha256 is None
+    assert material_report.embedded_texture_px == []
+    for lod in report.per_object[0].report.lods:
+        material: Any = _mesh(scene, lod.name).visual.material
+        assert material.name == appearance.catalog_material_id
+        assert list(material.baseColorFactor) == [242, 235, 221, 255]
+        assert material.metallicFactor == 0.0
+        assert material.roughnessFactor == pytest.approx(0.92)
 
 
 def test_build_scene_refuses_an_empty_object_list() -> None:
@@ -370,6 +408,105 @@ def test_the_sandboxed_scene_export_combines_two_objects_into_one_glb(tmp_path: 
     for entry in report.per_object:
         assert f"{entry.name}_LOD0" in back.geometry
         assert f"UCX_{entry.name}_00" in back.geometry
+
+
+def _catalogue_texture(tmp_path: Path) -> tuple[Path, str]:
+    pixels = np.zeros((64, 64, 3), dtype=np.uint8)
+    pixels[:, :32] = (220, 30, 30)
+    pixels[:, 32:] = (30, 180, 60)
+    path = tmp_path / "catalogue.png"
+    Image.fromarray(pixels, "RGB").save(path)
+    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_the_sandboxed_scene_export_bakes_a_hash_checked_catalogue_texture_per_lod(
+    tmp_path: Path,
+) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "textured.stl")
+    texture, sha256 = _catalogue_texture(tmp_path)
+    output = tmp_path / "textured.glb"
+    appearance = gameready.SceneAppearanceInput(
+        schema_version=1,
+        catalog_material_id="interior.wood.test.v1",
+        base_color="#B28452",
+        gloss_pct=24,
+        roughness=0.76,
+        texture_sha256=sha256,
+        texture_tile_size_mm=18,
+    )
+    report = gameready.run_scene_in_sandbox(
+        [
+            gameready.SceneObjectSource(
+                node_id="cabinet",
+                name="Cabinet",
+                path=str(source),
+                format="stl",
+                world_transform=[
+                    [1, 0, 0, 0],
+                    [0, 1, 0, 0],
+                    [0, 0, 1, 0],
+                    [0, 0, 0, 1],
+                ],
+                appearance=appearance,
+                texture_path=str(texture),
+            )
+        ],
+        GameRequest(lod_ratios=[0.5], texture_px=256),
+        output,
+        FAST,
+    )
+    assert report.ok, report.message
+    material_report = report.per_object[0].report.material
+    assert material_report is not None
+    assert material_report.source_texture_sha256 == sha256
+    assert material_report.embedded_texture_px == [256, 256]
+    back = cast(trimesh.Scene, trimesh.load(output, process=False))
+    for lod in report.per_object[0].report.lods:
+        geometry = _mesh(back, lod.name)
+        visual = geometry.visual
+        assert isinstance(visual, trimesh.visual.TextureVisuals)
+        assert visual.uv is not None
+        assert ((visual.uv >= -1e-6) & (visual.uv <= 1 + 1e-6)).all()
+        material: Any = visual.material
+        assert material.name == f"{appearance.catalog_material_id}_{lod.name[-4:]}"
+        image = np.asarray(material.baseColorTexture.convert("RGB"))
+        assert np.unique(image.reshape((-1, 3)), axis=0).shape[0] >= 2
+
+
+def test_the_sandboxed_scene_export_rejects_a_catalogue_texture_hash_mismatch(
+    tmp_path: Path,
+) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "mismatch.stl")
+    texture, _ = _catalogue_texture(tmp_path)
+    output = tmp_path / "mismatch.glb"
+    appearance = gameready.SceneAppearanceInput(
+        schema_version=1,
+        catalog_material_id="interior.wood.test.v1",
+        base_color="#B28452",
+        gloss_pct=24,
+        roughness=0.76,
+        texture_sha256="0" * 64,
+        texture_tile_size_mm=18,
+    )
+    report = gameready.run_scene_in_sandbox(
+        [
+            gameready.SceneObjectSource(
+                node_id="cabinet",
+                name="Cabinet",
+                path=str(source),
+                format="stl",
+                world_transform=np.eye(4).tolist(),
+                appearance=appearance,
+                texture_path=str(texture),
+            )
+        ],
+        GameRequest(lod_ratios=[]),
+        output,
+        FAST,
+    )
+    assert not report.ok
+    assert report.message == "exit code 1"
+    assert not output.exists()
 
 
 @pytest.mark.parametrize(

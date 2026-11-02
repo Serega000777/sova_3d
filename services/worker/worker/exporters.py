@@ -644,17 +644,9 @@ def _apply_scene_appearance(mesh: trimesh.Trimesh, entry: SceneMeshInput) -> Non
     appearance = entry.appearance
     assert appearance is not None
     colour = [int(appearance.base_color[index : index + 2], 16) for index in (1, 3, 5)] + [255]
-    texture: Image.Image | None = None
+    texture = load_scene_texture(appearance, entry.texture_path, entry.name)
     uv: np.ndarray | None = None
     if appearance.texture_sha256 is not None:
-        if entry.texture_path is None:
-            raise ValueError(f"missing texture for assigned material on {entry.name}")
-        texture_data = Path(entry.texture_path).read_bytes()
-        if hashlib.sha256(texture_data).hexdigest() != appearance.texture_sha256:
-            raise ValueError(f"texture hash mismatch for {entry.name}")
-        texture = Image.open(io.BytesIO(texture_data)).convert("RGB")
-        if texture.width > 512 or texture.height > 512 or texture.width <= 0 or texture.height <= 0:
-            raise ValueError(f"unsupported texture dimensions for {entry.name}")
         mesh.unmerge_vertices()
         uv = _box_project_uv(mesh, appearance.texture_tile_size_mm or 1.0)
     material = PBRMaterial(
@@ -665,6 +657,26 @@ def _apply_scene_appearance(mesh: trimesh.Trimesh, entry: SceneMeshInput) -> Non
         roughnessFactor=appearance.roughness,
     )
     mesh.visual = TextureVisuals(uv=uv, material=material)
+
+
+def load_scene_texture(
+    appearance: SceneAppearanceInput, texture_path: str | None, object_name: str
+) -> Image.Image | None:
+    """Load only the exact content-addressed catalogue texture named by an appearance."""
+
+    if appearance.texture_sha256 is None:
+        if texture_path is not None:
+            raise ValueError(f"unexpected texture for solid material on {object_name}")
+        return None
+    if texture_path is None:
+        raise ValueError(f"missing texture for assigned material on {object_name}")
+    texture_data = Path(texture_path).read_bytes()
+    if hashlib.sha256(texture_data).hexdigest() != appearance.texture_sha256:
+        raise ValueError(f"texture hash mismatch for {object_name}")
+    texture = Image.open(io.BytesIO(texture_data)).convert("RGB")
+    if texture.width > 512 or texture.height > 512 or texture.width <= 0 or texture.height <= 0:
+        raise ValueError(f"unsupported texture dimensions for {object_name}")
+    return texture
 
 
 def _box_project_uv(mesh: trimesh.Trimesh, tile_size_mm: float) -> np.ndarray:

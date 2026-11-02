@@ -148,6 +148,13 @@ export interface VerifiedGameSceneObject {
   colliderTriangles: number | null;
   /** True only when the worker binds the one trusted rigid animation to this node id. */
   animated: boolean;
+  material: {
+    catalogMaterialId: string;
+    baseColor: string;
+    roughness: number;
+    sourceTextureSha256: string | null;
+    embeddedTexturePx: number[];
+  } | null;
 }
 
 /** A scene's game-ready report is trustworthy only when every visible object's own LOD/UV/
@@ -216,6 +223,7 @@ export function gameReadySceneReportMatchesRequest(
       pivot?: unknown;
       lods?: unknown;
       triangles_in?: unknown;
+      material?: unknown;
     } | undefined;
     if (objectReport?.ok !== true || objectReport.pivot !== "keep") return null;
     if (!gameReadyLodsMatchRequest(objectReport?.lods, entry.name, maxTriangles, requestedLighterLevels)) {
@@ -227,6 +235,48 @@ export function gameReadySceneReportMatchesRequest(
     if (!Number.isInteger(objectReport!.triangles_in) || (objectReport!.triangles_in as number) <= 0) {
       return null;
     }
+    const rawMaterial = objectReport.material;
+    let material: VerifiedGameSceneObject["material"] = null;
+    if (rawMaterial != null) {
+      if (typeof rawMaterial !== "object") return null;
+      const candidate = rawMaterial as {
+        catalog_material_id?: unknown;
+        base_color?: unknown;
+        roughness?: unknown;
+        source_texture_sha256?: unknown;
+        embedded_texture_px?: unknown;
+      };
+      const sourceTextureSha256 = candidate.source_texture_sha256;
+      if (
+        typeof candidate.catalog_material_id !== "string"
+        || candidate.catalog_material_id.length < 1
+        || candidate.catalog_material_id.length > 120
+        || typeof candidate.base_color !== "string"
+        || !/^#[0-9A-F]{6}$/.test(candidate.base_color)
+        || typeof candidate.roughness !== "number"
+        || !Number.isFinite(candidate.roughness)
+        || candidate.roughness < 0.04
+        || candidate.roughness > 1
+        || (sourceTextureSha256 !== null && (
+          typeof sourceTextureSha256 !== "string"
+          || !/^[0-9a-f]{64}$/.test(sourceTextureSha256)
+        ))
+        || !Array.isArray(candidate.embedded_texture_px)
+        || candidate.embedded_texture_px.some((size) => (
+          !Number.isInteger(size) || size < 256 || size > 4096
+        ))
+        || (sourceTextureSha256 === null && candidate.embedded_texture_px.length !== 0)
+        || (sourceTextureSha256 !== null
+          && candidate.embedded_texture_px.length !== objectLods.length)
+      ) return null;
+      material = {
+        catalogMaterialId: candidate.catalog_material_id,
+        baseColor: candidate.base_color,
+        roughness: candidate.roughness,
+        sourceTextureSha256,
+        embeddedTexturePx: candidate.embedded_texture_px as number[],
+      };
+    }
     triangleSum += objectReport!.triangles_in as number;
     const colliderInfo = (entry.report as { collider?: { triangles?: number } | null }).collider;
     verified.push({
@@ -237,6 +287,7 @@ export function gameReadySceneReportMatchesRequest(
       lod0Triangles: objectLods[0]!.triangles,
       colliderTriangles: colliderInfo ? colliderInfo.triangles ?? null : null,
       animated: entry.node_id === animatedNodeId,
+      material,
     });
   }
   if (triangleSum !== report.triangles_in) return null;

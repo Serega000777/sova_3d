@@ -151,7 +151,7 @@ test("reference 86 accepts only the exact bounded UCX collider report", () => {
 });
 
 test("references 83/84/86 verify every visible scene object's own evidence", () => {
-  const objectReport = (name) => ({
+  const objectReport = (name, material = null) => ({
     ok: true,
     pivot: "keep",
     triangles_in: 12,
@@ -168,7 +168,15 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
       name: `UCX_${name}_00`, kind: "convex", triangles: 12, triangle_limit: 255,
       is_convex: true, is_watertight: true, volume_ratio_pct: 100, floor_offset_mm: 0,
     },
+    material,
   });
+  const texturedMaterial = {
+    catalog_material_id: "interior.wood.oak-natural.v1",
+    base_color: "#B28452",
+    roughness: 0.76,
+    source_texture_sha256: "a".repeat(64),
+    embedded_texture_px: [256, 256],
+  };
   const report = {
     ok: true,
     pivot: "base",
@@ -180,14 +188,24 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
     animation_kind: "revolute",
     per_object: [
       { node_id: "part_a", source_name: "Crate A", name: "Crate_A", report: objectReport("Crate_A") },
-      { node_id: "part_b", source_name: "Ящик Б", name: "Obj1", report: objectReport("Obj1") },
+      { node_id: "part_b", source_name: "Ящик Б", name: "Obj1", report: objectReport("Obj1", texturedMaterial) },
     ],
   };
   assert.deepEqual(
     gameReadySceneReportMatchesRequest(report, 4096, "base", 20_000, 1, true, "convex"),
     [
-      { node_id: "part_a", name: "Crate A", engineName: "Crate_A", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12, animated: false },
-      { node_id: "part_b", name: "Ящик Б", engineName: "Obj1", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12, animated: true },
+      { node_id: "part_a", name: "Crate A", engineName: "Crate_A", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12, animated: false, material: null },
+      {
+        node_id: "part_b", name: "Ящик Б", engineName: "Obj1", triangles_in: 12,
+        lod0Triangles: 12, colliderTriangles: 12, animated: true,
+        material: {
+          catalogMaterialId: texturedMaterial.catalog_material_id,
+          baseColor: texturedMaterial.base_color,
+          roughness: texturedMaterial.roughness,
+          sourceTextureSha256: texturedMaterial.source_texture_sha256,
+          embeddedTexturePx: texturedMaterial.embedded_texture_px,
+        },
+      },
     ],
   );
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, triangles_in: 12 }, 4096, "base", 20_000, 1, true, "convex"), null);
@@ -195,9 +213,12 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], { ...report.per_object[1], report: { ...report.per_object[1].report, ok: false } }] }, 4096, "base", 20_000, 1, true, "convex"), null);
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, animated_node_id: "missing" }, 4096, "base", 20_000, 1, true, "convex"), null);
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, animations: 2 }, 4096, "base", 20_000, 1, true, "convex"), null);
+  const forgedMaterial = { ...texturedMaterial, source_texture_sha256: "bad", embedded_texture_px: [256] };
+  assert.equal(gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], { ...report.per_object[1], report: objectReport("Obj1", forgedMaterial) }] }, 4096, "base", 20_000, 1, true, "convex"), null);
   assert.match(project, /gameReadySceneReportMatchesRequest\(/);
   assert.match(sheet, /каждый экспортный коллайдер/);
   assert.match(sheet, /Доверенная rigid-анимация механизма перенесена/);
+  assert.match(sheet, /Доверенные материалы каталога перенесены/);
 });
 
 test("project viewer exposes source, clay and wire modes with measured mesh stats", () => {
