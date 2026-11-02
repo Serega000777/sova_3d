@@ -41,12 +41,57 @@ test("legacy canonical site provenance keeps the former 500 mm boundary rule", (
   assert.equal(sitePlanFromProvenance(legacy)?.minimum_boundary_clearance_mm, 500);
 });
 
+test("a complete owner-declared boundary source hydrates without becoming a legal claim", () => {
+  const boundary_rule_set = {
+    schema_version: 1 as const,
+    authority_status: "owner_declared" as const,
+    jurisdiction: "Example municipality",
+    title: "Owner-selected source",
+    source_url: "https://rules.example.test/setbacks",
+    source_version: "2026.4",
+    effective_date: "2026-04-01",
+    required_clearances_mm: { north: 4000, east: 8000, south: 4500, west: 10000 },
+  };
+  assert.deepEqual(
+    sitePlanFromProvenance({ ...DEFAULT_SITE_PLAN, boundary_rule_set })?.boundary_rule_set,
+    boundary_rule_set,
+  );
+  assert.equal(
+    sitePlanFromProvenance({
+      ...DEFAULT_SITE_PLAN,
+      boundary_rule_set: { ...boundary_rule_set, source_url: "http://rules.example.test" },
+    }),
+    null,
+  );
+  assert.equal(
+    sitePlanFromProvenance({
+      ...DEFAULT_SITE_PLAN,
+      boundary_rule_set: {
+        ...boundary_rule_set,
+        source_url: "https://rules.example.test/setbacks?token=secret",
+      },
+    }),
+    null,
+  );
+  assert.equal(
+    sitePlanFromProvenance({
+      ...DEFAULT_SITE_PLAN,
+      boundary_rule_set: {
+        ...boundary_rule_set,
+        required_clearances_mm: { ...boundary_rule_set.required_clearances_mm, west: 50_001 },
+      },
+    }),
+    null,
+  );
+});
+
 test("Studio hydrates and rebuilds an existing site as a new immutable scene", () => {
   assert.match(projectPage, /sitePlanFromProvenance/);
   assert.match(projectPage, /sceneProvenance\.site_plan/);
   assert.match(projectPage, /Пересобрать участок/);
   assert.match(projectPage, /Заданный отступ до границы/);
-  assert.match(projectPage, /не автоматически определённая строительная норма/);
+  assert.match(projectPage, /Добавить версионированный источник правил/);
+  assert.match(projectPage, /не подтверждает юридическую применимость или актуальность документа/);
   assert.match(projectPage, /заменяет только служебные рельеф, площадку, дорожку и забор/);
   assert.doesNotMatch(projectPage, /!sceneProvenance\.site_plan/);
 });

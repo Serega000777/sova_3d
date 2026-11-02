@@ -265,6 +265,8 @@ class MarketplaceSitePlanMetadata:
     house_rotation_deg: float
     house_dimensions_mm: tuple[float, float]
     minimum_boundary_clearance_mm: float
+    boundary_rule_set: dict[str, Any] | None
+    required_boundary_clearances_mm: tuple[float, float, float, float]
     house_boundary_clearances_mm: tuple[float, float, float, float]
     path_points_mm: tuple[tuple[float, float], ...]
     path_width_mm: float
@@ -702,6 +704,37 @@ def site_plan_metadata_for_versions(
             sides = tuple(str(side) for side in details["fence_sides"])
         except (KeyError, TypeError, ValueError, IndexError):
             continue
+        try:
+            boundary_rule_set = site_plans.validate_boundary_rule_set(
+                details.get("boundary_rule_set")
+            )
+            raw_rule_set = site_plans.validate_boundary_rule_set(raw_spec.get("boundary_rule_set"))
+        except ValidationFailedError:
+            continue
+        if boundary_rule_set != raw_rule_set:
+            continue
+        if details.get("schema_version") != (2 if boundary_rule_set is not None else 1):
+            continue
+        declared_clearances = (
+            boundary_rule_set["required_clearances_mm"] if boundary_rule_set is not None else {}
+        )
+        required_clearances = {
+            side: max(minimum_clearance, float(declared_clearances.get(side, minimum_clearance)))
+            for side in site_plans.BOUNDARY_SIDES
+        }
+        recorded_required_clearances = details.get("required_boundary_clearances_mm")
+        if recorded_required_clearances is not None:
+            if not isinstance(recorded_required_clearances, dict):
+                continue
+            try:
+                saved_required_clearances = {
+                    side: float(recorded_required_clearances[side])
+                    for side in site_plans.BOUNDARY_SIDES
+                }
+            except (KeyError, TypeError, ValueError):
+                continue
+            if saved_required_clearances != required_clearances:
+                continue
         if len(dimensions) != 2:
             continue
         measured_clearances = site_plans.house_boundary_clearances(
@@ -751,6 +784,7 @@ def site_plan_metadata_for_versions(
             *elevations,
             *dimensions,
             minimum_clearance,
+            *required_clearances.values(),
             *measured_clearances.values(),
             *(value for point in path for value in point),
         ]
@@ -765,7 +799,10 @@ def site_plan_metadata_for_versions(
             or not 5_000 <= numbers["plot_width_mm"] <= 200_000
             or not 300 <= numbers["path_width_mm"] <= 5_000
             or not 500 <= minimum_clearance <= 50_000
-            or min(measured_clearances.values()) < minimum_clearance
+            or any(
+                measured_clearances[side] < required_clearances[side]
+                for side in site_plans.BOUNDARY_SIDES
+            )
             or any(value <= 0 for value in dimensions)
         ):
             continue
@@ -797,6 +834,13 @@ def site_plan_metadata_for_versions(
             house_rotation_deg=numbers["house_rotation_deg"],
             house_dimensions_mm=dimensions,
             minimum_boundary_clearance_mm=minimum_clearance,
+            boundary_rule_set=boundary_rule_set,
+            required_boundary_clearances_mm=(
+                required_clearances["north"],
+                required_clearances["east"],
+                required_clearances["south"],
+                required_clearances["west"],
+            ),
             house_boundary_clearances_mm=(
                 measured_clearances["north"],
                 measured_clearances["east"],

@@ -18211,6 +18211,102 @@
         "title": "BlenderHandoffCreate",
         "description": "The only supported operation; no Python, add-ons, paths, or Blender arguments."
       },
+      "BoundaryClearancesBody": {
+        "properties": {
+          "north": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": 500.0,
+            "title": "North"
+          },
+          "east": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": 500.0,
+            "title": "East"
+          },
+          "south": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": 500.0,
+            "title": "South"
+          },
+          "west": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": 500.0,
+            "title": "West"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "north",
+          "east",
+          "south",
+          "west"
+        ],
+        "title": "BoundaryClearancesBody"
+      },
+      "BoundaryRuleSetBody": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "authority_status": {
+            "type": "string",
+            "const": "owner_declared",
+            "title": "Authority Status",
+            "default": "owner_declared"
+          },
+          "jurisdiction": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Jurisdiction"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "source_url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 9,
+            "title": "Source Url"
+          },
+          "source_version": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Source Version"
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Effective Date"
+          },
+          "required_clearances_mm": {
+            "$ref": "#/components/schemas/BoundaryClearancesBody"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "jurisdiction",
+          "title",
+          "source_url",
+          "source_version",
+          "effective_date",
+          "required_clearances_mm"
+        ],
+        "title": "BoundaryRuleSetBody"
+      },
       "BoxRegion": {
         "properties": {
           "kind": {
@@ -26127,6 +26223,25 @@
             "minimum": 500.0,
             "title": "Minimum Boundary Clearance Mm"
           },
+          "boundary_rule_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoundaryRuleSetBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "required_boundary_clearances_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Required Boundary Clearances Mm"
+          },
           "house_boundary_clearances_mm": {
             "items": {
               "type": "number"
@@ -26192,6 +26307,8 @@
           "house_rotation_deg",
           "house_dimensions_mm",
           "minimum_boundary_clearance_mm",
+          "boundary_rule_set",
+          "required_boundary_clearances_mm",
           "house_boundary_clearances_mm",
           "path_points_mm",
           "path_width_mm",
@@ -33254,6 +33371,16 @@
             "minimum": 500.0,
             "title": "Minimum Boundary Clearance Mm",
             "default": 500
+          },
+          "boundary_rule_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoundaryRuleSetBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "path_points_mm": {
             "items": {

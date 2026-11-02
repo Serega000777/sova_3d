@@ -73,6 +73,24 @@ def _body() -> dict[str, object]:
     }
 
 
+def _rule_set() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "authority_status": "owner_declared",
+        "jurisdiction": "Example municipality",
+        "title": "Owner-selected plot boundary source",
+        "source_url": "https://rules.example.test/plots/setbacks",
+        "source_version": "2026.4",
+        "effective_date": "2026-04-01",
+        "required_clearances_mm": {
+            "north": 4_000,
+            "east": 8_000,
+            "south": 4_500,
+            "west": 10_000,
+        },
+    }
+
+
 def test_site_plan_builds_real_scene_objects_and_preserves_house(
     api_client: TestClient,
     actor: Actor,
@@ -173,6 +191,75 @@ def test_legacy_queued_site_spec_keeps_the_former_500_mm_rule(
 
     assert validated["minimum_boundary_clearance_mm"] == 500.0
     assert min(validated["house_boundary_clearances_mm"].values()) > 500
+
+
+def test_site_plan_persists_versioned_owner_declared_boundary_rules(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    source = _house_version(db_session, storage, actor, cleanup_keys)
+    url = f"/api/v1/models/{source.id}/site-plan"
+    accepted = api_client.post(
+        url,
+        json={**_body(), "minimum_boundary_clearance_mm": 500, "boundary_rule_set": _rule_set()},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    job = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert job is not None and job.status is JobStatus.succeeded, job.error if job else None
+    details = (job.result or {})["site_plan"]
+    made_id = str((job.result or {})["version_id"])
+    assert details["schema_version"] == 2
+    assert details["boundary_rule_set"] == _rule_set()
+    assert details["required_boundary_clearances_mm"] == {
+        "north": 4_000.0,
+        "east": 8_000.0,
+        "south": 4_500.0,
+        "west": 10_000.0,
+    }
+    for asset_id in (job.result or {})["asset_ids"].values():
+        asset = db_session.get(Asset, uuid.UUID(asset_id))
+        assert asset is not None
+        cleanup_keys.append(asset.storage_key)
+
+    blocked = api_client.post(
+        f"/api/v1/models/{made_id}/site-plan",
+        json={
+            **_body(),
+            "minimum_boundary_clearance_mm": 500,
+            "boundary_rule_set": {
+                **_rule_set(),
+                "required_clearances_mm": {
+                    "east": 8_000,
+                    "south": 4_500,
+                    "west": 10_000,
+                    "north": 5_000,
+                },
+            },
+        },
+        headers=actor.headers,
+    )
+    assert blocked.status_code == 422
+    assert blocked.json()["error"]["details"]["failed_sides"] == ["north"]
+    assert blocked.json()["error"]["details"]["required_boundary_clearances_mm"]["north"] == 5_000
+
+    for insecure_url in (
+        "http://rules.example.test",
+        "https://rules.example.test/setbacks?token=secret",
+        "https://user:secret@rules.example.test/setbacks",
+    ):
+        insecure = api_client.post(
+            f"/api/v1/models/{made_id}/site-plan",
+            json={
+                **_body(),
+                "boundary_rule_set": {**_rule_set(), "source_url": insecure_url},
+            },
+            headers=actor.headers,
+        )
+        assert insecure.status_code == 422
 
 
 def test_site_plan_fails_closed_for_auth_lineage_fit_and_stale_head(

@@ -160,7 +160,7 @@ def handle_site_plan(ctx: JobContext) -> dict[str, Any]:
     if ctx.job.created_by is None:
         raise JobFailureError("creator_missing", "site composition needs an owning user")
     details = {
-        "schema_version": 1,
+        "schema_version": 2 if spec["boundary_rule_set"] is not None else 1,
         "source_version_id": str(version.id),
         "plot_length_mm": spec["plot_length_mm"],
         "plot_width_mm": spec["plot_width_mm"],
@@ -169,6 +169,8 @@ def handle_site_plan(ctx: JobContext) -> dict[str, Any]:
         "house_y_mm": spec["house_y_mm"],
         "house_rotation_deg": spec["house_rotation_deg"],
         "minimum_boundary_clearance_mm": spec["minimum_boundary_clearance_mm"],
+        "boundary_rule_set": spec["boundary_rule_set"],
+        "required_boundary_clearances_mm": spec["required_boundary_clearances_mm"],
         "house_boundary_clearances_mm": spec["house_boundary_clearances_mm"],
         "house_z_mm": spec["house_z_mm"],
         "pad_bottom_mm": spec["pad_bottom_mm"],

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import math
+import re
+from datetime import date
 from typing import Any
+from urllib.parse import urlsplit
 
 from app.api.errors import ConflictError, ValidationFailedError
 from app.models.core import Project
@@ -13,6 +16,88 @@ SITE_PLAN_JOB = "compose_site_plan"
 SITE_NODE_IDS = frozenset(
     {"site_root", "site_house", "site_terrain", "site_house_pad", "site_path", "site_fence"}
 )
+BOUNDARY_SIDES = ("north", "east", "south", "west")
+
+
+def validate_boundary_rule_set(value: object) -> dict[str, Any] | None:
+    """Validate an owner-declared source snapshot without claiming regulatory authority."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValidationFailedError("boundary rule set must be an object")
+    expected_keys = {
+        "schema_version",
+        "authority_status",
+        "jurisdiction",
+        "title",
+        "source_url",
+        "source_version",
+        "effective_date",
+        "required_clearances_mm",
+    }
+    if set(value) != expected_keys:
+        raise ValidationFailedError("boundary rule set fields are incomplete or unsupported")
+    if value.get("schema_version") != 1 or value.get("authority_status") != "owner_declared":
+        raise ValidationFailedError("unsupported boundary rule set schema or authority status")
+
+    text: dict[str, str] = {}
+    for key, limit in (("jurisdiction", 120), ("title", 200), ("source_version", 80)):
+        raw = value.get(key)
+        if not isinstance(raw, str) or not raw.strip() or len(raw.strip()) > limit:
+            raise ValidationFailedError(f"boundary rule set {key} is invalid")
+        text[key] = raw.strip()
+
+    source_url = value.get("source_url")
+    if (
+        not isinstance(source_url, str)
+        or not 9 <= len(source_url) <= 500
+        or source_url != source_url.strip()
+        or any(ord(character) < 32 for character in source_url)
+    ):
+        raise ValidationFailedError("boundary rule set source_url is invalid")
+    parsed = urlsplit(source_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or bool(parsed.query)
+        or bool(parsed.fragment)
+    ):
+        raise ValidationFailedError(
+            "boundary rule set source_url must be HTTPS without credentials, query, or fragment"
+        )
+
+    effective_date = value.get("effective_date")
+    if (
+        not isinstance(effective_date, str)
+        or re.fullmatch(r"\d{4}-\d{2}-\d{2}", effective_date) is None
+    ):
+        raise ValidationFailedError("boundary rule set effective_date is invalid")
+    try:
+        date.fromisoformat(effective_date)
+    except ValueError as exc:
+        raise ValidationFailedError("boundary rule set effective_date is invalid") from exc
+
+    raw_clearances = value.get("required_clearances_mm")
+    if not isinstance(raw_clearances, dict) or set(raw_clearances) != set(BOUNDARY_SIDES):
+        raise ValidationFailedError("boundary rule set needs north/east/south/west clearances")
+    try:
+        clearances = {side: float(raw_clearances[side]) for side in BOUNDARY_SIDES}
+    except (TypeError, ValueError) as exc:
+        raise ValidationFailedError("boundary rule set clearances are invalid") from exc
+    if any(not math.isfinite(value) or not 500 <= value <= 50_000 for value in clearances.values()):
+        raise ValidationFailedError(
+            "boundary rule set clearances must be finite values from 500 to 50000 mm"
+        )
+    return {
+        "schema_version": 1,
+        "authority_status": "owner_declared",
+        **text,
+        "source_url": source_url,
+        "effective_date": effective_date,
+        "required_clearances_mm": clearances,
+    }
 
 
 def house_boundary_clearances(
@@ -187,13 +272,24 @@ def validate_spec(
         house_y_mm=house_y,
         house_rotation_deg=house_rotation,
     )
-    failed_sides = [side for side, clearance in clearances.items() if clearance < minimum_clearance]
+    boundary_rule_set = validate_boundary_rule_set(spec.get("boundary_rule_set"))
+    declared_clearances = (
+        boundary_rule_set["required_clearances_mm"] if boundary_rule_set is not None else {}
+    )
+    required_clearances = {
+        side: max(minimum_clearance, float(declared_clearances.get(side, minimum_clearance)))
+        for side in BOUNDARY_SIDES
+    }
+    failed_sides = [
+        side for side, clearance in clearances.items() if clearance < required_clearances[side]
+    ]
     if failed_sides:
         raise ValidationFailedError(
             "the rotated house footprint violates the requested plot-boundary clearance",
             {
                 "failed_sides": failed_sides,
                 "minimum_boundary_clearance_mm": minimum_clearance,
+                "required_boundary_clearances_mm": required_clearances,
                 "house_boundary_clearances_mm": clearances,
             },
         )
@@ -232,6 +328,8 @@ def validate_spec(
         **spec,
         "house": request,
         "minimum_boundary_clearance_mm": minimum_clearance,
+        "boundary_rule_set": boundary_rule_set,
+        "required_boundary_clearances_mm": required_clearances,
         "house_boundary_clearances_mm": clearances,
         "house_z_mm": house_z,
         "pad_bottom_mm": pad_bottom,

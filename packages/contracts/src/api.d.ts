@@ -4446,6 +4446,46 @@ export interface components {
              */
             operation: "editable_scene";
         };
+        /** BoundaryClearancesBody */
+        BoundaryClearancesBody: {
+            /** North */
+            north: number;
+            /** East */
+            east: number;
+            /** South */
+            south: number;
+            /** West */
+            west: number;
+        };
+        /** BoundaryRuleSetBody */
+        BoundaryRuleSetBody: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /**
+             * Authority Status
+             * @default owner_declared
+             * @constant
+             */
+            authority_status: "owner_declared";
+            /** Jurisdiction */
+            jurisdiction: string;
+            /** Title */
+            title: string;
+            /** Source Url */
+            source_url: string;
+            /** Source Version */
+            source_version: string;
+            /**
+             * Effective Date
+             * Format: date
+             */
+            effective_date: string;
+            required_clearances_mm: components["schemas"]["BoundaryClearancesBody"];
+        };
         /**
          * BoxRegion
          * @description An axis-aligned volume in world millimetres — what a rectangular drag becomes.
@@ -7522,6 +7562,9 @@ export interface components {
             house_dimensions_mm: number[];
             /** Minimum Boundary Clearance Mm */
             minimum_boundary_clearance_mm: number;
+            boundary_rule_set: components["schemas"]["BoundaryRuleSetBody"] | null;
+            /** Required Boundary Clearances Mm */
+            required_boundary_clearances_mm: number[];
             /** House Boundary Clearances Mm */
             house_boundary_clearances_mm: number[];
             /** Path Points Mm */
@@ -10022,6 +10065,7 @@ export interface components {
              * @default 500
              */
             minimum_boundary_clearance_mm: number;
+            boundary_rule_set?: components["schemas"]["BoundaryRuleSetBody"] | null;
             /** Path Points Mm */
             path_points_mm: number[][];
             /**

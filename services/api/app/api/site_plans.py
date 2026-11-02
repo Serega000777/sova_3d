@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
@@ -27,6 +29,53 @@ def _all_fence_sides() -> list[FenceSide]:
     return ["north", "east", "south", "west"]
 
 
+class BoundaryClearancesBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    north: float = Field(ge=500, le=50_000)
+    east: float = Field(ge=500, le=50_000)
+    south: float = Field(ge=500, le=50_000)
+    west: float = Field(ge=500, le=50_000)
+
+
+class BoundaryRuleSetBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    authority_status: Literal["owner_declared"] = "owner_declared"
+    jurisdiction: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=200)
+    source_url: str = Field(min_length=9, max_length=500)
+    source_version: str = Field(min_length=1, max_length=80)
+    effective_date: date
+    required_clearances_mm: BoundaryClearancesBody
+
+    @field_validator("jurisdiction", "title", "source_version")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value must not be blank")
+        return stripped
+
+    @field_validator("source_url")
+    @classmethod
+    def require_https_source(cls, value: str) -> str:
+        if value != value.strip() or any(ord(character) < 32 for character in value):
+            raise ValueError("source_url must not contain whitespace or control characters")
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or bool(parsed.query)
+            or bool(parsed.fragment)
+        ):
+            raise ValueError("source_url must be HTTPS without credentials, query, or fragment")
+        return value
+
+
 class SitePlanBody(BaseModel):
     plot_length_mm: float = Field(ge=5_000, le=200_000)
     plot_width_mm: float = Field(ge=5_000, le=200_000)
@@ -37,6 +86,7 @@ class SitePlanBody(BaseModel):
     house_y_mm: float = Field(default=0, ge=-100_000, le=100_000)
     house_rotation_deg: float = Field(default=0, ge=-180, le=180)
     minimum_boundary_clearance_mm: float = Field(default=500, ge=500, le=50_000)
+    boundary_rule_set: BoundaryRuleSetBody | None = None
     path_points_mm: Annotated[list[Point2], Field(min_length=2, max_length=16)]
     path_width_mm: float = Field(default=1_200, ge=300, le=5_000)
     fence_sides: list[FenceSide] = Field(default_factory=_all_fence_sides, max_length=4)

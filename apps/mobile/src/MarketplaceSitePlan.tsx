@@ -27,8 +27,11 @@ export function MarketplaceSitePlan({ site }: { site: SitePlan }) {
   const path = site.path_points_mm.map((value) => point(value).join(",")).join(" ");
   const fence = new Set(site.fence_sides);
   const elevationRange = Math.max(...site.corner_elevations_mm) - Math.min(...site.corner_elevations_mm);
-  const clearanceInsetX = site.minimum_boundary_clearance_mm * scaleX;
-  const clearanceInsetY = site.minimum_boundary_clearance_mm * scaleY;
+  const [requiredNorth, requiredEast, requiredSouth, requiredWest] = site.required_boundary_clearances_mm;
+  const clearanceX = padding + requiredWest * scaleX;
+  const clearanceY = padding + requiredNorth * scaleY;
+  const clearanceWidth = Math.max(0, width - 2 * padding - (requiredWest + requiredEast) * scaleX);
+  const clearanceHeight = Math.max(0, height - 2 * padding - (requiredNorth + requiredSouth) * scaleY);
   const minimumMeasuredClearance = Math.min(...site.house_boundary_clearances_mm);
 
   return (
@@ -40,7 +43,7 @@ export function MarketplaceSitePlan({ site }: { site: SitePlan }) {
       <View style={{ width: "100%", aspectRatio: 3 / 2, borderRadius: radii.control, overflow: "hidden", backgroundColor: colors.viewport }}>
         <Svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} accessibilityLabel="Участок с домом, дорожкой и ограждением">
           <Rect x={padding} y={padding} width={width - 2 * padding} height={height - 2 * padding} rx={4} fill={colors.panel} stroke={colors.border} />
-          <Rect x={padding + clearanceInsetX} y={padding + clearanceInsetY} width={width - 2 * (padding + clearanceInsetX)} height={height - 2 * (padding + clearanceInsetY)} fill="none" stroke={colors.muted} strokeDasharray="7 5" />
+          <Rect x={clearanceX} y={clearanceY} width={clearanceWidth} height={clearanceHeight} fill="none" stroke={colors.muted} strokeDasharray="7 5" />
           {fence.has("north") ? <Line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke={colors.accent} strokeWidth={5} /> : null}
           {fence.has("south") ? <Line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke={colors.accent} strokeWidth={5} /> : null}
           {fence.has("west") ? <Line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke={colors.accent} strokeWidth={5} /> : null}
@@ -58,7 +61,13 @@ export function MarketplaceSitePlan({ site }: { site: SitePlan }) {
         <View style={styles.chip}><Text style={styles.chipText}>Перепад: {elevationRange.toFixed(0)} мм</Text></View>
         <View style={styles.chip}><Text style={styles.chipText}>Мин. отступ: {minimumMeasuredClearance.toFixed(0)} ≥ {site.minimum_boundary_clearance_mm.toFixed(0)} мм</Text></View>
       </View>
-      <Text style={styles.sectionSubtitle}>Пунктир — заданный владельцем минимальный отступ. Сервер измерил четыре стороны; это геометрическая проверка, не подтверждение местных строительных норм.</Text>
+      {site.boundary_rule_set ? <View style={{ gap: 4 }}>
+        <Text style={styles.heading}>{site.boundary_rule_set.jurisdiction} · {site.boundary_rule_set.title}</Text>
+        <Text style={styles.sectionSubtitle}>Версия {site.boundary_rule_set.source_version} · {site.boundary_rule_set.effective_date}</Text>
+        <Text style={styles.sectionSubtitle}>{site.boundary_rule_set.source_url}</Text>
+        <Text style={styles.chipText}>N {requiredNorth.toFixed(0)} · E {requiredEast.toFixed(0)} · S {requiredSouth.toFixed(0)} · W {requiredWest.toFixed(0)} мм</Text>
+      </View> : null}
+      <Text style={styles.sectionSubtitle}>Пунктир — максимум общего отступа и сохранённого owner-declared источника по каждой стороне. Сервер проверяет геометрию, но не подтверждает юридическую применимость или актуальность источника.</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {site.object_roles.map((role) => <View key={role} style={styles.statusBadge}><Text style={styles.statusText}>{ROLE_LABELS[role]}</Text></View>)}
       </View>

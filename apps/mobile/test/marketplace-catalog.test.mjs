@@ -133,7 +133,9 @@ test("yard listings render only the canonical immutable site composition", () =>
   assert.match(sitePlan, /site\.object_roles\.map/);
   assert.match(sitePlan, /site\.house_boundary_clearances_mm/);
   assert.match(sitePlan, /site\.minimum_boundary_clearance_mm/);
-  assert.match(sitePlan, /не подтверждение местных строительных норм/);
+  assert.match(sitePlan, /site\.required_boundary_clearances_mm/);
+  assert.match(sitePlan, /site\.boundary_rule_set/);
+  assert.match(sitePlan, /не подтверждает юридическую применимость или актуальность источника/);
   assert.doesNotMatch(sitePlan, /composeSitePlan|createSitePlan/);
 });
 

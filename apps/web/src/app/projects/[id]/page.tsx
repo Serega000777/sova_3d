@@ -5468,6 +5468,72 @@ export default function ProjectPage() {
                 <span className="muted">{ru
                   ? "Сервер проверит геометрический отступ повёрнутого контура дома по всем четырём сторонам. Это заданное вами ограничение, не автоматически определённая строительная норма."
                   : "The server checks the rotated house footprint against all four plot boundaries. This is your requested constraint, not an inferred building regulation."}</span>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={sitePlan.boundary_rule_set != null}
+                    onChange={(event) => setSitePlan((value) => ({
+                      ...value,
+                      boundary_rule_set: event.target.checked ? {
+                        schema_version: 1,
+                        authority_status: "owner_declared",
+                        jurisdiction: "",
+                        title: "",
+                        source_url: "https://",
+                        source_version: "",
+                        effective_date: "",
+                        required_clearances_mm: {
+                          north: value.minimum_boundary_clearance_mm,
+                          east: value.minimum_boundary_clearance_mm,
+                          south: value.minimum_boundary_clearance_mm,
+                          west: value.minimum_boundary_clearance_mm,
+                        },
+                      } : null,
+                    }))}
+                  />
+                  {ru ? "Добавить версионированный источник правил" : "Add a versioned rule source"}
+                </label>
+                {sitePlan.boundary_rule_set && (
+                  <div className="stack card">
+                    <div className="form-grid furniture-position">
+                      <label>{ru ? "Юрисдикция / территория" : "Jurisdiction / area"}
+                        <input className="input" maxLength={120} value={sitePlan.boundary_rule_set.jurisdiction} onChange={(event) => setSitePlan((value) => ({ ...value, boundary_rule_set: value.boundary_rule_set ? { ...value.boundary_rule_set, jurisdiction: event.target.value } : null }))} />
+                      </label>
+                      <label>{ru ? "Название источника" : "Source title"}
+                        <input className="input" maxLength={200} value={sitePlan.boundary_rule_set.title} onChange={(event) => setSitePlan((value) => ({ ...value, boundary_rule_set: value.boundary_rule_set ? { ...value.boundary_rule_set, title: event.target.value } : null }))} />
+                      </label>
+                      <label>{ru ? "HTTPS-ссылка" : "HTTPS source"}
+                        <input className="input" type="url" value={sitePlan.boundary_rule_set.source_url} onChange={(event) => setSitePlan((value) => ({ ...value, boundary_rule_set: value.boundary_rule_set ? { ...value.boundary_rule_set, source_url: event.target.value } : null }))} />
+                      </label>
+                      <label>{ru ? "Версия документа" : "Document version"}
+                        <input className="input" maxLength={80} value={sitePlan.boundary_rule_set.source_version} onChange={(event) => setSitePlan((value) => ({ ...value, boundary_rule_set: value.boundary_rule_set ? { ...value.boundary_rule_set, source_version: event.target.value } : null }))} />
+                      </label>
+                      <label>{ru ? "Дата действия" : "Effective date"}
+                        <input className="input" type="date" value={sitePlan.boundary_rule_set.effective_date} onChange={(event) => setSitePlan((value) => ({ ...value, boundary_rule_set: value.boundary_rule_set ? { ...value.boundary_rule_set, effective_date: event.target.value } : null }))} />
+                      </label>
+                    </div>
+                    <strong>{ru ? "Требуемые отступы по сторонам" : "Required clearances by side"}</strong>
+                    <div className="form-grid furniture-position">
+                      {(["north", "east", "south", "west"] as const).map((side) => (
+                        <label key={side}>{ru ? { north: "Север", east: "Восток", south: "Юг", west: "Запад" }[side] : side}, mm
+                          <input className="input" type="number" min="500" max="50000" step="100" value={sitePlan.boundary_rule_set!.required_clearances_mm[side]} onChange={(event) => setSitePlan((value) => value.boundary_rule_set ? ({
+                            ...value,
+                            boundary_rule_set: {
+                              ...value.boundary_rule_set,
+                              required_clearances_mm: {
+                                ...value.boundary_rule_set.required_clearances_mm,
+                                [side]: Number(event.target.value),
+                              },
+                            },
+                          }) : value)} />
+                        </label>
+                      ))}
+                    </div>
+                    <span className="muted">{ru
+                      ? "Sova сохраняет точный снимок выбранного владельцем источника и проверяет только геометрию. Система не подтверждает юридическую применимость или актуальность документа."
+                      : "Sova stores the exact owner-selected source snapshot and checks geometry only. It does not certify that the document is legally applicable or current."}</span>
+                  </div>
+                )}
                 <strong>{ru ? "Отметки рельефа по углам" : "Corner terrain elevations"}</strong>
                 <div className="form-grid furniture-position">
                   {(["SW", "SE", "NE", "NW"] as const).map((corner, index) => (

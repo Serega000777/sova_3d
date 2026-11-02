@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep, StorageDep
 from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
+from app.api.site_plans import BoundaryRuleSetBody
 from app.engineering.floor_plan import PlanOpening, PlanRoom, PlanStair, PlanWall
 from app.models.execution import Operation
 from app.models.marketplace import (
@@ -254,6 +255,8 @@ class MarketplaceSitePlanOut(BaseModel):
     house_rotation_deg: float = Field(ge=-180, le=180)
     house_dimensions_mm: list[float] = Field(min_length=2, max_length=2)
     minimum_boundary_clearance_mm: float = Field(ge=500, le=50_000)
+    boundary_rule_set: BoundaryRuleSetBody | None
+    required_boundary_clearances_mm: list[float] = Field(min_length=4, max_length=4)
     house_boundary_clearances_mm: list[float] = Field(min_length=4, max_length=4)
     path_points_mm: list[list[float]] = Field(min_length=2, max_length=16)
     path_width_mm: float = Field(ge=300, le=5_000)
@@ -723,9 +726,11 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                         house_rotation_deg=site_plan.house_rotation_deg,
                         house_dimensions_mm=list(site_plan.house_dimensions_mm),
                         minimum_boundary_clearance_mm=site_plan.minimum_boundary_clearance_mm,
-                        house_boundary_clearances_mm=list(
-                            site_plan.house_boundary_clearances_mm
+                        boundary_rule_set=site_plan.boundary_rule_set,
+                        required_boundary_clearances_mm=list(
+                            site_plan.required_boundary_clearances_mm
                         ),
+                        house_boundary_clearances_mm=list(site_plan.house_boundary_clearances_mm),
                         path_points_mm=[list(point) for point in site_plan.path_points_mm],
                         path_width_mm=site_plan.path_width_mm,
                         fence_sides=list(site_plan.fence_sides),
