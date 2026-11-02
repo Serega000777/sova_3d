@@ -734,6 +734,34 @@ summary {
   touch-action: none; /* the controls own every gesture (T-054) */
 }
 
+.shared-model-viewer .viewport,
+.shared-viewer-loading {
+  height: min(62vh, 520px);
+  min-height: 320px;
+}
+
+.shared-viewer-loading {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.shared-model-viewer .hud button {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .shared-project-page {
+    margin: 16px auto !important;
+  }
+
+  .shared-model-viewer .viewport,
+  .shared-viewer-loading {
+    height: 52vh;
+    min-height: 280px;
+  }
+}
+
 .viewport .hud button.chip {
   cursor: pointer;
 }
