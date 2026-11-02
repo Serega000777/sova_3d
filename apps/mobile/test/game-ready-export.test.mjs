@@ -67,12 +67,23 @@ test("game-ready result exposes only the verified contents reported by the worke
 });
 
 test("reference 83 previews exactly one verified GLB LOD node at a time", () => {
-  assert.match(sheet, /firstSceneObject\?\.lods\[0\]\?\.name \?\? result\?\.report\?\.lods\?\.\[0\]\?\.name/);
-  assert.match(sheet, /glbMeshName=\{previewLod\}/);
+  assert.match(sheet, /setPreviewLod\(firstSceneObject \? null : result\?\.report\?\.lods\?\.\[0\]\?\.name/);
+  assert.match(sheet, /glbMeshName=\{previewWholeScene \? null : previewLod\}/);
   assert.match(sheet, /previewLods\.map/);
   assert.match(sheet, /ручное сравнение, не автоматический выбор по расстоянию/);
   assert.match(viewer, /child\.name === meshName/);
   assert.match(viewer, /the file has no mesh named/);
+});
+
+test("reference 83 previews one verified LOD across the whole assembly", () => {
+  assert.match(sheet, /result\.sceneObjects\.map\(\(entry\) => entry\.lods\[previewLodIndex\]\?\.name/);
+  assert.match(sheet, /glbMeshName: names\[index\]!/);
+  assert.match(sheet, /sceneParts=\{previewWholeScene \? previewWholeSceneParts : undefined\}/);
+  assert.match(sheet, /Показан LOD\$\{previewLodIndex\} каждого проверенного объекта/);
+  assert.match(sheet, /не автоматическое переключение по расстоянию движка/);
+  assert.match(viewer, /glbMeshName\?: string \| null/);
+  assert.match(viewer, /source\.glbMeshName \?\?/);
+  assert.match(viewer, /const downloads = new Map<string, Promise<ArrayBuffer>>/);
 });
 
 test("reference 83 accepts only the exact ordered and measured LOD report", () => {
@@ -227,7 +238,7 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
   assert.match(sheet, /Доверенные материалы каталога перенесены/);
   assert.match(sheet, /setPreviewSceneNodeId\(entry\.node_id\)/);
   assert.match(sheet, /previewSceneObject\?\.lods/);
-  assert.match(sheet, /glbMeshName=\{previewLod\}/);
+  assert.match(sheet, /glbMeshName=\{previewWholeScene \? null : previewLod\}/);
   assert.doesNotMatch(sheet, /предпросмотр отдельных LOD для сцены пока не открыт/);
 });
 

@@ -71,6 +71,8 @@ export interface ViewerScenePart {
   id: string;
   url: string;
   format: "stl" | "glb";
+  /** Exact mesh node to extract when several verified meshes share one GLB asset. */
+  glbMeshName?: string | null;
   /** Row-major affine matrix in platform millimetres, validated by the scene API. */
   worldTransform: number[][];
   appearance?: {
@@ -722,13 +724,25 @@ export function ModelViewer({
     }
     void (async () => {
       try {
+        const downloads = new Map<string, Promise<ArrayBuffer>>();
+        const download = (sourceUrl: string): Promise<ArrayBuffer> => {
+          const existing = downloads.get(sourceUrl);
+          if (existing) return existing;
+          const pending = fetch(sourceUrl).then(async (response) => {
+            if (!response.ok) throw new Error(`model download failed (${response.status})`);
+            return response.arrayBuffer();
+          });
+          downloads.set(sourceUrl, pending);
+          return pending;
+        };
         const loaded = await Promise.all(
           sources.map(async (source) => {
-            const response = await fetch(source.url);
-            if (!response.ok) throw new Error(`model download failed (${response.status})`);
-            const buffer = await response.arrayBuffer();
+            const buffer = await download(source.url);
             const parsed = source.format === "glb"
-              ? await parseGlb(buffer, sceneParts === undefined ? glbMeshName : null)
+              ? await parseGlb(
+                  buffer,
+                  source.glbMeshName ?? (sceneParts === undefined ? glbMeshName : null),
+                )
               : null;
             const geometry = parsed?.geometry ?? new STLLoader().parse(buffer);
             let sourceMaterial = parsed?.material ?? null;

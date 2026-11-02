@@ -1,10 +1,10 @@
 /** Mobile reachability for the existing game-ready GLB export pipeline. */
 import { GAME_BUDGETS } from "@physical-ai/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 
 import { parseLodRatios, type VerifiedGameSceneObject } from "./game-ready";
-import { ModelViewer, type ModelAppearance } from "./ModelViewer";
+import { ModelViewer, type ModelAppearance, type ViewerScenePart } from "./ModelViewer";
 import { parseQuadTargetFaces, type VerifiedQuadRemesh } from "./quad-remesh";
 import { SheetShell } from "./SheetShell";
 import { colors, radii, styles } from "./theme";
@@ -91,12 +91,14 @@ export function GameReadySheet({
   const [topology, setTopology] = useState<"triangle" | "quad">("triangle");
   const [quadTargetFaces, setQuadTargetFaces] = useState("4000");
   const [previewSceneNodeId, setPreviewSceneNodeId] = useState<string | null>(null);
+  const [previewLodIndex, setPreviewLodIndex] = useState(0);
   const [previewLod, setPreviewLod] = useState<string | null>(null);
   const [previewAppearance, setPreviewAppearance] = useState<ModelAppearance>("source");
   useEffect(() => {
     const firstSceneObject = result?.sceneObjects?.[0];
-    setPreviewSceneNodeId(firstSceneObject?.node_id ?? null);
-    setPreviewLod(firstSceneObject?.lods[0]?.name ?? result?.report?.lods?.[0]?.name ?? null);
+    setPreviewSceneNodeId(null);
+    setPreviewLodIndex(0);
+    setPreviewLod(firstSceneObject ? null : result?.report?.lods?.[0]?.name ?? null);
     setPreviewAppearance("source");
   }, [result]);
   const selectedBudget = GAME_BUDGETS.find((item) => item.triangles === budget) ?? GAME_BUDGETS[1]!;
@@ -114,13 +116,37 @@ export function GameReadySheet({
   const disabled = busy
     || Boolean(effectiveReason)
     || (topology === "triangle" ? Boolean(lodError) : Boolean(quadError));
-  const previewSceneObject = result?.sceneObjects?.find(
-    (entry) => entry.node_id === previewSceneNodeId,
-  ) ?? result?.sceneObjects?.[0] ?? null;
-  const previewLods = previewSceneObject?.lods ?? result?.report?.lods ?? [];
-  const previewColliderName = previewSceneObject?.colliderName ?? result?.report?.collider?.name ?? null;
-  const previewHasUv = previewSceneObject?.hasUv ?? Boolean(result?.report?.uv);
+  const previewWholeScene = Boolean(result?.sceneObjects && previewSceneNodeId === null);
+  const previewSceneObject = previewWholeScene
+    ? null
+    : result?.sceneObjects?.find((entry) => entry.node_id === previewSceneNodeId)
+      ?? result?.sceneObjects?.[0]
+      ?? null;
+  const previewLods = previewWholeScene
+    ? result?.sceneObjects?.[0]?.lods ?? []
+    : previewSceneObject?.lods ?? result?.report?.lods ?? [];
+  const previewColliderName = previewWholeScene
+    ? null
+    : previewSceneObject?.colliderName ?? result?.report?.collider?.name ?? null;
+  const previewHasUv = previewWholeScene
+    ? Boolean(result?.sceneObjects?.length && result.sceneObjects.every((entry) => entry.hasUv))
+    : previewSceneObject?.hasUv ?? Boolean(result?.report?.uv);
   const previewIsCollider = Boolean(previewLod && previewColliderName === previewLod);
+  const previewWholeSceneParts = useMemo<ViewerScenePart[] | undefined>(() => {
+    if (!previewWholeScene || !result?.sceneObjects) return undefined;
+    const names = result.sceneObjects.map((entry) => entry.lods[previewLodIndex]?.name ?? null);
+    if (names.some((name) => name === null)) return [];
+    return result.sceneObjects.map((entry, index) => ({
+      id: entry.node_id,
+      url: result.downloadUrl,
+      format: "glb",
+      glbMeshName: names[index]!,
+      worldTransform: [],
+    }));
+  }, [previewLodIndex, previewWholeScene, result?.downloadUrl, result?.sceneObjects]);
+  const previewReady = previewWholeScene
+    ? previewWholeSceneParts?.length === result?.sceneObjects?.length
+    : Boolean(previewLod);
 
   return (
     <SheetShell
@@ -426,6 +452,21 @@ export function GameReadySheet({
                   contentContainerStyle={{ gap: 6 }}
                   accessibilityRole="radiogroup"
                 >
+                  <Pressable
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: previewWholeScene }}
+                    onPress={() => {
+                      setPreviewSceneNodeId(null);
+                      setPreviewLodIndex(0);
+                      setPreviewLod(null);
+                      setPreviewAppearance("source");
+                    }}
+                    style={[styles.chip, previewWholeScene && { borderColor: colors.selection }]}
+                  >
+                    <Text style={[styles.chipText, previewWholeScene && { color: colors.selection }]}>
+                      {ru ? "Вся сцена" : "Whole scene"}
+                    </Text>
+                  </Pressable>
                   {result.sceneObjects.map((entry) => {
                     const selected = entry.node_id === previewSceneObject?.node_id;
                     return (
@@ -435,6 +476,7 @@ export function GameReadySheet({
                         accessibilityState={{ checked: selected }}
                         onPress={() => {
                           setPreviewSceneNodeId(entry.node_id);
+                          setPreviewLodIndex(0);
                           setPreviewLod(entry.lods[0]?.name ?? null);
                           setPreviewAppearance("source");
                         }}
@@ -463,8 +505,8 @@ export function GameReadySheet({
                 ))}
                 <Text style={styles.sectionSubtitle}>
                   {ru
-                    ? "Относительное положение объектов сохранено. Выберите объект выше, затем его точный LOD, UV-сетку или UCX ниже."
-                    : "Relative object placement is preserved. Select an object above, then its exact LOD, UV checker or UCX below."}
+                    ? "Относительное положение объектов сохранено. Выберите всю сцену для общего LOD/UV или отдельный объект для его точного LOD/UV/UCX."
+                    : "Relative object placement is preserved. Select the whole scene for a shared LOD/UV view or one object for its exact LOD/UV/UCX."}
                 </Text>
                 <Text style={styles.sectionSubtitle}>
                   {result.sceneObjects.some((entry) => entry.animated)
@@ -504,21 +546,36 @@ export function GameReadySheet({
                 ))}
               </View>
             ) : null}
-            {previewLods.length && previewLod ? (
+            {previewLods.length && previewReady ? (
               <View style={{ gap: 8 }} accessibilityLabel={ru ? "Предпросмотр уровней детализации" : "Level of detail preview"}>
                 <View style={styles.row} accessibilityRole="radiogroup">
                   {previewLods.map((lod, index) => (
                     <Pressable
                       key={lod.name}
                       accessibilityRole="radio"
-                      accessibilityState={{ checked: previewLod === lod.name }}
+                      accessibilityState={{
+                        checked: previewWholeScene ? previewLodIndex === index : previewLod === lod.name,
+                      }}
                       onPress={() => {
-                        setPreviewLod(lod.name);
+                        setPreviewLodIndex(index);
+                        setPreviewLod(previewWholeScene ? null : lod.name);
                         setPreviewAppearance("source");
                       }}
-                      style={[styles.chip, previewLod === lod.name && { borderColor: colors.accent }]}
+                      style={[
+                        styles.chip,
+                        (previewWholeScene ? previewLodIndex === index : previewLod === lod.name)
+                          && { borderColor: colors.accent },
+                      ]}
                     >
-                      <Text style={[styles.chipText, previewLod === lod.name && { color: colors.accent }]}>LOD{index}</Text>
+                      <Text
+                        style={[
+                          styles.chipText,
+                          (previewWholeScene ? previewLodIndex === index : previewLod === lod.name)
+                            && { color: colors.accent },
+                        ]}
+                      >
+                        LOD{index}
+                      </Text>
                     </Pressable>
                   ))}
                   {previewColliderName ? (
@@ -556,18 +613,25 @@ export function GameReadySheet({
                   </View>
                 ) : null}
                 <ModelViewer
-                  url={result.downloadUrl}
+                  url={previewWholeScene ? null : result.downloadUrl}
+                  sceneParts={previewWholeScene ? previewWholeSceneParts : undefined}
                   format="glb"
-                  glbMeshName={previewLod}
+                  glbMeshName={previewWholeScene ? null : previewLod}
                   appearance={previewAppearance}
-                  bodyId={`game-ready-${previewSceneObject?.node_id ?? "single"}-${previewLod}`}
+                  bodyId={previewWholeScene
+                    ? `game-ready-scene-lod-${previewLodIndex}`
+                    : `game-ready-${previewSceneObject?.node_id ?? "single"}-${previewLod}`}
                   selected={false}
                   onSelect={() => undefined}
                   height={240}
                   showGrid={false}
                 />
                 <Text style={styles.sectionSubtitle}>
-                  {previewIsCollider
+                  {previewWholeScene
+                    ? (ru
+                        ? `Показан LOD${previewLodIndex} каждого проверенного объекта с сохранённым взаимным положением. Это ручное сравнение всей сборки, не автоматическое переключение по расстоянию движка.`
+                        : `LOD${previewLodIndex} is shown for every verified object with relative placement preserved. This is a manual whole-assembly comparison, not an engine's automatic distance switch.`)
+                    : previewIsCollider
                     ? (ru
                         ? "Показан ровно именованный UCX-коллайдер из экспортного GLB. Это просмотр одной collision-формы, а не симуляция столкновений, массы или динамики."
                         : "This is the exact named UCX collider from the exported GLB. It previews one collision shape; it does not simulate contacts, mass or dynamics.")
