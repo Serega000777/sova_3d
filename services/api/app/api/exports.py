@@ -257,11 +257,6 @@ def create_export(
             scene_animation = scene_animations.mechanism_animation(
                 version.provenance or {}, {str(entry["node_id"]) for entry in scene_input}
             )
-            if body.game is not None and scene_animation is not None:
-                raise ValidationFailedError(
-                    "game-ready export does not yet carry a scene's rigid-joint animation; "
-                    "export the plain scene GLB for that mechanism instead"
-                )
     if body.format in CAD_FORMATS:
         asset = brep_asset_of(db, version)
         if asset is None:

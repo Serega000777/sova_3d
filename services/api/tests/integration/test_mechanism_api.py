@@ -87,6 +87,37 @@ def test_hinged_lid_builds_three_parts_and_a_revolute_joint(
     document = json.loads(data[20 : 20 + json_length].rstrip(b" \0"))
     assert document["animations"][0]["name"] == "HingedLid"
 
+    game_export = api_client.post(
+        f"/api/v1/models/{result['version_id']}/exports",
+        json={"format": "glb", "game": {"lod_ratios": [0.5]}},
+        headers=actor.headers,
+    )
+    assert game_export.status_code == 202, game_export.text
+    (game_job,) = run_all(db_session, storage)
+    assert game_job.status is JobStatus.succeeded, game_job.error
+    game_result = game_job.result or {}
+    game_report = game_result["report"]
+    assert game_report["animations"] == 1
+    assert game_report["animated_node_id"] == mechanism["parts"]["lid"]
+    assert game_report["animation_kind"] == "revolute"
+    assert game_report["scene"]["animations"] == 1
+    assert game_report["scene"]["animation_kind"] == "revolute_joint"
+    game_asset = db_session.get(Asset, uuid.UUID(game_result["asset_id"]))
+    assert game_asset is not None
+    game_document, _game_binary = _glb_document(storage.get(game_asset.storage_key))
+    assert game_document["animations"][0]["name"] == "HingedLid"
+    target_index = game_document["animations"][0]["channels"][0]["target"]["node"]
+    target = game_document["nodes"][target_index]
+    game_lid = next(
+        entry
+        for entry in game_report["per_object"]
+        if entry["node_id"] == mechanism["parts"]["lid"]
+    )
+    assert target["name"] == game_lid["name"]
+    child_names = {game_document["nodes"][index]["name"] for index in target["children"]}
+    assert {lod["name"] for lod in game_lid["report"]["lods"]} <= child_names
+    assert game_lid["report"]["collider"]["name"] in child_names
+
     proposal = api_client.post(
         f"/api/v1/models/{result['version_id']}/animation-command-proposal",
         json={"prompt": "закрой крышку за 2,5 секунды"},

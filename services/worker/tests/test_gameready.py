@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import struct
 from pathlib import Path
 from typing import Any, cast
 
@@ -26,6 +28,19 @@ def _ball() -> trimesh.Trimesh:
 
 def _mesh(scene: trimesh.Scene, name: str) -> trimesh.Trimesh:
     return cast(trimesh.Trimesh, scene.geometry[name])
+
+
+def _world_mesh(scene: trimesh.Scene, name: str) -> trimesh.Trimesh:
+    mesh = _mesh(scene, name).copy()
+    transform, _ = scene.graph.get(frame_to=name)
+    mesh.apply_transform(transform)
+    return mesh
+
+
+def _glb_document(data: bytes) -> dict[str, Any]:
+    json_length, kind = struct.unpack_from("<I4s", data, 12)
+    assert kind == b"JSON"
+    return cast(dict[str, Any], json.loads(data[20 : 20 + json_length].rstrip(b" \0")))
 
 
 def test_the_asset_is_metres_y_up_and_stands_on_its_pivot() -> None:
@@ -257,8 +272,8 @@ def _world_box(x_mm: float) -> trimesh.Trimesh:
 
 def test_build_scene_keeps_every_objects_own_lod_uv_and_collider() -> None:
     objects = [
-        ("node_a", "First", _world_box(0.0), None),
-        ("node_b", "Second", _world_box(200.0), None),
+        ("node_a", "First", _world_box(0.0), None, np.zeros(3)),
+        ("node_b", "Second", _world_box(200.0), None, np.zeros(3)),
     ]
     scene, report = gameready.build_scene(objects, GameRequest(lod_ratios=[0.5]))
     assert report.ok, report.message
@@ -276,12 +291,12 @@ def test_build_scene_keeps_every_objects_own_lod_uv_and_collider() -> None:
 
 def test_build_scene_preserves_relative_world_placement() -> None:
     objects = [
-        ("node_a", "First", _world_box(0.0), None),
-        ("node_b", "Second", _world_box(200.0), None),
+        ("node_a", "First", _world_box(0.0), None, np.zeros(3)),
+        ("node_b", "Second", _world_box(0.0), None, np.asarray((200.0, 0.0, 0.0))),
     ]
     scene, report = gameready.build_scene(objects, GameRequest(pivot="centre"))
-    first = _mesh(scene, f"{report.per_object[0].name}_LOD0")
-    second = _mesh(scene, f"{report.per_object[1].name}_LOD0")
+    first = _world_mesh(scene, f"{report.per_object[0].name}_LOD0")
+    second = _world_mesh(scene, f"{report.per_object[1].name}_LOD0")
     # platform X stays glTF X; the 200 mm world offset becomes 0.2 m, not each object's own origin
     offset = second.bounds.mean(axis=0)[0] - first.bounds.mean(axis=0)[0]
     assert offset == pytest.approx(0.2, abs=1e-6)
@@ -289,8 +304,8 @@ def test_build_scene_preserves_relative_world_placement() -> None:
 
 def test_build_scene_disambiguates_colliding_sanitized_names() -> None:
     objects = [
-        ("node_a", f"Part{'x' * 50}!!", _world_box(0.0), None),
-        ("node_b", f"Part{'x' * 50}??", _world_box(50.0), None),
+        ("node_a", f"Part{'x' * 50}!!", _world_box(0.0), None, np.zeros(3)),
+        ("node_b", f"Part{'x' * 50}??", _world_box(50.0), None, np.zeros(3)),
     ]
     _, report = gameready.build_scene(objects, GameRequest())
     names = [entry.name for entry in report.per_object]
@@ -355,6 +370,112 @@ def test_the_sandboxed_scene_export_combines_two_objects_into_one_glb(tmp_path: 
     for entry in report.per_object:
         assert f"{entry.name}_LOD0" in back.geometry
         assert f"UCX_{entry.name}_00" in back.geometry
+
+
+@pytest.mark.parametrize(
+    ("animation", "clip_name"),
+    [
+        (
+            gameready.SceneAnimationInput(
+                kind="revolute",
+                node_id="node_b",
+                axis="x",
+                min_angle_deg=0,
+                max_angle_deg=90,
+            ),
+            "HingedLid",
+        ),
+        (
+            gameready.SceneAnimationInput(
+                kind="prismatic",
+                node_id="node_b",
+                axis="y",
+                min_travel_mm=0,
+                max_travel_mm=40,
+            ),
+            "SlidingLid",
+        ),
+    ],
+)
+def test_the_sandboxed_scene_export_animates_one_objects_lods_and_collider_together(
+    tmp_path: Path,
+    animation: gameready.SceneAnimationInput,
+    clip_name: str,
+) -> None:
+    source_a = fixtures.write_stl_binary(tmp_path / f"{animation.kind}-a.stl")
+    source_b = fixtures.write_stl_binary(tmp_path / f"{animation.kind}-b.stl")
+    output = tmp_path / f"{animation.kind}.glb"
+    objects = [
+        gameready.SceneObjectSource(
+            node_id="node_a",
+            name="Base",
+            path=str(source_a),
+            format="stl",
+            world_transform=[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+        ),
+        gameready.SceneObjectSource(
+            node_id="node_b",
+            name="Moving lid",
+            path=str(source_b),
+            format="stl",
+            world_transform=[[1, 0, 0, 0], [0, 1, 0, 15], [0, 0, 1, 20], [0, 0, 0, 1]],
+        ),
+    ]
+    report = gameready.run_scene_in_sandbox(
+        objects,
+        GameRequest(lod_ratios=[0.5]),
+        output,
+        FAST,
+        animation=animation,
+    )
+    assert report.ok, report.message
+    assert report.animations == 1
+    assert report.animated_node_id == "node_b"
+    assert report.animation_kind == animation.kind
+    moving = next(entry for entry in report.per_object if entry.node_id == "node_b")
+    document = _glb_document(output.read_bytes())
+    parent_index = next(
+        index for index, node in enumerate(document["nodes"]) if node.get("name") == moving.name
+    )
+    child_names = {
+        document["nodes"][index].get("name")
+        for index in document["nodes"][parent_index]["children"]
+    }
+    assert set(moving.report.lods[index].name for index in range(2)) <= child_names
+    assert moving.report.collider is not None and moving.report.collider.name in child_names
+    assert document["animations"][0]["name"] == clip_name
+    assert {channel["target"]["node"] for channel in document["animations"][0]["channels"]} == {
+        parent_index
+    }
+
+
+def test_scene_animation_fails_closed_for_a_pre_rotated_target(tmp_path: Path) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "rotated.stl")
+    output = tmp_path / "rotated.glb"
+    quarter_turn = trimesh.transformations.rotation_matrix(np.pi / 2.0, (0.0, 0.0, 1.0))
+    report = gameready.export_scene_file(
+        [
+            gameready.SceneObjectSource(
+                node_id="moving",
+                name="Moving lid",
+                path=str(source),
+                format="stl",
+                world_transform=quarter_turn.tolist(),
+            )
+        ],
+        GameRequest(lod_ratios=[]),
+        output,
+        gameready.SceneAnimationInput(
+            kind="revolute",
+            node_id="moving",
+            axis="x",
+            min_angle_deg=0,
+            max_angle_deg=90,
+        ),
+    )
+    assert not report.ok
+    assert report.message == "game-ready rigid animation needs an axis-aligned mechanism node"
+    assert not output.exists()
 
 
 def test_the_sandboxed_scene_export_refuses_an_invalid_world_transform(tmp_path: Path) -> None:

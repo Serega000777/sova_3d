@@ -420,6 +420,7 @@ export function GameReadySheet({
                     {entry.colliderTriangles !== null
                       ? ` · ${ru ? "коллайдер" : "collider"} ${entry.colliderTriangles.toLocaleString(ru ? "ru-RU" : "en-US")}`
                       : ` · ${ru ? "без коллайдера" : "no collider"}`}
+                    {entry.animated ? ` · ${ru ? "rigid-анимация" : "rigid animation"}` : ""}
                     {entry.engineName !== entry.name ? ` · GLB: ${entry.engineName}` : ""}
                   </Text>
                 ))}
@@ -429,9 +430,13 @@ export function GameReadySheet({
                     : "Relative object placement is preserved; a per-object LOD preview is not yet open here — download the GLB."}
                 </Text>
                 <Text style={styles.sectionSubtitle}>
-                  {ru
-                    ? "Материалы узлов и анимация механизма в этот игровой GLB пока не переносятся; для них используйте обычный GLB сцены."
-                    : "Per-node materials and mechanism animation are not carried into this game-ready GLB yet; use the regular scene GLB for those."}
+                  {result.sceneObjects.some((entry) => entry.animated)
+                    ? (ru
+                        ? "Доверенная rigid-анимация механизма перенесена вместе со всеми LOD и UCX движущегося узла. Материалы узлов пока остаются только в обычном GLB сцены."
+                        : "The trusted rigid mechanism animation is carried with every LOD and UCX child of the moving node. Per-node materials still remain in the regular scene GLB only.")
+                    : (ru
+                        ? "У этой сцены нет одной доверенной rigid-анимации; материалы узлов пока остаются только в обычном GLB сцены."
+                        : "This scene has no single trusted rigid animation; per-node materials still remain in the regular scene GLB only.")}
                 </Text>
               </View>
             ) : null}

@@ -521,6 +521,7 @@ def test_a_game_ready_scene_export_keeps_every_objects_own_lod_and_collider(
         "visible_objects": 2,
         "asset_ids": [str(asset.id), str(asset.id)],
         "transforms_applied": True,
+        "animations": 0,
     }
     names = {entry["node_id"]: entry["name"] for entry in report["per_object"]}
     assert set(names) == {"part_a", "part_b"}
@@ -537,8 +538,14 @@ def test_a_game_ready_scene_export_keeps_every_objects_own_lod_and_collider(
         trimesh.util.wrap_as_stream(storage.get(export_asset.storage_key)), file_type="glb"
     )
     assert isinstance(loaded, trimesh.Scene)
-    lod0_a = loaded.geometry[f"{names['part_a']}_LOD0"]
-    lod0_b = loaded.geometry[f"{names['part_b']}_LOD0"]
+    lod0_a_name = f"{names['part_a']}_LOD0"
+    lod0_b_name = f"{names['part_b']}_LOD0"
+    lod0_a = loaded.geometry[lod0_a_name].copy()
+    lod0_b = loaded.geometry[lod0_b_name].copy()
+    transform_a, _ = loaded.graph.get(frame_to=lod0_a_name)
+    transform_b, _ = loaded.graph.get(frame_to=lod0_b_name)
+    lod0_a.apply_transform(transform_a)
+    lod0_b.apply_transform(transform_b)
     # 150 mm of world-space separation survives the shared pivot and the mm-to-m conversion.
     offset = lod0_b.bounds.mean(axis=0)[0] - lod0_a.bounds.mean(axis=0)[0]
     assert offset == pytest.approx(0.15, abs=1e-4)

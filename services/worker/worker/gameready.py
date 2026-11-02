@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from trimesh.visual.material import PBRMaterial
 
 from worker.decimate import decimated as _decimated
+from worker.exporters import SceneAnimationInput, animated_glb
 from worker.importers.child import parse
 from worker.importers.common import Z_UP_TO_Y_UP, as_single_mesh, to_platform_axes
 from worker.sandbox import SandboxLimits
@@ -384,6 +385,9 @@ class SceneGameReport(BaseModel):
     per_object: list[ObjectGameReport] = Field(default_factory=list)
     pivot: Literal["base", "centre", "keep"] = "base"
     file_bytes: int = Field(default=0, ge=0)
+    animations: int = Field(default=0, ge=0, le=1)
+    animated_node_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    animation_kind: Literal["revolute", "prismatic"] | None = None
 
     @model_validator(mode="after")
     def _aggregate_matches_objects(self) -> SceneGameReport:
@@ -400,21 +404,26 @@ class SceneGameReport(BaseModel):
         node_ids = [entry.node_id for entry in self.per_object]
         if len(set(node_ids)) != len(node_ids):
             raise ValueError("every per_object node_id must be unique")
+        if self.animations == 0:
+            if self.animated_node_id is not None or self.animation_kind is not None:
+                raise ValueError("an unanimated report cannot name an animation target")
+        elif self.animated_node_id not in node_ids or self.animation_kind is None:
+            raise ValueError("an animation must target exactly one reported scene object")
         return self
 
 
 def build_scene(
-    objects: list[tuple[str, str, trimesh.Trimesh, np.ndarray | None]],
+    objects: list[tuple[str, str, trimesh.Trimesh, np.ndarray | None, np.ndarray]],
     request: GameRequest,
 ) -> tuple[trimesh.Scene, SceneGameReport]:
     """Build one combined game-ready GLB where every scene object keeps its own LOD/UV/collider.
 
-    `objects` are `(node_id, name, mesh_mm, colours)` already in platform millimetres, Z-up,
-    with the scene's own stored world transform applied — so relative object placement is
-    exactly as authored. This function computes one shared pivot for the whole assembly (not
-    one per object, which would scatter every object back to its own local origin), then
-    delegates every object to the unchanged single-object `build()` with `pivot="keep"` so the
-    per-object LOD/UV/collider logic is not duplicated.
+    `objects` are `(node_id, name, mesh_mm, colours, world_origin_mm)` in platform millimetres,
+    Z-up. The linear portion of the stored world transform is already applied to `mesh_mm`,
+    while translation stays on a parent scene node. That keeps the exact authored placement
+    and gives every object's LODs and UCX collider one shared pivot for a rigid animation.
+    This function computes one shared assembly pivot, then delegates every object's local
+    geometry to the unchanged single-object `build()` with `pivot="keep"`.
     """
     if not objects:
         return trimesh.Scene(), SceneGameReport(
@@ -422,17 +431,22 @@ def build_scene(
         )
     combined_lo = np.array([np.inf, np.inf, np.inf])
     combined_hi = np.array([-np.inf, -np.inf, -np.inf])
-    for _, _, mesh_mm, _ in objects:
+    for _, _, mesh_mm, _, origin_mm in objects:
         lo, hi = mesh_mm.bounds
-        combined_lo = np.minimum(combined_lo, lo)
-        combined_hi = np.maximum(combined_hi, hi)
+        combined_lo = np.minimum(combined_lo, lo + origin_mm)
+        combined_hi = np.maximum(combined_hi, hi + origin_mm)
     centre = (combined_lo + combined_hi) / 2.0
+    shared_shift = np.zeros(3, dtype=np.float64)
+    if request.pivot == "base":
+        shared_shift = np.asarray((-centre[0], -centre[1], -combined_lo[2]))
+    elif request.pivot == "centre":
+        shared_shift = -centre
 
     scene = trimesh.Scene()
     per_object: list[ObjectGameReport] = []
     used_names: set[str] = set()
     triangles_in_total = 0
-    for index, (node_id, name, mesh_mm, colours) in enumerate(objects):
+    for index, (node_id, name, mesh_mm, colours, origin_mm) in enumerate(objects):
         base_name = _sanitize_object_name(name, index)
         object_name = base_name
         suffix = index
@@ -442,15 +456,20 @@ def build_scene(
             suffix += 1
         used_names.add(object_name)
 
-        shifted = mesh_mm.copy()
-        if request.pivot == "base":
-            shifted.apply_translation((-centre[0], -centre[1], -combined_lo[2]))
-        elif request.pivot == "centre":
-            shifted.apply_translation(-centre)
         object_request = request.model_copy(update={"name": object_name, "pivot": "keep"})
-        sub_scene, object_report = build(shifted, object_request, colours)
+        sub_scene, object_report = build(mesh_mm, object_request, colours)
+        platform_origin_m = (origin_mm + shared_shift) * 0.001
+        engine_origin = trimesh.transform_points([platform_origin_m], Z_UP_TO_Y_UP)[0]
+        parent_transform = np.eye(4)
+        parent_transform[:3, 3] = engine_origin
+        scene.graph.update(frame_to=object_name, matrix=parent_transform)
         for geom_name, geometry in sub_scene.geometry.items():
-            scene.add_geometry(geometry, node_name=geom_name, geom_name=geom_name)
+            scene.add_geometry(
+                geometry,
+                node_name=geom_name,
+                geom_name=geom_name,
+                parent_node_name=object_name,
+            )
         per_object.append(
             ObjectGameReport(
                 node_id=node_id,
@@ -534,13 +553,17 @@ class SceneObjectSource(BaseModel):
 class GameSceneManifest(BaseModel):
     objects: list[SceneObjectSource] = Field(min_length=1, max_length=MAX_GAME_SCENE_OBJECTS)
     request: GameRequest
+    animation: SceneAnimationInput | None = None
 
 
 def export_scene_file(
-    objects: list[SceneObjectSource], request: GameRequest, output: Path
+    objects: list[SceneObjectSource],
+    request: GameRequest,
+    output: Path,
+    animation: SceneAnimationInput | None = None,
 ) -> SceneGameReport:
     """Load every visible scene object, apply its exact stored world transform, then build."""
-    prepared: list[tuple[str, str, trimesh.Trimesh, np.ndarray | None]] = []
+    prepared: list[tuple[str, str, trimesh.Trimesh, np.ndarray | None, np.ndarray]] = []
     for entry in objects:
         mesh, colours = _load_platform_mesh_mm(Path(entry.path), entry.format)
         if mesh is None:
@@ -553,13 +576,32 @@ def export_scene_file(
             or abs(float(np.linalg.det(transform[:3, :3]))) < 1e-12
         ):
             return SceneGameReport(ok=False, message=f"invalid world transform for {entry.name!r}")
-        mesh.apply_transform(transform)
-        prepared.append((entry.node_id, entry.name, mesh, colours))
+        if animation is not None and entry.node_id == animation.node_id:
+            if not np.allclose(transform[:3, :3], np.eye(3), rtol=1e-9, atol=1e-9):
+                return SceneGameReport(
+                    ok=False,
+                    message=("game-ready rigid animation needs an axis-aligned mechanism node"),
+                )
+        linear = transform.copy()
+        origin_mm = linear[:3, 3].copy()
+        linear[:3, 3] = 0.0
+        mesh.apply_transform(linear)
+        prepared.append((entry.node_id, entry.name, mesh, colours, origin_mm))
     scene, report = build_scene(prepared, request)
     if not report.ok:
         return report
     payload = scene.export(file_type="glb")
     data = payload if isinstance(payload, bytes) else bytes(payload)
+    if animation is not None:
+        target = next(
+            (entry for entry in report.per_object if entry.node_id == animation.node_id), None
+        )
+        if target is None:
+            return SceneGameReport(ok=False, message="animated scene node is not visible")
+        data = animated_glb(data, target.name, animation)
+        report.animations = 1
+        report.animated_node_id = animation.node_id
+        report.animation_kind = animation.kind
     output.write_bytes(data)
     report.file_bytes = len(data)
     return report
@@ -570,6 +612,8 @@ def run_scene_in_sandbox(
     request: GameRequest,
     output: Path,
     limits: Any | None = None,
+    *,
+    animation: SceneAnimationInput | None = None,
 ) -> SceneGameReport:
     from worker import sandbox
 
@@ -588,7 +632,8 @@ def run_scene_in_sandbox(
         )
     manifest_path = output.parent / "game_scene.json"
     manifest_path.write_text(
-        GameSceneManifest(objects=objects, request=request).model_dump_json(), encoding="utf-8"
+        GameSceneManifest(objects=objects, request=request, animation=animation).model_dump_json(),
+        encoding="utf-8",
     )
     outcome = sandbox.run(
         "worker.gameready",
@@ -607,7 +652,12 @@ if __name__ == "__main__":  # sandbox child: gameready <src_fmt> <src> <dst> <re
     try:
         if sys.argv[1] == "scene":
             manifest = GameSceneManifest.model_validate_json(Path(sys.argv[2]).read_text())
-            scene_result = export_scene_file(manifest.objects, manifest.request, Path(sys.argv[3]))
+            scene_result = export_scene_file(
+                manifest.objects,
+                manifest.request,
+                Path(sys.argv[3]),
+                manifest.animation,
+            )
             print(json.dumps(scene_result.model_dump(mode="json")))
         else:
             source_format, source_path, output_path, payload = sys.argv[1:5]

@@ -434,7 +434,7 @@ def _write_mesh(mesh: trimesh.Trimesh, target_format: str, output_path: Path) ->
         raise ValueError(f"unsupported target {target_format!r}")
 
 
-def _animated_glb(data: bytes, node_name: str, animation: SceneAnimationInput) -> bytes:
+def animated_glb(data: bytes, node_name: str, animation: SceneAnimationInput) -> bytes:
     """Append one standards-compliant node rotation or translation channel to a GLB 2.0."""
     if len(data) < 20:
         raise ValueError("GLB is truncated")
@@ -632,7 +632,7 @@ def convert_scene(manifest_path: Path, target_format: str, output_path: Path) ->
             animated_name = export_names.get(manifest.animation.node_id)
             if animated_name is None:
                 raise ValueError("animated node is not visible in the exported scene")
-            data = _animated_glb(data, animated_name, manifest.animation)
+            data = animated_glb(data, animated_name, manifest.animation)
         output_path.write_bytes(data)
         return {"objects": len(entries), "animations": int(manifest.animation is not None)}
     merged = cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))

@@ -175,6 +175,9 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
     file_bytes: 4096,
     objects: 2,
     triangles_in: 24,
+    animations: 1,
+    animated_node_id: "part_b",
+    animation_kind: "revolute",
     per_object: [
       { node_id: "part_a", source_name: "Crate A", name: "Crate_A", report: objectReport("Crate_A") },
       { node_id: "part_b", source_name: "Ящик Б", name: "Obj1", report: objectReport("Obj1") },
@@ -183,16 +186,18 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
   assert.deepEqual(
     gameReadySceneReportMatchesRequest(report, 4096, "base", 20_000, 1, true, "convex"),
     [
-      { node_id: "part_a", name: "Crate A", engineName: "Crate_A", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12 },
-      { node_id: "part_b", name: "Ящик Б", engineName: "Obj1", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12 },
+      { node_id: "part_a", name: "Crate A", engineName: "Crate_A", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12, animated: false },
+      { node_id: "part_b", name: "Ящик Б", engineName: "Obj1", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12, animated: true },
     ],
   );
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, triangles_in: 12 }, 4096, "base", 20_000, 1, true, "convex"), null);
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], report.per_object[0]] }, 4096, "base", 20_000, 1, true, "convex"), null);
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], { ...report.per_object[1], report: { ...report.per_object[1].report, ok: false } }] }, 4096, "base", 20_000, 1, true, "convex"), null);
+  assert.equal(gameReadySceneReportMatchesRequest({ ...report, animated_node_id: "missing" }, 4096, "base", 20_000, 1, true, "convex"), null);
+  assert.equal(gameReadySceneReportMatchesRequest({ ...report, animations: 2 }, 4096, "base", 20_000, 1, true, "convex"), null);
   assert.match(project, /gameReadySceneReportMatchesRequest\(/);
   assert.match(sheet, /каждый экспортный коллайдер/);
-  assert.match(sheet, /Материалы узлов и анимация механизма/);
+  assert.match(sheet, /Доверенная rigid-анимация механизма перенесена/);
 });
 
 test("project viewer exposes source, clay and wire modes with measured mesh stats", () => {

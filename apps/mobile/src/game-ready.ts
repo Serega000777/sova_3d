@@ -146,6 +146,8 @@ export interface VerifiedGameSceneObject {
   triangles_in: number;
   lod0Triangles: number;
   colliderTriangles: number | null;
+  /** True only when the worker binds the one trusted rigid animation to this node id. */
+  animated: boolean;
 }
 
 /** A scene's game-ready report is trustworthy only when every visible object's own LOD/UV/
@@ -169,6 +171,9 @@ export function gameReadySceneReportMatchesRequest(
     objects?: unknown;
     triangles_in?: unknown;
     per_object?: unknown;
+    animations?: unknown;
+    animated_node_id?: unknown;
+    animation_kind?: unknown;
   };
   if (
     report.ok !== true
@@ -180,6 +185,20 @@ export function gameReadySceneReportMatchesRequest(
     || (report.objects as number) < 1
     || !Array.isArray(report.per_object)
     || report.per_object.length !== report.objects
+  ) return null;
+
+  const animations = report.animations ?? 0;
+  if (!Number.isInteger(animations) || (animations !== 0 && animations !== 1)) return null;
+  const animatedNodeId = animations === 1 ? report.animated_node_id : null;
+  if (
+    (animations === 1 && (
+      typeof animatedNodeId !== "string"
+      || (report.animation_kind !== "revolute" && report.animation_kind !== "prismatic")
+    ))
+    || (animations === 0 && (
+      report.animated_node_id != null
+      || report.animation_kind != null
+    ))
   ) return null;
 
   const seen = new Set<string>();
@@ -217,9 +236,11 @@ export function gameReadySceneReportMatchesRequest(
       triangles_in: objectReport!.triangles_in as number,
       lod0Triangles: objectLods[0]!.triangles,
       colliderTriangles: colliderInfo ? colliderInfo.triangles ?? null : null,
+      animated: entry.node_id === animatedNodeId,
     });
   }
   if (triangleSum !== report.triangles_in) return null;
+  if (animations === 1 && !seen.has(animatedNodeId as string)) return null;
   return verified;
 }
 

@@ -107,6 +107,11 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 scene_object_sources,
                 gameready.GameRequest.model_validate(game),
                 output_path,
+                animation=(
+                    exporters.SceneAnimationInput.model_validate(ctx.job.input["scene_animation"])
+                    if isinstance(ctx.job.input.get("scene_animation"), dict)
+                    else None
+                ),
             )
             if not built_scene.ok:
                 raise JobFailureError("export_failed", built_scene.message or "game export failed")
@@ -115,6 +120,12 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 "visible_objects": len(scene_object_sources),
                 "asset_ids": game_scene_asset_ids,
                 "transforms_applied": True,
+                "animations": built_scene.animations,
+                **(
+                    {"animation_kind": f"{built_scene.animation_kind}_joint"}
+                    if built_scene.animation_kind is not None
+                    else {}
+                ),
             }
             data = output_path.read_bytes()
             ctx.progress(70, "converted")
