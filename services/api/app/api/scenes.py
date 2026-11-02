@@ -220,7 +220,7 @@ def start_assembly_geometry_inspection(
     principal: PrincipalDep,
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
-    """Measure transformed world envelopes without claiming collision/contact or physics."""
+    """Measure transformed envelopes and bounded positive-volume mesh collisions."""
     job = assembly_inspection.enqueue(
         db,
         user_id=principal.user_id,

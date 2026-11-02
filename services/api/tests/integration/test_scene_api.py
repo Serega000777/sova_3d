@@ -130,7 +130,7 @@ def test_scene_edit_creates_an_immutable_hierarchy_and_reuses_instance_bytes(
     assert measured.result is not None
     assert measured.result["version_id"] == made_id
     assert measured.result["component_count"] == 2
-    assert measured.result["collision_status"] == "not_checked"
+    assert measured.result["collision_status"] == "checked"
     assert measured.result["constraints_status"] == "not_modeled"
     assert measured.result["scene_bbox_min_mm"] == [15.0, 0.0, 0.0]
     assert measured.result["scene_bbox_max_mm"] == [60.0, 20.0, 10.0]
@@ -141,6 +141,16 @@ def test_scene_edit_creates_an_immutable_hierarchy_and_reuses_instance_bytes(
             "overlap_mm": [15.0, 20.0, 10.0],
         }
     ]
+    assert measured.result["mesh_collisions"] == [
+        {
+            "node_a_id": "original",
+            "node_b_id": "instance_1",
+            "interference_mm3": 3000.0,
+            "bbox_min_mm": [30.0, 0.0, 0.0],
+            "bbox_max_mm": [45.0, 20.0, 10.0],
+        }
+    ]
+    assert measured.result["collision_unavailable_pairs"] == []
 
     repeated = api_client.post(
         f"/api/v1/models/{made_id}/assembly-inspection",

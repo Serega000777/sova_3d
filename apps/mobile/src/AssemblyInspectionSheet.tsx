@@ -3,19 +3,11 @@ import type { AssemblyInspection, PhysicalAiClient } from "@physical-ai/contract
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
+import { type GeometryInspection, parseGeometryInspection } from "./assembly-inspection";
 import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
 export type ExplodedPreview = { order: string[]; gapMm: number };
-
-type GeometryInspection = {
-  ok: boolean;
-  component_count: number;
-  scene_bbox_min_mm: number[];
-  scene_bbox_max_mm: number[];
-  envelope_overlaps: Array<{ node_a_id: string; node_b_id: string; overlap_mm: number[] }>;
-  collision_status: "not_checked";
-};
 
 const GAPS = [10, 30, 60] as const;
 
@@ -80,7 +72,7 @@ export function AssemblyInspectionSheet({
   };
 
   const measureGeometry = async () => {
-    if (!client || !versionId) return;
+    if (!client || !versionId || !inspection) return;
     setMeasuring(true);
     setError(null);
     try {
@@ -94,8 +86,8 @@ export function AssemblyInspectionSheet({
           String(job.error?.message ?? (ru ? "Проверка не выполнена." : "Inspection failed.")),
         );
       }
-      const result = job.result as GeometryInspection | null;
-      if (!result?.ok || result.collision_status !== "not_checked") {
+      const result = parseGeometryInspection(job.result, inspection.exploded_order);
+      if (!result) {
         throw new Error(
           ru ? "Некорректный результат проверки." : "Invalid inspection result.",
         );
@@ -142,8 +134,8 @@ export function AssemblyInspectionSheet({
             </Text>
             <Text style={[styles.muted, { color: colors.yellow }]}>
               {ru
-                ? "Связи mate/joint и столкновения всей сцены не проверяются."
-                : "Mate/joint constraints and whole-scene mesh collisions are not checked."}
+                ? "Связи mate/joint, движение и физика не моделируются; коллизии проверяются отдельно по запросу."
+                : "Mate/joint constraints, motion and physics are not modeled; collisions run separately on request."}
             </Text>
           </View>
 
@@ -161,7 +153,7 @@ export function AssemblyInspectionSheet({
               <Text style={styles.buttonText}>
                 {measuring
                   ? (ru ? "Измеряем…" : "Measuring…")
-                  : (ru ? "Измерить мировые габариты" : "Measure world envelopes")}
+                  : (ru ? "Проверить габариты и коллизии" : "Check bounds and collisions")}
               </Text>
             </Pressable>
             {geometry ? (
@@ -173,15 +165,32 @@ export function AssemblyInspectionSheet({
                     ))
                     .join(" × ")} {ru ? "мм" : "mm"}
                 </Text>
-                <Text
-                  style={[
-                    styles.muted,
-                    { color: geometry.envelope_overlaps.length ? colors.yellow : colors.green },
-                  ]}
-                >
-                  {geometry.envelope_overlaps.length
-                    ? `${geometry.envelope_overlaps.length} ${ru ? "пар с пересекающимися габаритами" : "overlapping envelope pairs"}`
-                    : (ru ? "Пересечений габаритов не найдено" : "No envelope overlaps found")}
+                <Text style={[
+                  styles.muted,
+                  {
+                    color: geometry.collision_status === "unavailable"
+                      ? colors.yellow
+                      : geometry.mesh_collisions.length ? colors.red : colors.green,
+                  },
+                ]}>
+                  {geometry.collision_status === "unavailable"
+                    ? `${ru ? "Точная проверка недоступна для пар" : "Exact check unavailable for pairs"}: ${geometry.collision_unavailable_pairs.length}`
+                    : geometry.mesh_collisions.length
+                      ? `${geometry.mesh_collisions.length} ${ru ? "коллизий с положительным объёмом" : "positive-volume collisions"}`
+                      : (ru ? "Коллизий с положительным объёмом не найдено" : "No positive-volume collisions found")}
+                </Text>
+                {geometry.mesh_collisions.map((pair) => (
+                  <Text key={`collision:${pair.node_a_id}:${pair.node_b_id}`} style={[styles.muted, { color: colors.red }]}>
+                    {pair.node_a_id} ↔ {pair.node_b_id}: {pair.interference_mm3.toLocaleString()} {ru ? "мм³ пересечения" : "mm³ interference"}
+                  </Text>
+                ))}
+                {geometry.collision_unavailable_pairs.map((pair) => (
+                  <Text key={`unavailable:${pair.node_a_id}:${pair.node_b_id}`} style={[styles.muted, { color: colors.yellow }]}>
+                    {pair.node_a_id} ↔ {pair.node_b_id}: {pair.reason}
+                  </Text>
+                ))}
+                <Text style={styles.muted}>
+                  {geometry.envelope_overlaps.length} {ru ? "AABB-кандидатов" : "AABB candidates"}
                 </Text>
                 {geometry.envelope_overlaps.map((pair) => (
                   <Text key={`${pair.node_a_id}:${pair.node_b_id}`} style={styles.muted}>
@@ -190,8 +199,8 @@ export function AssemblyInspectionSheet({
                 ))}
                 <Text style={styles.muted}>
                   {ru
-                    ? "Пересечение AABB — только кандидат для осмотра, не доказанная коллизия или контакт."
-                    : "AABB overlap is only an inspection candidate, not a proven collision or contact."}
+                    ? "AABB используется только как broad phase. Коллизия требует положительного объёма Manifold-пересечения; простое касание не считается."
+                    : "AABB is only the broad phase. A collision needs positive Manifold intersection volume; touching alone is not a hit."}
                 </Text>
               </View>
             ) : null}

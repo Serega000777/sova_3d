@@ -1847,7 +1847,7 @@ export class PhysicalAiClient {
     );
   }
 
-  /** Sandboxed world-envelope measurement; overlaps are candidates, not collision verdicts. */
+  /** Sandboxed transformed-scene bounds plus bounded positive-volume mesh collisions. */
   inspectAssemblyGeometry(versionId: string, idempotencyKey?: string) {
     return this.request<Schemas["JobAccepted"]>(
       "POST",

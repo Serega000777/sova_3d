@@ -2890,7 +2890,7 @@ export interface paths {
         put?: never;
         /**
          * Start Assembly Geometry Inspection
-         * @description Measure transformed world envelopes without claiming collision/contact or physics.
+         * @description Measure transformed envelopes and bounded positive-volume mesh collisions.
          */
         post: operations["start_assembly_geometry_inspection_api_v1_models__version_id__assembly_inspection_post"];
         delete?: never;
