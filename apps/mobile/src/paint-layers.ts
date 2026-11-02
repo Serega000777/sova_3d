@@ -39,3 +39,16 @@ export function paintLayerSummaries(provenance: Record<string, unknown> | null |
     return [{ name, strokeCount: count as number, colours }];
   });
 }
+
+export function movePaintLayerOrder(
+  layers: readonly PaintLayerSummary[],
+  index: number,
+  direction: -1 | 1,
+): string[] | null {
+  const names = layers.map((layer) => layer.name);
+  if (names.length < 2 || new Set(names).size !== names.length) return null;
+  const target = index + direction;
+  if (!Number.isInteger(index) || index < 0 || target < 0 || target >= names.length) return null;
+  [names[index], names[target]] = [names[target]!, names[index]!];
+  return names;
+}

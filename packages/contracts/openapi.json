@@ -12744,6 +12744,94 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/paint/reorder-layers": {
+      "post": {
+        "tags": [
+          "paint"
+        ],
+        "summary": "Reorder Paint Layers",
+        "operationId": "reorder_paint_layers_api_v1_models__version_id__paint_reorder_layers_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaintLayerReorderBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/mesh-modifier-stack": {
       "get": {
         "tags": [
@@ -28402,6 +28490,26 @@
         },
         "type": "object",
         "title": "PaintBody"
+      },
+      "PaintLayerReorderBody": {
+        "properties": {
+          "layer_order": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Layer Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer_order"
+        ],
+        "title": "PaintLayerReorderBody"
       },
       "ParameterOut": {
         "properties": {

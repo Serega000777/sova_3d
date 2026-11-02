@@ -156,6 +156,29 @@ test("quad remesh posts the bounded target_faces and an idempotency key", async 
   assert.deepEqual(JSON.parse(String(request!.init.body)), { target_faces: 8000 });
 });
 
+test("paint-layer reorder posts the complete bottom-to-top order", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "paint-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse({ job_id: "job-paint", status: "queued", type: "paint_model" }, { status: 202 });
+    },
+  });
+
+  const accepted = await client.reorderPaintLayers("version-1", ["Accent", "Base"]);
+  assert.equal(accepted.job_id, "job-paint");
+  assert.equal(
+    request!.url,
+    "https://api.example.test/api/v1/models/version-1/paint/reorder-layers",
+  );
+  assert.equal(request!.init.method, "POST");
+  assert.deepEqual(JSON.parse(String(request!.init.body)), {
+    layer_order: ["Accent", "Base"],
+  });
+});
+
 test("3D generation estimate posts the typed request and returns an honest null cost", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const client = new PhysicalAiClient({

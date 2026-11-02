@@ -1221,6 +1221,15 @@ export class PhysicalAiClient {
     });
   }
 
+  /** Replay every named paint layer in a new bottom-to-top order as a new immutable version. */
+  reorderPaintLayers(versionId: string, layerOrder: string[]) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/paint/reorder-layers`,
+      { body: { layer_order: layerOrder } },
+    );
+  }
+
   /**
    * Edit the mesh directly or add a surface detail (T-235 / T-236, F-086). The result is a new
    * version; with `preview` only the report (footprint, triangle estimate) comes back.

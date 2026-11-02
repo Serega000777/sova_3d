@@ -2930,6 +2930,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/paint/reorder-layers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder Paint Layers */
+        post: operations["reorder_paint_layers_api_v1_models__version_id__paint_reorder_layers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/mesh-modifier-stack": {
         parameters: {
             query?: never;
@@ -8263,6 +8280,11 @@ export interface components {
              * @default false
              */
             replace: boolean;
+        };
+        /** PaintLayerReorderBody */
+        PaintLayerReorderBody: {
+            /** Layer Order */
+            layer_order: string[];
         };
         /** ParameterOut */
         ParameterOut: {
@@ -18016,6 +18038,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PaintBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_paint_layers_api_v1_models__version_id__paint_reorder_layers_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaintLayerReorderBody"];
             };
         };
         responses: {

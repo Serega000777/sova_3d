@@ -13,10 +13,11 @@ from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models import Asset, ProjectVersion
+from app.models.core import WorkspaceRole
 from app.models.execution import JobStatus
 from app.models.versioning import AssetRole
 from app.storage import S3Storage
-from tests.integration.conftest import Actor
+from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401 — fake kernel
 from tests.integration.test_imports_api import project, run_all, upload  # noqa: F401
 
@@ -56,6 +57,14 @@ def imported_version(
 
 def paint(api_client: TestClient, actor: Actor, version_id: str, **body: Any) -> Any:
     return api_client.post(f"/api/v1/models/{version_id}/paint", json=body, headers=actor.headers)
+
+
+def reorder(api_client: TestClient, actor: Actor, version_id: str, layer_order: list[str]) -> Any:
+    return api_client.post(
+        f"/api/v1/models/{version_id}/paint/reorder-layers",
+        json={"layer_order": layer_order},
+        headers=actor.headers,
+    )
 
 
 def test_painting_keeps_the_shape_and_adds_a_coloured_preview(
@@ -127,6 +136,122 @@ def test_named_layer_requires_a_nonblank_name_and_at_least_one_stroke(
         layer_name="Base",
     )
     assert empty.status_code == 422
+
+
+def test_reordering_paint_layers_changes_which_colour_wins_the_overlap(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    """Reference 77: compositing is last-stroke-wins, so layer order is a real visual choice."""
+    import trimesh
+    from worker.importers.common import as_single_mesh
+
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    paint(
+        api_client,
+        actor,
+        version_id,
+        strokes=[{"colour": "#ff0000", "region": TOP_FACE}],
+        layer_name="Red",
+    )
+    (first,) = run_all(db_session, storage)
+    assert first.status is JobStatus.succeeded, first.error
+    red_on_top = str((first.result or {})["version_id"])
+
+    paint(
+        api_client,
+        actor,
+        red_on_top,
+        strokes=[{"colour": "#0000ff", "region": TOP_FACE}],
+        layer_name="Blue",
+    )
+    (second,) = run_all(db_session, storage)
+    assert second.status is JobStatus.succeeded, second.error
+    blue_on_top = db_session.get(ProjectVersion, (second.result or {})["version_id"])
+    assert blue_on_top is not None
+    assert [layer["name"] for layer in blue_on_top.provenance["paint"]["layers"]] == ["Red", "Blue"]
+
+    def top_face_colours(version: ProjectVersion) -> set[tuple[int, int, int]]:
+        preview_asset_id = {link.role: link.asset_id for link in version.assets}[AssetRole.preview]
+        preview = db_session.get(Asset, preview_asset_id)
+        assert preview is not None
+        data = storage.get(preview.storage_key)
+        loaded = as_single_mesh(
+            trimesh.load(io.BytesIO(data), file_type="glb", force="mesh", process=False)
+        )
+        assert loaded is not None
+        return {tuple(int(c) for c in colour[:3]) for colour in loaded.visual.face_colors}
+
+    assert (0, 0, 255) in top_face_colours(blue_on_top)  # Blue painted last, wins the overlap
+
+    reordered = reorder(api_client, actor, str(blue_on_top.id), ["Blue", "Red"])
+    assert reordered.status_code == 202, reordered.text
+    (third,) = run_all(db_session, storage)
+    assert third.status is JobStatus.succeeded, third.error
+    final = db_session.get(ProjectVersion, (third.result or {})["version_id"])
+    assert final is not None
+    assert [layer["name"] for layer in final.provenance["paint"]["layers"]] == ["Blue", "Red"]
+    assert [s["colour"] for s in final.provenance["paint"]["strokes"]] == ["#0000ff", "#ff0000"]
+    assert (255, 0, 0) in top_face_colours(final)  # Red now painted last, wins the overlap
+
+
+def test_reorder_rejects_missing_layers_bad_permutation_and_gaps(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+
+    no_layers = reorder(api_client, actor, version_id, ["Anything"])
+    assert no_layers.status_code == 422
+    assert "no named paint layers" in no_layers.json()["error"]["message"]
+
+    paint(
+        api_client,
+        actor,
+        version_id,
+        strokes=[{"colour": "#ff0000", "region": TOP_FACE}],
+        layer_name="Red",
+    )
+    (first,) = run_all(db_session, storage)
+    assert first.status is JobStatus.succeeded, first.error
+    red_only = str((first.result or {})["version_id"])
+
+    # An unnamed stroke after the named layer leaves a gap in the coverage.
+    paint(api_client, actor, red_only, strokes=[{"colour": "#00ff00"}])
+    (second,) = run_all(db_session, storage)
+    assert second.status is JobStatus.succeeded, second.error
+    gapped = str((second.result or {})["version_id"])
+    gapped_response = reorder(api_client, actor, gapped, ["Red"])
+    assert gapped_response.status_code == 422
+    assert "every stroke must belong" in gapped_response.json()["error"]["message"]
+
+    paint(
+        api_client,
+        actor,
+        red_only,
+        strokes=[{"colour": "#0000ff", "region": TOP_FACE}],
+        layer_name="Blue",
+    )
+    (third,) = run_all(db_session, storage)
+    assert third.status is JobStatus.succeeded, third.error
+    fully_named = str((third.result or {})["version_id"])
+
+    assert reorder(api_client, actor, fully_named, ["Red", "Green"]).status_code == 422
+    assert reorder(api_client, actor, fully_named, ["Red"]).status_code == 422
+    assert reorder(api_client, actor, fully_named, ["Red", "Red"]).status_code == 422
+    assert reorder(api_client, actor, fully_named, ["Red", " " * 81]).status_code == 422
+
+    viewer = make_actor(db_session, role=WorkspaceRole.viewer, workspace=actor.workspace)
+    assert reorder(api_client, viewer, fully_named, ["Blue", "Red"]).status_code == 403
+
+    stranger = make_actor(db_session)
+    assert reorder(api_client, stranger, fully_named, ["Blue", "Red"]).status_code == 404
 
 
 def test_painting_a_painted_version_keeps_the_earlier_strokes(

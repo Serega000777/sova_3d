@@ -207,7 +207,7 @@ import {
 } from "@/src/plan-link";
 import { describeScale, type PickedPhoto, pickPhotos, uploadPhoto } from "@/src/photo";
 import { parseDimensionValue, updateDimensionDraft } from "@/src/dimension-link";
-import { paintLayerSummaries } from "@/src/paint-layers";
+import { movePaintLayerOrder, paintLayerSummaries } from "@/src/paint-layers";
 import { useSession } from "@/src/session";
 import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
 import { VoiceButton } from "@/src/VoiceButton";
@@ -2418,6 +2418,37 @@ export default function ProjectScreen() {
         colours: report?.colours ?? [],
         unusedStrokes: report?.unused_strokes?.length ?? 0,
       });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function reorderPaintLayer(index: number, direction: -1 | 1) {
+    if (!client || !active || busy || hasExplicitScene || strokes.length) return;
+    const layerOrder = movePaintLayerOrder(
+      paintLayerSummaries(active.provenance),
+      index,
+      direction,
+    );
+    if (!layerOrder) return;
+    setError(null);
+    try {
+      const accepted = await client.reorderPaintLayers(active.id, layerOrder);
+      const job = await track(ru ? "Меняем порядок слоёв" : "Reordering paint layers", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string })?.message
+            ?? (ru ? "не удалось изменить порядок слоёв" : "the layers could not be reordered"),
+        );
+        return;
+      }
+      setPaintSourceVersionId(null);
+      await headAfterJob(job);
+      setNotice(
+        ru
+          ? "Порядок слоёв сохранён в новой версии модели."
+          : "The layer order was saved as a new model version.",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -7010,6 +7041,11 @@ export default function ProjectScreen() {
           <Text style={styles.heading}>{ru ? "Покраска модели" : "Model painting"}</Text>
           <View style={{ gap: 6 }} accessibilityLabel={ru ? "Сохранённые слои покраски" : "Saved paint layers"}>
             <Text style={styles.text}>{ru ? "Сохранённые слои" : "Saved layers"}</Text>
+            {savedPaintLayers.length > 1 ? (
+              <Text style={styles.muted}>
+                {ru ? "Порядок: нижний → верхний" : "Order: bottom → top"}
+              </Text>
+            ) : null}
             {savedPaintLayers.length ? savedPaintLayers.map((layer, index) => (
               <View key={`${index}-${layer.name}`} style={[styles.row, { justifyContent: "space-between" }]}>
                 <View style={[styles.row, { flex: 1 }]}>
@@ -7021,6 +7057,26 @@ export default function ProjectScreen() {
                 <Text style={styles.muted}>
                   {ru ? `${layer.strokeCount} штр.` : `${layer.strokeCount} stroke${layer.strokeCount === 1 ? "" : "s"}`}
                 </Text>
+                {savedPaintLayers.length > 1 ? (
+                  <View style={styles.row}>
+                    <Pressable
+                      accessibilityLabel={ru ? `Опустить слой ${layer.name}` : `Move ${layer.name} down`}
+                      disabled={index === 0 || Boolean(busy) || strokes.length > 0}
+                      onPress={() => void reorderPaintLayer(index, -1)}
+                      style={[styles.chip, (index === 0 || busy || strokes.length > 0) && { opacity: 0.4 }]}
+                    >
+                      <Text style={styles.chipText}>↓</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel={ru ? `Поднять слой ${layer.name}` : `Move ${layer.name} up`}
+                      disabled={index === savedPaintLayers.length - 1 || Boolean(busy) || strokes.length > 0}
+                      onPress={() => void reorderPaintLayer(index, 1)}
+                      style={[styles.chip, (index === savedPaintLayers.length - 1 || busy || strokes.length > 0) && { opacity: 0.4 }]}
+                    >
+                      <Text style={styles.chipText}>↑</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
               </View>
             )) : (
               <Text style={styles.muted}>{ru ? "В этой версии ещё нет сохранённых слоёв." : "This version has no saved paint layers yet."}</Text>

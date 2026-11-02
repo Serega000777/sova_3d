@@ -61,6 +61,95 @@ def inherited_layers(version: ProjectVersion) -> list[dict[str, Any]]:
     return trusted
 
 
+def reorder_layers(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    layer_order: list[str],
+    idempotency_key: str | None = None,
+) -> Job:
+    """Repaint with the same strokes replayed in a new layer order.
+
+    Compositing is last-stroke-wins in stroke-array order, so changing which layer paints
+    last changes the visible result at every face two layers both touch. This only accepts a
+    version whose entire stroke history is already named: a gap or an overlapping range would
+    make "where does the unnamed paint go" an unanswerable, invented choice.
+    """
+    version = projects.get_version(db, user_id=user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+
+    asset = model_asset_of(db, version)
+    if asset is None or asset.format not in PAINTABLE_FORMATS:
+        raise ValidationFailedError(
+            "this version has no mesh to paint",
+            {"paintable_formats": sorted(PAINTABLE_FORMATS)},
+        )
+
+    strokes, base_colour = inherited_paint(version)
+    layers = inherited_layers(version)
+    if not layers:
+        raise ValidationFailedError("this version has no named paint layers to reorder")
+    by_name: dict[str, dict[str, Any]] = {}
+    for layer in layers:
+        if layer["name"] in by_name:
+            raise ValidationFailedError(
+                "duplicate paint layer names cannot be reordered safely",
+                {"name": layer["name"]},
+            )
+        by_name[layer["name"]] = layer
+    if len(layer_order) != len(layers) or set(layer_order) != set(by_name):
+        raise ValidationFailedError(
+            "layer_order must be a permutation of every existing named layer",
+            {"existing_layers": sorted(by_name), "given": layer_order},
+        )
+    for previous, current in zip(
+        sorted(layers, key=lambda layer: layer["stroke_start"]),
+        sorted(layers, key=lambda layer: layer["stroke_start"])[1:],
+        strict=False,
+    ):
+        if previous["stroke_start"] + previous["stroke_count"] != current["stroke_start"]:
+            raise ValidationFailedError(
+                "every stroke must belong to exactly one named layer before reordering",
+                {"gap_or_overlap_after": previous["name"]},
+            )
+    first = min(layers, key=lambda layer: layer["stroke_start"])
+    last = max(layers, key=lambda layer: layer["stroke_start"] + layer["stroke_count"])
+    if first["stroke_start"] != 0 or last["stroke_start"] + last["stroke_count"] != len(strokes):
+        raise ValidationFailedError(
+            "every stroke must belong to exactly one named layer before reordering"
+        )
+
+    new_strokes: list[dict[str, Any]] = []
+    new_layers: list[dict[str, Any]] = []
+    for name in layer_order:
+        layer = by_name[name]
+        segment = strokes[layer["stroke_start"] : layer["stroke_start"] + layer["stroke_count"]]
+        new_layers.append(
+            {"name": name, "stroke_start": len(new_strokes), "stroke_count": len(segment)}
+        )
+        new_strokes.extend(segment)
+
+    return jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        job_type=PAINT_JOB,
+        input={
+            "version_id": str(version.id),
+            "asset_id": str(asset.id),
+            "strokes": new_strokes,
+            "base_colour": base_colour,
+            "label": "Reorder paint layers",
+            "layers": new_layers,
+        },
+        created_by=user_id,
+        project_id=project.id,
+        project_version_id=version.id,
+        idempotency_key=idempotency_key,
+    )
+
+
 def enqueue_paint(
     db: Session,
     *,

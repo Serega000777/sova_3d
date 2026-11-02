@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { removePaintStroke } from "../src/paint-draft.ts";
-import { paintLayerSummaries } from "../src/paint-layers.ts";
+import { movePaintLayerOrder, paintLayerSummaries } from "../src/paint-layers.ts";
 
 const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
 const viewer = readFileSync(new URL("../src/ModelViewer.tsx", import.meta.url), "utf8");
@@ -59,6 +59,21 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
   assert.deepEqual(paintLayerSummaries({ paint: { strokes: [], layers: [{ name: "Empty", stroke_start: 0, stroke_count: 1 }] } }), []);
   assert.match(project, /Сохранённые слои покраски/);
   assert.match(project, /paintLayerSummaries\(active\?\.provenance\)/);
+});
+
+test("saved layers can be moved only as one complete unique order", () => {
+  const layers = [
+    { name: "Base", strokeCount: 1, colours: ["#000000"] },
+    { name: "Accent", strokeCount: 1, colours: ["#ffffff"] },
+  ];
+  assert.deepEqual(movePaintLayerOrder(layers, 0, 1), ["Accent", "Base"]);
+  assert.equal(movePaintLayerOrder(layers, 0, -1), null);
+  assert.equal(movePaintLayerOrder([layers[0], layers[0]], 0, 1), null);
+  assert.match(project, /client\.reorderPaintLayers\(active\.id, layerOrder\)/);
+  assert.match(project, /await headAfterJob\(job\)/);
+  assert.match(project, /Порядок: нижний → верхний/);
+  assert.match(project, /Опустить слой/);
+  assert.match(project, /Поднять слой/);
 });
 
 test("G07 keeps the current paint-layer palette beside the live viewport", () => {
