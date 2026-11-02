@@ -2,6 +2,7 @@ export interface PaintLayerSummary {
   name: string;
   strokeCount: number;
   colours: string[];
+  opacities: number[];
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -30,13 +31,22 @@ export function paintLayerSummaries(provenance: Record<string, unknown> | null |
       || (count as number) < 1
       || (start as number) + (count as number) > strokes.length
     ) return [];
+    const layerStrokes = strokes.slice(start as number, (start as number) + (count as number));
     const colours = [...new Set(
-      strokes
-        .slice(start as number, (start as number) + (count as number))
+      layerStrokes
         .map((stroke) => record(stroke)?.colour)
         .filter((colour): colour is string => typeof colour === "string" && /^#[0-9a-f]{6}$/i.test(colour)),
     )];
-    return [{ name, strokeCount: count as number, colours }];
+    const opacityValues = layerStrokes.map((stroke) => {
+      const opacity = record(stroke)?.opacity;
+      if (opacity === undefined) return 1;
+      return typeof opacity === "number" && Number.isFinite(opacity) && opacity >= 0.05 && opacity <= 1
+        ? opacity
+        : null;
+    });
+    if (opacityValues.some((opacity) => opacity === null)) return [];
+    const opacities = [...new Set(opacityValues as number[])];
+    return [{ name, strokeCount: count as number, colours, opacities }];
   });
 }
 

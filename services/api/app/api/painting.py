@@ -20,6 +20,7 @@ class Stroke(BaseModel):
     """One swipe of colour. Without a region it covers the whole body."""
 
     colour: str = Field(pattern=COLOUR)
+    opacity: float = Field(default=1.0, ge=0.05, le=1.0)
     region: dict[str, Any] | None = None
 
 

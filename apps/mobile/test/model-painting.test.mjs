@@ -11,6 +11,7 @@ const viewer = readFileSync(new URL("../src/ModelViewer.tsx", import.meta.url), 
 test("mobile painting saves bounded strokes through the real immutable paint job", () => {
   assert.match(project, /client\.paintModel\(paintSourceVersionId/);
   assert.match(project, /layer_name: paintLayerName\.trim\(\)/);
+  assert.match(project, /opacity: stroke\.opacity/);
   assert.match(project, /Название слоя покраски/);
   assert.match(project, /strokes: strokes\.map/);
   assert.match(project, /if \(job\.status !== "succeeded"\)/);
@@ -53,18 +54,30 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
       ],
     },
   }), [
-    { name: "Body", strokeCount: 2, colours: ["#ff5533"] },
-    { name: "Green compartment", strokeCount: 1, colours: ["#4caf50"] },
+    { name: "Body", strokeCount: 2, colours: ["#ff5533"], opacities: [1] },
+    { name: "Green compartment", strokeCount: 1, colours: ["#4caf50"], opacities: [1] },
   ]);
   assert.deepEqual(paintLayerSummaries({ paint: { strokes: [], layers: [{ name: "Empty", stroke_start: 0, stroke_count: 1 }] } }), []);
+  assert.deepEqual(paintLayerSummaries({
+    paint: {
+      strokes: [{ colour: "#ff5533", opacity: 0.85 }],
+      layers: [{ name: "Soft", stroke_start: 0, stroke_count: 1 }],
+    },
+  }), [{ name: "Soft", strokeCount: 1, colours: ["#ff5533"], opacities: [0.85] }]);
+  assert.deepEqual(paintLayerSummaries({
+    paint: {
+      strokes: [{ colour: "#ff5533", opacity: 2 }],
+      layers: [{ name: "Forged opacity", stroke_start: 0, stroke_count: 1 }],
+    },
+  }), []);
   assert.match(project, /Сохранённые слои покраски/);
   assert.match(project, /paintLayerSummaries\(active\?\.provenance\)/);
 });
 
 test("saved layers can be moved only as one complete unique order", () => {
   const layers = [
-    { name: "Base", strokeCount: 1, colours: ["#000000"] },
-    { name: "Accent", strokeCount: 1, colours: ["#ffffff"] },
+    { name: "Base", strokeCount: 1, colours: ["#000000"], opacities: [1] },
+    { name: "Accent", strokeCount: 1, colours: ["#ffffff"], opacities: [0.85] },
   ];
   assert.deepEqual(movePaintLayerOrder(layers, 0, 1), ["Accent", "Base"]);
   assert.equal(movePaintLayerOrder(layers, 0, -1), null);
@@ -74,6 +87,14 @@ test("saved layers can be moved only as one complete unique order", () => {
   assert.match(project, /Порядок: нижний → верхний/);
   assert.match(project, /Опустить слой/);
   assert.match(project, /Поднять слой/);
+});
+
+test("brush opacity is explicit, source-bound, and visible in the live trail", () => {
+  assert.match(project, /const PAINT_OPACITIES = \[0\.5, 0\.75, 0\.85, 1\]/);
+  assert.match(project, /Непрозрачность кисти/);
+  assert.match(project, /opacity: paintOpacity/);
+  assert.match(project, /paintOpacity=\{paintOpacity\}/);
+  assert.match(viewer, /material\.opacity = mode === "paint" \? paintOpacity : 1/);
 });
 
 test("G07 keeps the current paint-layer palette beside the live viewport", () => {

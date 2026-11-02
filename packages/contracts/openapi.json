@@ -34970,6 +34970,13 @@
             "pattern": "^#[0-9a-fA-F]{6}$",
             "title": "Colour"
           },
+          "opacity": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.05,
+            "title": "Opacity",
+            "default": 1.0
+          },
           "region": {
             "anyOf": [
               {

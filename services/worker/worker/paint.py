@@ -56,6 +56,7 @@ class Stroke(Strict):
     """One swipe of colour. Without a region it paints the whole body."""
 
     colour: Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
+    opacity: Annotated[float, Field(ge=0.05, le=1.0)] = 1.0
     region: Region | None = None
 
 
@@ -231,7 +232,11 @@ def paint_mesh_into(
         if not selected.any():
             unused.append(index)  # the user drew somewhere the model is not
             continue
-        colours[selected] = [*rgb(stroke.colour), 255]
+        source = np.asarray(rgb(stroke.colour), dtype=float)
+        current = colours[selected, :3].astype(float)
+        colours[selected, :3] = np.rint(
+            current * (1.0 - stroke.opacity) + source * stroke.opacity
+        ).astype(np.uint8)
         painted |= selected
 
     mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, face_colors=colours)

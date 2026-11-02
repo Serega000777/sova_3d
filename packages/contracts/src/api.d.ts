@@ -10653,6 +10653,11 @@ export interface components {
         Stroke: {
             /** Colour */
             colour: string;
+            /**
+             * Opacity
+             * @default 1
+             */
+            opacity: number;
             /** Region */
             region?: {
                 [key: string]: unknown;

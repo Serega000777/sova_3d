@@ -169,6 +169,8 @@ export interface ModelViewerProps {
   mode?: DrawMode;
   /** The colour a paint stroke is drawn in. */
   paintColour?: string;
+  /** Visual opacity of the in-progress paint trail; saved blending is server-authoritative. */
+  paintOpacity?: number;
   brushMm?: number;
   /** A finished outline or stroke, in model mm; null when the drag was only a tap. */
   onRegion?: (region: RegionSelection | null) => void;
@@ -570,6 +572,7 @@ export function ModelViewer({
   viewMode = "3d",
   mode = "orbit",
   paintColour = "#ff5533",
+  paintOpacity = 1,
   brushMm = 5,
   onRegion,
   onQuickEdit,
@@ -1365,10 +1368,12 @@ export function ModelViewer({
       points.length ? points : [new THREE.Vector3()],
     );
     current.trail.visible = points.length > 1;
-    (current.trail.material as THREE.LineBasicMaterial).color.set(
-      mode === "paint" ? paintColour : colors.accent,
-    );
-  }, [mode, paintColour]);
+    const material = current.trail.material as THREE.LineBasicMaterial;
+    material.color.set(mode === "paint" ? paintColour : colors.accent);
+    material.opacity = mode === "paint" ? paintOpacity : 1;
+    material.transparent = material.opacity < 1;
+    material.needsUpdate = true;
+  }, [mode, paintColour, paintOpacity]);
 
   const drawStart = useCallback(
     (x: number, y: number) => {

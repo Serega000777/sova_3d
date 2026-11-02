@@ -179,6 +179,27 @@ test("paint-layer reorder posts the complete bottom-to-top order", async () => {
   });
 });
 
+test("model paint posts the bounded brush opacity with its exact region", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse({ job_id: "job-opacity", status: "queued", type: "paint_model" }, { status: 202 });
+    },
+  });
+
+  await client.paintModel("version-1", {
+    strokes: [{ colour: "#ff5533", opacity: 0.85, region: { kind: "box" } }],
+    layer_name: "Soft accent",
+  });
+  assert.equal(request!.url, "https://api.example.test/api/v1/models/version-1/paint");
+  assert.deepEqual(JSON.parse(String(request!.init.body)), {
+    strokes: [{ colour: "#ff5533", opacity: 0.85, region: { kind: "box" } }],
+    layer_name: "Soft accent",
+  });
+});
+
 test("3D generation estimate posts the typed request and returns an honest null cost", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const client = new PhysicalAiClient({

@@ -226,6 +226,7 @@ const BRUSHES = [
   { label: "medium", mm: 5 },
   { label: "wide", mm: 12 },
 ];
+const PAINT_OPACITIES = [0.5, 0.75, 0.85, 1] as const;
 // Keep in step with services/api/app/ai/contract.py MAX_PHOTOS.
 const MAX_COMMAND_PHOTOS = 4;
 const PHOTO_ISSUE_RU: Record<GuidedPhotoIssue, string> = {
@@ -448,7 +449,12 @@ export default function ProjectScreen() {
   const [region, setRegion] = useState<RegionSelection | null>(null);
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
-  const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
+  const [paintOpacity, setPaintOpacity] = useState(0.85);
+  const [strokes, setStrokes] = useState<{
+    colour: string;
+    opacity: number;
+    region: RegionSelection;
+  }[]>([]);
   const [paintSourceVersionId, setPaintSourceVersionId] = useState<string | null>(null);
   const [paintLayerName, setPaintLayerName] = useState("Слой 1");
   const [paintReport, setPaintReport] = useState<{
@@ -2394,7 +2400,11 @@ export default function ProjectScreen() {
     setError(null);
     try {
       const accepted = await client.paintModel(paintSourceVersionId, {
-        strokes: strokes.map((stroke) => ({ colour: stroke.colour, region: stroke.region.region })),
+        strokes: strokes.map((stroke) => ({
+          colour: stroke.colour,
+          opacity: stroke.opacity,
+          region: stroke.region.region,
+        })),
         label: paintLayerName.trim(),
         layer_name: paintLayerName.trim(),
       });
@@ -6095,6 +6105,7 @@ export default function ProjectScreen() {
               if (next) setEditSheetOpen(true);
             }}
             paintColour={colour}
+            paintOpacity={paintOpacity}
             brushMm={brush}
             markers={[
               ...liveMarkers,
@@ -6128,8 +6139,8 @@ export default function ProjectScreen() {
                 if (next && activeId) {
                   setStrokes((all) =>
                     paintSourceVersionId === null || paintSourceVersionId === activeId
-                      ? [...all, { colour, region: next }]
-                      : [{ colour, region: next }],
+                      ? [...all, { colour, opacity: paintOpacity, region: next }]
+                      : [{ colour, opacity: paintOpacity, region: next }],
                   );
                   setPaintSourceVersionId(activeId);
                 }
@@ -7056,6 +7067,7 @@ export default function ProjectScreen() {
                 </View>
                 <Text style={styles.muted}>
                   {ru ? `${layer.strokeCount} штр.` : `${layer.strokeCount} stroke${layer.strokeCount === 1 ? "" : "s"}`}
+                  {` · ${layer.opacities.map((opacity) => `${Math.round(opacity * 100)}%`).join("/")}`}
                 </Text>
                 {savedPaintLayers.length > 1 ? (
                   <View style={styles.row}>
@@ -7122,6 +7134,28 @@ export default function ProjectScreen() {
               </Pressable>
             ))}
           </View>
+          <View style={{ gap: 6 }}>
+            <Text style={styles.muted}>{ru ? "Непрозрачность кисти" : "Brush opacity"}</Text>
+            <View style={styles.row}>
+              {PAINT_OPACITIES.map((opacity) => (
+                <Pressable
+                  key={opacity}
+                  accessibilityLabel={`${ru ? "Непрозрачность" : "Opacity"} ${Math.round(opacity * 100)}%`}
+                  accessibilityState={{ selected: paintOpacity === opacity }}
+                  style={[
+                    styles.chip,
+                    paintOpacity === opacity && {
+                      borderColor: colors.accent,
+                      backgroundColor: colors.accentWash,
+                    },
+                  ]}
+                  onPress={() => setPaintOpacity(opacity)}
+                >
+                  <Text style={styles.chipText}>{Math.round(opacity * 100)}%</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
           <Text style={styles.muted}>
             {ru
               ? "Проведите пальцем или Pencil, чтобы покрасить полосу; замкните контур для заливки. Геометрия не меняется — покраска сохраняется новой версией поверх текущей."
@@ -7170,7 +7204,7 @@ export default function ProjectScreen() {
                     <View style={[styles.row, { flex: 1 }]}>
                       <View style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: stroke.colour }} />
                       <Text style={styles.muted}>
-                        {ru ? `Штрих ${strokeIndex + 1}` : `Stroke ${strokeIndex + 1}`} · {stroke.region.region.kind}
+                        {ru ? `Штрих ${strokeIndex + 1}` : `Stroke ${strokeIndex + 1}`} · {stroke.region.region.kind} · {Math.round(stroke.opacity * 100)}%
                       </Text>
                     </View>
                     <Pressable

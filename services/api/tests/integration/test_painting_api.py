@@ -84,7 +84,7 @@ def test_painting_keeps_the_shape_and_adds_a_coloured_preview(
         actor,
         version_id,
         base_colour="#202020",
-        strokes=[{"colour": "#ff5533", "region": TOP_FACE}],
+        strokes=[{"colour": "#ff5533", "opacity": 0.85, "region": TOP_FACE}],
         label="Red top",
         layer_name="  Front accent  ",
     )
@@ -105,6 +105,7 @@ def test_painting_keeps_the_shape_and_adds_a_coloured_preview(
     assert preview is not None and preview.format == "glb"
     assert painted.label == "Red top"
     assert painted.provenance["paint"]["strokes"][0]["colour"] == "#ff5533"
+    assert painted.provenance["paint"]["strokes"][0]["opacity"] == 0.85
     assert painted.provenance["paint"]["layers"] == [
         {"name": "Front accent", "stroke_start": 0, "stroke_count": 1}
     ]
