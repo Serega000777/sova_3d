@@ -16,6 +16,9 @@ export type { AnalyticSurfacePatch } from "./operation-plan.js";
 export type Schemas = components["schemas"];
 export type Project = Schemas["ProjectOut"];
 export type ProjectSummary = Schemas["ProjectSummary"];
+export type ShareLinkCreated = Schemas["ShareLinkCreated"];
+export type ShareLinkOut = Schemas["ShareLinkOut"];
+export type SharedProjectOut = Schemas["SharedProjectOut"];
 export type ProjectReference = Schemas["ReferenceOut"];
 export type ProjectReferenceUpdate = Schemas["ReferenceUpdate"];
 export type FunctionalPartProposal = Schemas["FunctionalPartProposalOut"];
@@ -581,6 +584,34 @@ export class PhysicalAiClient {
 
   getProject(projectId: string) {
     return this.request<ProjectSummary>("GET", `/api/v1/projects/${projectId}`);
+  }
+
+  /** A revocable, expiring, read-only link to one project's current version. Owner-only. */
+  createProjectShareLink(projectId: string, body: Schemas["ShareLinkCreate"]) {
+    return this.request<Schemas["ShareLinkCreated"]>(
+      "POST",
+      `/api/v1/projects/${projectId}/share-links`,
+      { body },
+    );
+  }
+
+  listProjectShareLinks(projectId: string) {
+    return this.request<Schemas["ShareLinkOut"][]>(
+      "GET",
+      `/api/v1/projects/${projectId}/share-links`,
+    );
+  }
+
+  revokeProjectShareLink(projectId: string, linkId: string) {
+    return this.request<void>(
+      "DELETE",
+      `/api/v1/projects/${projectId}/share-links/${linkId}`,
+    );
+  }
+
+  /** Public, bearer-token-free: the link's own secret is the only credential needed. */
+  openSharedProject(token: string) {
+    return this.request<Schemas["SharedProjectOut"]>("GET", `/api/v1/share/${token}`);
   }
 
   transferProject(

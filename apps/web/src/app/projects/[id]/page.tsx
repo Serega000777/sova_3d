@@ -65,6 +65,7 @@ import {
   type LiveMember,
   type LiveRoom,
   type ModellingGrid,
+  type Schemas,
   type TopologyReport,
   type Vec3,
   defaultGrid,
@@ -658,6 +659,10 @@ export default function ProjectPage() {
   const [exportFormat, setExportFormat] = useState<"stl" | "3mf" | "glb" | "fbx" | "usdz" | "step" | "iges">(
     () => (EXPORTABLE_FORMATS.some((item) => item.id === preferredFormat) ? (preferredFormat as "stl") : "3mf"),
   );
+  const [shareLinks, setShareLinks] = useState<Schemas["ShareLinkOut"][]>([]);
+  const [shareExpiresHours, setShareExpiresHours] = useState(24 * 7);
+  const [createdShareLink, setCreatedShareLink] = useState<{ id: string; url: string } | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
   const [primitiveAxis, setPrimitiveAxis] = useState<"x" | "y" | "z">("z");
   const [primitiveCentered, setPrimitiveCentered] = useState(true);
   const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror">("hole");
@@ -797,6 +802,12 @@ export default function ProjectPage() {
   const [imageMeasurementLabel, setImageMeasurementLabel] = useState("");
   const [functionalProblem, setFunctionalProblem] = useState("");
   const [functionalPart, setFunctionalPart] = useState<FunctionalPartProposal | null>(null);
+  useEffect(() => {
+    if (!client || !project) return;
+    void loadShareLinks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, project?.id]);
+
   useEffect(() => {
     let active = true;
     setReferenceReady(false);
@@ -3385,6 +3396,52 @@ export default function ProjectPage() {
       return { ok: true, message: ru ? "Готово: создана новая версия." : "Done: a new version was created." };
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Reference 62/64: a revocable, expiring, read-only link to this project's current
+   *  version. Owner-only; the link itself never grants workspace membership or editing. */
+  async function loadShareLinks() {
+    if (!client || !project) return;
+    try {
+      setShareLinks(await client.listProjectShareLinks(project.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function createShareLink() {
+    if (!client || !project || shareBusy) return;
+    setShareBusy(true);
+    setError(null);
+    try {
+      const created = await client.createProjectShareLink(project.id, {
+        expires_in_hours: shareExpiresHours,
+      });
+      setCreatedShareLink({
+        id: created.id,
+        url: `${window.location.origin}/shared/${created.token}`,
+      });
+      await loadShareLinks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function revokeShareLink(linkId: string) {
+    if (!client || !project || shareBusy) return;
+    setShareBusy(true);
+    setError(null);
+    try {
+      await client.revokeProjectShareLink(project.id, linkId);
+      if (createdShareLink?.id === linkId) setCreatedShareLink(null);
+      await loadShareLinks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setShareBusy(false);
     }
   }
 
@@ -6648,6 +6705,66 @@ export default function ProjectPage() {
                     {ru ? "Скачать MP4" : "Download MP4"}
                   </a>
                 </div>
+              </div>
+            )}
+            <strong>{ru ? "Поделиться ссылкой" : "Share link"}</strong>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {ru
+                ? "Ссылка даёт доступ только на просмотр текущей версии, без аккаунта и без прав на редактирование. Её можно отозвать в любой момент."
+                : "The link grants read-only access to the current version only, with no account and no edit rights. It can be revoked at any time."}
+            </span>
+            <div className="row">
+              <select
+                className="input"
+                value={shareExpiresHours}
+                onChange={(event) => setShareExpiresHours(Number(event.target.value))}
+                disabled={shareBusy}
+              >
+                <option value={24}>{ru ? "1 день" : "1 day"}</option>
+                <option value={24 * 7}>{ru ? "7 дней" : "7 days"}</option>
+                <option value={24 * 30}>{ru ? "30 дней" : "30 days"}</option>
+              </select>
+              <button className="btn" type="button" onClick={() => void createShareLink()} disabled={!project || shareBusy}>
+                {shareBusy ? (ru ? "Создаём…" : "Creating…") : (ru ? "Создать ссылку" : "Create link")}
+              </button>
+            </div>
+            {createdShareLink && (
+              <div className="stack" style={{ padding: 10, borderRadius: 8, background: "var(--panel-2)" }}>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {ru ? "Скопируйте сейчас — повторно показать её нельзя:" : "Copy it now — it cannot be shown again:"}
+                </span>
+                <code style={{ wordBreak: "break-all" }}>{createdShareLink.url}</code>
+              </div>
+            )}
+            {shareLinks.length > 0 && (
+              <div className="stack">
+                {shareLinks.map((link) => {
+                  const expired = new Date(link.expires_at).getTime() <= Date.now();
+                  const status = link.revoked_at
+                    ? (ru ? "отозвана" : "revoked")
+                    : expired
+                      ? (ru ? "истекла" : "expired")
+                      : (ru ? "активна" : "active");
+                  return (
+                    <div key={link.id} className="row">
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        {new Date(link.created_at).toLocaleDateString(ru ? "ru-RU" : "en-US")} ·{" "}
+                        {ru ? "до" : "until"} {new Date(link.expires_at).toLocaleDateString(ru ? "ru-RU" : "en-US")} · {status}
+                      </span>
+                      <span className="spacer" />
+                      {!link.revoked_at && (
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => void revokeShareLink(link.id)}
+                          disabled={shareBusy}
+                        >
+                          {ru ? "Отозвать" : "Revoke"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
             <strong>{ru ? "Для игровых движков" : "For game engines"}</strong>

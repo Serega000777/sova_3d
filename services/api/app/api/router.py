@@ -38,6 +38,7 @@ from app.api import (
     reverse_engineering,
     scanning,
     scenes,
+    share_links,
     signin,
     site_plans,
     splitting,
@@ -59,6 +60,7 @@ api_v1.include_router(developer_tokens.router)
 api_v1.include_router(signin.router)
 api_v1.include_router(workspaces.router)
 api_v1.include_router(workspace_tasks.router)
+api_v1.include_router(share_links.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(interior_materials.router)

@@ -375,6 +375,61 @@ export interface paths {
         patch: operations["update_workspace_task_api_v1_workspaces__workspace_id__tasks__task_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/share-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Project Share Links */
+        get: operations["list_project_share_links_api_v1_projects__project_id__share_links_get"];
+        put?: never;
+        /** Create Project Share Link */
+        post: operations["create_project_share_link_api_v1_projects__project_id__share_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/share-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Project Share Link */
+        delete: operations["revoke_project_share_link_api_v1_projects__project_id__share_links__link_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/share/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open Shared Project
+         * @description Public, bearer-token-free read access. The link secret is the only credential.
+         */
+        get: operations["open_shared_project_api_v1_share__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/uploads": {
         parameters: {
             query?: never;
@@ -10037,6 +10092,83 @@ export interface components {
             /** Created */
             created: boolean;
         };
+        /** ShareLinkCreate */
+        ShareLinkCreate: {
+            /**
+             * Expires In Hours
+             * @default 168
+             */
+            expires_in_hours: number;
+        };
+        /** ShareLinkCreated */
+        ShareLinkCreated: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Token */
+            token: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** ShareLinkOut */
+        ShareLinkOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
+        };
+        /** SharedModelOut */
+        SharedModelOut: {
+            /** Format */
+            format: string;
+            /** Download Url */
+            download_url: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+        };
+        /** SharedProjectOut */
+        SharedProjectOut: {
+            /** Project Name */
+            project_name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /**
+             * Version Created At
+             * Format: date-time
+             */
+            version_created_at: string;
+            /**
+             * Link Expires At
+             * Format: date-time
+             */
+            link_expires_at: string;
+            model: components["schemas"]["SharedModelOut"] | null;
+        };
         /** SitePlanBody */
         SitePlanBody: {
             /** Plot Length Mm */
@@ -12006,6 +12138,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_project_share_links_api_v1_projects__project_id__share_links_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareLinkOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_project_share_link_api_v1_projects__project_id__share_links_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareLinkCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareLinkCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_project_share_link_api_v1_projects__project_id__share_links__link_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_shared_project_api_v1_share__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedProjectOut"];
                 };
             };
             /** @description Validation Error */
