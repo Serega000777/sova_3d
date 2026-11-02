@@ -131,3 +131,105 @@ def open_shared_project(token: str, db: DbDep, storage: StorageDep) -> SharedPro
         link_expires_at=resolved.link.expires_at,
         model=model,
     )
+
+
+class VerificationLinkCreate(BaseModel):
+    expires_in_hours: int = Field(
+        default=24 * 30, ge=share_links.MIN_EXPIRES_HOURS, le=share_links.MAX_EXPIRES_HOURS
+    )
+
+
+class VerificationLinkCreated(BaseModel):
+    id: uuid.UUID
+    token: str
+    expires_at: datetime
+
+
+class VerificationLinkOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None
+    last_used_at: datetime | None
+
+
+class VerifiedIntegrityReportOut(BaseModel):
+    project_name: str
+    version_id: uuid.UUID
+    version_sequence_no: int
+    job_id: uuid.UUID
+    checked_at: datetime
+    report: dict[str, object]
+    link_expires_at: datetime
+
+
+@router.post(
+    "/models/{version_id}/verification-links",
+    response_model=VerificationLinkCreated,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_integrity_verification_link(
+    version_id: uuid.UUID, body: VerificationLinkCreate, db: DbDep, principal: PrincipalDep
+) -> VerificationLinkCreated:
+    link, token = share_links.create_verification_link(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        expires_in_hours=body.expires_in_hours,
+    )
+    return VerificationLinkCreated(id=link.id, token=token, expires_at=link.expires_at)
+
+
+@router.get("/models/{version_id}/verification-links", response_model=list[VerificationLinkOut])
+def list_integrity_verification_links(
+    version_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> list[VerificationLinkOut]:
+    links = share_links.list_verification_links(
+        db, user_id=principal.user_id, version_id=version_id
+    )
+    return [
+        VerificationLinkOut(
+            id=link.id,
+            created_at=link.created_at,
+            expires_at=link.expires_at,
+            revoked_at=link.revoked_at,
+            last_used_at=link.last_used_at,
+        )
+        for link in links
+    ]
+
+
+@router.delete(
+    "/models/{version_id}/verification-links/{link_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def revoke_integrity_verification_link(
+    version_id: uuid.UUID, link_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> None:
+    share_links.revoke_verification_link(
+        db, user_id=principal.user_id, version_id=version_id, link_id=link_id
+    )
+
+
+@router.get("/verify/{token}", response_model=VerifiedIntegrityReportOut)
+def open_integrity_verification(token: str, db: DbDep) -> VerifiedIntegrityReportOut:
+    """Public, bearer-token-free: the same facts the authenticated PDF already carries, with
+    no cryptographic signature and no claim that this certifies regulatory compliance."""
+    from app.api.exports import _latest_integrity_job
+
+    resolved = share_links.resolve_verification_link(db, token=token)
+    if resolved is None:
+        raise NotFoundError("verification_link", token)
+    found = _latest_integrity_job(db, resolved.version.id)
+    if found is None:
+        raise NotFoundError("verification_link", token)
+    job, report = found
+    return VerifiedIntegrityReportOut(
+        project_name=resolved.project.name,
+        version_id=resolved.version.id,
+        version_sequence_no=resolved.version.sequence_no,
+        job_id=job.id,
+        checked_at=job.finished_at or job.updated_at,
+        report=report,
+        link_expires_at=resolved.link.expires_at,
+    )

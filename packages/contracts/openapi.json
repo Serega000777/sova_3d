@@ -1750,6 +1750,241 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/verification-links": {
+      "post": {
+        "tags": [
+          "share-links"
+        ],
+        "summary": "Create Integrity Verification Link",
+        "operationId": "create_integrity_verification_link_api_v1_models__version_id__verification_links_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerificationLinkCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationLinkCreated"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "share-links"
+        ],
+        "summary": "List Integrity Verification Links",
+        "operationId": "list_integrity_verification_links_api_v1_models__version_id__verification_links_get",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VerificationLinkOut"
+                  },
+                  "title": "Response List Integrity Verification Links Api V1 Models  Version Id  Verification Links Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{version_id}/verification-links/{link_id}": {
+      "delete": {
+        "tags": [
+          "share-links"
+        ],
+        "summary": "Revoke Integrity Verification Link",
+        "operationId": "revoke_integrity_verification_link_api_v1_models__version_id__verification_links__link_id__delete",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "link_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Link Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/verify/{token}": {
+      "get": {
+        "tags": [
+          "share-links"
+        ],
+        "summary": "Open Integrity Verification",
+        "description": "Public, bearer-token-free: the same facts the authenticated PDF already carries, with\nno cryptographic signature and no claim that this certifies regulatory compliance.",
+        "operationId": "open_integrity_verification_api_v1_verify__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifiedIntegrityReportOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/uploads": {
       "post": {
         "tags": [
@@ -35725,6 +35960,144 @@
           "prompt"
         ],
         "title": "VariantsBody"
+      },
+      "VerificationLinkCreate": {
+        "properties": {
+          "expires_in_hours": {
+            "type": "integer",
+            "maximum": 720.0,
+            "minimum": 1.0,
+            "title": "Expires In Hours",
+            "default": 720
+          }
+        },
+        "type": "object",
+        "title": "VerificationLinkCreate"
+      },
+      "VerificationLinkCreated": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "token",
+          "expires_at"
+        ],
+        "title": "VerificationLinkCreated"
+      },
+      "VerificationLinkOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "expires_at",
+          "revoked_at",
+          "last_used_at"
+        ],
+        "title": "VerificationLinkOut"
+      },
+      "VerifiedIntegrityReportOut": {
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "version_sequence_no": {
+            "type": "integer",
+            "title": "Version Sequence No"
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "report": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Report"
+          },
+          "link_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Link Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_name",
+          "version_id",
+          "version_sequence_no",
+          "job_id",
+          "checked_at",
+          "report",
+          "link_expires_at"
+        ],
+        "title": "VerifiedIntegrityReportOut"
       },
       "VersionAssetOut": {
         "properties": {

@@ -1,8 +1,10 @@
-"""Revocable, expiring read-only links to one project (reference 62/64).
+"""Revocable, expiring read-only links (references 62/64/90/97).
 
 A link is a bearer secret shown once at creation; only `sha256(secret)` is stored, mirroring
 `app.auth.ApiToken`. Resolving a link never grants workspace membership or any write access —
-it only proves the right to view one project's current head version.
+`ProjectShareLink` only proves the right to view one project's current head version, and
+`IntegrityVerificationLink` only proves the right to read one version's latest persisted
+integrity-check report (the same facts the authenticated PDF already carries, no signature).
 """
 
 import uuid
@@ -13,6 +15,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, CreatedAt, UUIDPrimaryKey
 from app.models.core import Project, User
+from app.models.versioning import ProjectVersion
 
 
 class ProjectShareLink(UUIDPrimaryKey, CreatedAt, Base):
@@ -31,4 +34,23 @@ class ProjectShareLink(UUIDPrimaryKey, CreatedAt, Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     project: Mapped[Project] = relationship()
+    creator: Mapped[User] = relationship()
+
+
+class IntegrityVerificationLink(UUIDPrimaryKey, CreatedAt, Base):
+    __tablename__ = "integrity_verification_links"
+    __table_args__ = (Index("ix_integrity_verification_links_version", "version_id"),)
+
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    version: Mapped[ProjectVersion] = relationship()
     creator: Mapped[User] = relationship()

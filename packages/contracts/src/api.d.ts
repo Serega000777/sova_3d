@@ -430,6 +430,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/verification-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Integrity Verification Links */
+        get: operations["list_integrity_verification_links_api_v1_models__version_id__verification_links_get"];
+        put?: never;
+        /** Create Integrity Verification Link */
+        post: operations["create_integrity_verification_link_api_v1_models__version_id__verification_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/verification-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Integrity Verification Link */
+        delete: operations["revoke_integrity_verification_link_api_v1_models__version_id__verification_links__link_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/verify/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open Integrity Verification
+         * @description Public, bearer-token-free: the same facts the authenticated PDF already carries, with
+         *     no cryptographic signature and no claim that this certifies regulatory compliance.
+         */
+        get: operations["open_integrity_verification_api_v1_verify__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/uploads": {
         parameters: {
             query?: never;
@@ -10983,6 +11039,82 @@ export interface components {
              */
             target: "print" | "game" | "cad";
         };
+        /** VerificationLinkCreate */
+        VerificationLinkCreate: {
+            /**
+             * Expires In Hours
+             * @default 720
+             */
+            expires_in_hours: number;
+        };
+        /** VerificationLinkCreated */
+        VerificationLinkCreated: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Token */
+            token: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** VerificationLinkOut */
+        VerificationLinkOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
+        };
+        /** VerifiedIntegrityReportOut */
+        VerifiedIntegrityReportOut: {
+            /** Project Name */
+            project_name: string;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Version Sequence No */
+            version_sequence_no: number;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            };
+            /**
+             * Link Expires At
+             * Format: date-time
+             */
+            link_expires_at: string;
+        };
         /** VersionAssetOut */
         VersionAssetOut: {
             /**
@@ -12271,6 +12403,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SharedProjectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_integrity_verification_links_api_v1_models__version_id__verification_links_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificationLinkOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_integrity_verification_link_api_v1_models__version_id__verification_links_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerificationLinkCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificationLinkCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_integrity_verification_link_api_v1_models__version_id__verification_links__link_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_integrity_verification_api_v1_verify__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifiedIntegrityReportOut"];
                 };
             };
             /** @description Validation Error */

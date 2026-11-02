@@ -26,7 +26,7 @@ from app.models.printing import (
 )
 from app.models.references import ProjectReference
 from app.models.scanning import ScanFrame, ScanSession
-from app.models.share_links import ProjectShareLink
+from app.models.share_links import IntegrityVerificationLink, ProjectShareLink
 from app.models.signin import AccountDeletionRequest, SignInChallenge, UserIdentity
 from app.models.training_consent import ProjectTrainingConsent, ProjectTrainingConsentEvent
 from app.models.uploads import UploadSession
@@ -59,6 +59,7 @@ __all__ = [
     "Base",
     "EngineeringReportRecord",
     "FitTestRecord",
+    "IntegrityVerificationLink",
     "ThreeDGeneration",
     "Job",
     "JobArtifact",

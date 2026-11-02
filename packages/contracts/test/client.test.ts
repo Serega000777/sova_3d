@@ -463,6 +463,60 @@ test("house drawing requests an authenticated DXF blob", async () => {
   assert.equal(headers.get("Accept"), mime);
 });
 
+test("verification link creation posts the expiry and returns the one-time token", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "owner-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return new Response(
+        JSON.stringify({ id: "link-1", token: "vrf_abc", expires_at: "2026-12-01T00:00:00Z" }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+
+  const created = await client.createVerificationLink("version-1", { expires_in_hours: 72 });
+  assert.equal(created.token, "vrf_abc");
+  assert.equal(
+    request!.url,
+    "https://api.example.test/api/v1/models/version-1/verification-links",
+  );
+  assert.equal(request!.init.method, "POST");
+  assert.deepEqual(JSON.parse(request!.init.body as string), { expires_in_hours: 72 });
+  const headers = new Headers(request!.init.headers);
+  assert.equal(headers.get("Authorization"), "Bearer owner-token");
+});
+
+test("opening an integrity verification link needs no bearer token", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const report = {
+    project_name: "Crate",
+    version_id: "version-1",
+    version_sequence_no: 1,
+    job_id: "job-1",
+    checked_at: "2026-11-02T00:00:00Z",
+    report: { status: "pass" },
+    link_expires_at: "2026-12-01T00:00:00Z",
+  };
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return new Response(JSON.stringify(report), {
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const opened = await client.openIntegrityVerification("vrf_abc");
+  assert.deepEqual(opened, report);
+  assert.equal(request!.url, "https://api.example.test/api/v1/verify/vrf_abc");
+  const headers = new Headers(request!.init.headers);
+  assert.equal(headers.has("Authorization"), false);
+});
+
 test("buyer Sova package requests the authenticated order archive", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const mime = "application/vnd.sova.project+zip";

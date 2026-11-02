@@ -19,6 +19,8 @@ export type ProjectSummary = Schemas["ProjectSummary"];
 export type ShareLinkCreated = Schemas["ShareLinkCreated"];
 export type ShareLinkOut = Schemas["ShareLinkOut"];
 export type SharedProjectOut = Schemas["SharedProjectOut"];
+export type VerificationLinkOut = Schemas["VerificationLinkOut"];
+export type VerifiedIntegrityReportOut = Schemas["VerifiedIntegrityReportOut"];
 export type ProjectReference = Schemas["ReferenceOut"];
 export type ProjectReferenceUpdate = Schemas["ReferenceUpdate"];
 export type FunctionalPartProposal = Schemas["FunctionalPartProposalOut"];
@@ -612,6 +614,34 @@ export class PhysicalAiClient {
   /** Public, bearer-token-free: the link's own secret is the only credential needed. */
   openSharedProject(token: string) {
     return this.request<Schemas["SharedProjectOut"]>("GET", `/api/v1/share/${token}`);
+  }
+
+  /** A revocable, expiring, read-only link to one version's latest integrity report. Owner-only. */
+  createVerificationLink(versionId: string, body: Schemas["VerificationLinkCreate"]) {
+    return this.request<Schemas["VerificationLinkCreated"]>(
+      "POST",
+      `/api/v1/models/${versionId}/verification-links`,
+      { body },
+    );
+  }
+
+  listVerificationLinks(versionId: string) {
+    return this.request<Schemas["VerificationLinkOut"][]>(
+      "GET",
+      `/api/v1/models/${versionId}/verification-links`,
+    );
+  }
+
+  revokeVerificationLink(versionId: string, linkId: string) {
+    return this.request<void>(
+      "DELETE",
+      `/api/v1/models/${versionId}/verification-links/${linkId}`,
+    );
+  }
+
+  /** Public, bearer-token-free: the same facts the authenticated PDF already carries. */
+  openIntegrityVerification(token: string) {
+    return this.request<Schemas["VerifiedIntegrityReportOut"]>("GET", `/api/v1/verify/${token}`);
   }
 
   transferProject(
