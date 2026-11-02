@@ -17,11 +17,15 @@ A phone cannot reach your laptop's `localhost`, so point the app at the machine'
 address before starting:
 
 ```bash
-EXPO_PUBLIC_API_URL=http://192.168.1.50:18000 pnpm --filter @physical-ai/mobile run start:go
+EXPO_PUBLIC_API_URL=http://192.168.1.50:18000 \
+EXPO_PUBLIC_WEB_URL=http://192.168.1.50:3100 \
+pnpm --filter @physical-ai/mobile run start:go
 ```
 
 That address must also be allowed by the API's CORS list (`CORS_ALLOW_ORIGINS` in `.env`)
 if you use the web build; native Expo Go requests are not subject to CORS.
+`EXPO_PUBLIC_WEB_URL` is the human-facing web origin used for revocable project share links.
+When omitted in LAN development, the app reuses the API host and maps port 18000 to 3100.
 
 Sign in with a phone number or an email (the one-time code is shown on screen while the
 server runs with `SIGNIN_DELIVERY=stub`) or with the Yandex ID / VK ID demo buttons.

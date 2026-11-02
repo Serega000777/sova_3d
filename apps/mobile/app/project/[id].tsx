@@ -188,6 +188,7 @@ import { ReferenceViewer } from "@/src/ReferenceViewer";
 import { RoofEditorSheet } from "@/src/RoofEditorSheet";
 import { RoomWallEditor, type RoomWallEdit } from "@/src/RoomWallEditor";
 import { ProjectDashboardCard } from "@/src/ProjectDashboardCard";
+import { ProjectShareLinksCard } from "@/src/ProjectShareLinksCard";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
 import { ScannedFacadeSheet } from "@/src/ScannedFacadeSheet";
 import {
@@ -356,6 +357,7 @@ export default function ProjectScreen() {
   const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
   const [modelCheckVersionId, setModelCheckVersionId] = useState<string | null>(null);
   const [workspaceParticipantCount, setWorkspaceParticipantCount] = useState<number | null>(null);
+  const [canManageShareLinks, setCanManageShareLinks] = useState(false);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
   const [selectedRepairDefectIds, setSelectedRepairDefectIds] = useState<string[]>([]);
@@ -559,6 +561,7 @@ export default function ProjectScreen() {
     if (!client || !session) {
       setWorkspaceParticipantCount(null);
       setWorkspaceMembers([]);
+      setCanManageShareLinks(false);
       return;
     }
     let cancelled = false;
@@ -568,6 +571,7 @@ export default function ProjectScreen() {
         if (cancelled) return null;
         setExperienceMode(me.user.experience_mode);
         const current = me.workspaces.find((item) => item.id === session.workspaceId);
+        setCanManageShareLinks(current?.role === "owner");
         if (!current) return null;
         if (current.kind === "personal") {
           if (!cancelled) setWorkspaceMembers([]);
@@ -584,6 +588,7 @@ export default function ProjectScreen() {
         if (!cancelled) {
           setWorkspaceParticipantCount(null);
           setWorkspaceMembers([]);
+          setCanManageShareLinks(false);
         }
       });
     return () => {
@@ -4606,6 +4611,14 @@ export default function ProjectScreen() {
         onVersions={() => router.push(`/project-history/${id}`)}
         onExport={() => setWorkspaceTab("export")}
       />
+      {client && session && project && canManageShareLinks ? (
+        <ProjectShareLinksCard
+          client={client}
+          projectId={project.id}
+          apiBaseUrl={session.baseUrl}
+          hasVersion={Boolean(project.head_version_id)}
+        />
+      ) : null}
       {activeFloorPlan
         && planSelection?.kind === "wall"
         && Boolean((active?.provenance as { room_plan?: unknown } | undefined)?.room_plan) && (
