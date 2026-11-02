@@ -67,9 +67,9 @@ test("game-ready result exposes only the verified contents reported by the worke
 });
 
 test("reference 83 previews exactly one verified GLB LOD node at a time", () => {
-  assert.match(sheet, /setPreviewLod\(result\?\.report\?\.lods\?\.\[0\]\?\.name \?\? null\)/);
+  assert.match(sheet, /firstSceneObject\?\.lods\[0\]\?\.name \?\? result\?\.report\?\.lods\?\.\[0\]\?\.name/);
   assert.match(sheet, /glbMeshName=\{previewLod\}/);
-  assert.match(sheet, /result\.report\.lods\.map/);
+  assert.match(sheet, /previewLods\.map/);
   assert.match(sheet, /ручное сравнение, не автоматический выбор по расстоянию/);
   assert.match(viewer, /child\.name === meshName/);
   assert.match(viewer, /the file has no mesh named/);
@@ -120,12 +120,12 @@ test("reference 84 binds one measured UV atlas to every verified LOD", () => {
 });
 
 test("reference 86 previews the exact exported collider without claiming physics", () => {
-  assert.match(sheet, /result\?\.report\?\.collider\?\.name === previewLod/);
-  assert.match(sheet, /setPreviewLod\(result\.report\?\.collider\?\.name \?\? null\)/);
+  assert.match(sheet, /previewColliderName === previewLod/);
+  assert.match(sheet, /setPreviewLod\(previewColliderName\)/);
   assert.match(sheet, /setPreviewAppearance\("mesh"\)/);
   assert.match(sheet, /именованный UCX-коллайдер из экспортного GLB/);
   assert.match(sheet, /не симуляция столкновений, массы или динамики/);
-  assert.match(sheet, /result\.report\.uv && !previewIsCollider/);
+  assert.match(sheet, /previewHasUv && !previewIsCollider/);
 });
 
 test("reference 86 accepts only the exact bounded UCX collider report", () => {
@@ -194,10 +194,16 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
   assert.deepEqual(
     gameReadySceneReportMatchesRequest(report, 4096, "base", 20_000, 1, true, "convex"),
     [
-      { node_id: "part_a", name: "Crate A", engineName: "Crate_A", triangles_in: 12, lod0Triangles: 12, colliderTriangles: 12, animated: false, material: null },
+      {
+        node_id: "part_a", name: "Crate A", engineName: "Crate_A", triangles_in: 12,
+        lod0Triangles: 12, lods: report.per_object[0].report.lods,
+        colliderName: "UCX_Crate_A_00", colliderTriangles: 12, hasUv: true,
+        animated: false, material: null,
+      },
       {
         node_id: "part_b", name: "Ящик Б", engineName: "Obj1", triangles_in: 12,
-        lod0Triangles: 12, colliderTriangles: 12, animated: true,
+        lod0Triangles: 12, lods: report.per_object[1].report.lods,
+        colliderName: "UCX_Obj1_00", colliderTriangles: 12, hasUv: true, animated: true,
         material: {
           catalogMaterialId: texturedMaterial.catalog_material_id,
           baseColor: texturedMaterial.base_color,
@@ -219,6 +225,10 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
   assert.match(sheet, /каждый экспортный коллайдер/);
   assert.match(sheet, /Доверенная rigid-анимация механизма перенесена/);
   assert.match(sheet, /Доверенные материалы каталога перенесены/);
+  assert.match(sheet, /setPreviewSceneNodeId\(entry\.node_id\)/);
+  assert.match(sheet, /previewSceneObject\?\.lods/);
+  assert.match(sheet, /glbMeshName=\{previewLod\}/);
+  assert.doesNotMatch(sheet, /предпросмотр отдельных LOD для сцены пока не открыт/);
 });
 
 test("project viewer exposes source, clay and wire modes with measured mesh stats", () => {

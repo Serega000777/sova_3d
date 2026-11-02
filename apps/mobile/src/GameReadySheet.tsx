@@ -90,10 +90,13 @@ export function GameReadySheet({
   const [uv, setUv] = useState(true);
   const [topology, setTopology] = useState<"triangle" | "quad">("triangle");
   const [quadTargetFaces, setQuadTargetFaces] = useState("4000");
+  const [previewSceneNodeId, setPreviewSceneNodeId] = useState<string | null>(null);
   const [previewLod, setPreviewLod] = useState<string | null>(null);
   const [previewAppearance, setPreviewAppearance] = useState<ModelAppearance>("source");
   useEffect(() => {
-    setPreviewLod(result?.report?.lods?.[0]?.name ?? null);
+    const firstSceneObject = result?.sceneObjects?.[0];
+    setPreviewSceneNodeId(firstSceneObject?.node_id ?? null);
+    setPreviewLod(firstSceneObject?.lods[0]?.name ?? result?.report?.lods?.[0]?.name ?? null);
     setPreviewAppearance("source");
   }, [result]);
   const selectedBudget = GAME_BUDGETS.find((item) => item.triangles === budget) ?? GAME_BUDGETS[1]!;
@@ -111,9 +114,13 @@ export function GameReadySheet({
   const disabled = busy
     || Boolean(effectiveReason)
     || (topology === "triangle" ? Boolean(lodError) : Boolean(quadError));
-  const previewIsCollider = Boolean(
-    previewLod && result?.report?.collider?.name === previewLod,
-  );
+  const previewSceneObject = result?.sceneObjects?.find(
+    (entry) => entry.node_id === previewSceneNodeId,
+  ) ?? result?.sceneObjects?.[0] ?? null;
+  const previewLods = previewSceneObject?.lods ?? result?.report?.lods ?? [];
+  const previewColliderName = previewSceneObject?.colliderName ?? result?.report?.collider?.name ?? null;
+  const previewHasUv = previewSceneObject?.hasUv ?? Boolean(result?.report?.uv);
+  const previewIsCollider = Boolean(previewLod && previewColliderName === previewLod);
 
   return (
     <SheetShell
@@ -413,6 +420,33 @@ export function GameReadySheet({
                     ? `Объектов сцены: ${result.sceneObjects.length}; у каждого свой LOD/коллайдер:`
                     : `${result.sceneObjects.length} scene objects, each with its own LOD/collider:`}
                 </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 6 }}
+                  accessibilityRole="radiogroup"
+                >
+                  {result.sceneObjects.map((entry) => {
+                    const selected = entry.node_id === previewSceneObject?.node_id;
+                    return (
+                      <Pressable
+                        key={`preview-${entry.node_id}`}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: selected }}
+                        onPress={() => {
+                          setPreviewSceneNodeId(entry.node_id);
+                          setPreviewLod(entry.lods[0]?.name ?? null);
+                          setPreviewAppearance("source");
+                        }}
+                        style={[styles.chip, selected && { borderColor: colors.selection }]}
+                      >
+                        <Text style={[styles.chipText, selected && { color: colors.selection }]}>
+                          {entry.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
                 {result.sceneObjects.map((entry) => (
                   <Text key={entry.node_id} style={styles.mono}>
                     {entry.name} · {entry.triangles_in.toLocaleString(ru ? "ru-RU" : "en-US")} →{" "}
@@ -429,8 +463,8 @@ export function GameReadySheet({
                 ))}
                 <Text style={styles.sectionSubtitle}>
                   {ru
-                    ? "Относительное положение объектов сохранено; предпросмотр отдельных LOD для сцены пока не открыт — скачайте GLB."
-                    : "Relative object placement is preserved; a per-object LOD preview is not yet open here — download the GLB."}
+                    ? "Относительное положение объектов сохранено. Выберите объект выше, затем его точный LOD, UV-сетку или UCX ниже."
+                    : "Relative object placement is preserved. Select an object above, then its exact LOD, UV checker or UCX below."}
                 </Text>
                 <Text style={styles.sectionSubtitle}>
                   {result.sceneObjects.some((entry) => entry.animated)
@@ -470,10 +504,10 @@ export function GameReadySheet({
                 ))}
               </View>
             ) : null}
-            {result.report?.lods?.length && previewLod ? (
+            {previewLods.length && previewLod ? (
               <View style={{ gap: 8 }} accessibilityLabel={ru ? "Предпросмотр уровней детализации" : "Level of detail preview"}>
                 <View style={styles.row} accessibilityRole="radiogroup">
-                  {result.report.lods.map((lod, index) => (
+                  {previewLods.map((lod, index) => (
                     <Pressable
                       key={lod.name}
                       accessibilityRole="radio"
@@ -487,12 +521,12 @@ export function GameReadySheet({
                       <Text style={[styles.chipText, previewLod === lod.name && { color: colors.accent }]}>LOD{index}</Text>
                     </Pressable>
                   ))}
-                  {result.report.collider ? (
+                  {previewColliderName ? (
                     <Pressable
                       accessibilityRole="radio"
                       accessibilityState={{ checked: previewIsCollider }}
                       onPress={() => {
-                        setPreviewLod(result.report?.collider?.name ?? null);
+                        setPreviewLod(previewColliderName);
                         setPreviewAppearance("mesh");
                       }}
                       style={[styles.chip, previewIsCollider && { borderColor: colors.yellow }]}
@@ -501,7 +535,7 @@ export function GameReadySheet({
                     </Pressable>
                   ) : null}
                 </View>
-                {result.report.uv && !previewIsCollider ? (
+                {previewHasUv && !previewIsCollider ? (
                   <View style={styles.row} accessibilityRole="radiogroup">
                     {([
                       { value: "source", ru: "Материал", en: "Material" },
@@ -526,7 +560,7 @@ export function GameReadySheet({
                   format="glb"
                   glbMeshName={previewLod}
                   appearance={previewAppearance}
-                  bodyId={`game-ready-${previewLod}`}
+                  bodyId={`game-ready-${previewSceneObject?.node_id ?? "single"}-${previewLod}`}
                   selected={false}
                   onSelect={() => undefined}
                   height={240}

@@ -145,7 +145,10 @@ export interface VerifiedGameSceneObject {
   engineName: string;
   triangles_in: number;
   lod0Triangles: number;
+  lods: VerifiedGameLod[];
+  colliderName: string | null;
   colliderTriangles: number | null;
+  hasUv: boolean;
   /** True only when the worker binds the one trusted rigid animation to this node id. */
   animated: boolean;
   material: {
@@ -278,14 +281,19 @@ export function gameReadySceneReportMatchesRequest(
       };
     }
     triangleSum += objectReport!.triangles_in as number;
-    const colliderInfo = (entry.report as { collider?: { triangles?: number } | null }).collider;
+    const colliderInfo = (
+      entry.report as { collider?: { name?: string; triangles?: number } | null }
+    ).collider;
     verified.push({
       node_id: entry.node_id,
       name: entry.source_name,
       engineName: entry.name,
       triangles_in: objectReport!.triangles_in as number,
       lod0Triangles: objectLods[0]!.triangles,
+      lods: objectLods,
+      colliderName: colliderInfo?.name ?? null,
       colliderTriangles: colliderInfo ? colliderInfo.triangles ?? null : null,
+      hasUv: uvRequested,
       animated: entry.node_id === animatedNodeId,
       material,
     });
