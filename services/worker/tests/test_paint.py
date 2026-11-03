@@ -260,7 +260,66 @@ def test_partial_colour_blends_over_existing_untextured_pbr(tmp_path) -> None:
     )
 
 
-def test_partial_surface_finish_fails_closed_over_a_textured_material() -> None:
+def test_partial_material_samples_one_textured_pbr_underlay(tmp_path) -> None:
+    source = tmp_path / "box.stl"
+    output = tmp_path / "painted.glb"
+    source.write_bytes(trimesh.creation.box(extents=(10.0, 10.0, 10.0)).export(file_type="stl"))
+    image = Image.new("RGBA", (2, 2))
+    image.putdata([(255, 0, 0, 255), (0, 255, 0, 255)] * 2)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    payload = buffer.getvalue()
+    encoded = base64.b64encode(payload).decode("ascii")
+    textured = paint.MaterialInput(
+        catalog_material_id="interior.concrete.test.v1",
+        base_color="#FFFFFF",
+        roughness=0.2,
+        metallic=0.8,
+        texture_sha256=hashlib.sha256(payload).hexdigest(),
+        texture_tile_size_mm=10.0,
+        texture_data_b64=encoded,
+    )
+    finish = paint.MaterialInput(
+        catalog_material_id="interior.metal.steel.v1",
+        base_color="#0000FF",
+        roughness=0.6,
+        metallic=0.2,
+    )
+
+    result = paint.paint_file(
+        source,
+        "stl",
+        paint.PaintRequest(
+            strokes=[
+                paint.Stroke(material=textured),
+                paint.Stroke(material=finish, opacity=0.5),
+            ]
+        ),
+        output,
+        "glb",
+    )
+
+    assert result.ok
+    loaded = trimesh.load(output, force="scene", process=False)
+    exported = next(
+        geometry.visual.material
+        for geometry in loaded.geometry.values()
+        if geometry.visual.material.name == finish.catalog_material_id
+    )
+    base = np.asarray(exported.baseColorTexture.convert("RGBA"))
+    pbr = np.asarray(exported.metallicRoughnessTexture.convert("RGBA"))
+    assert {tuple(value) for value in np.unique(base[base[..., :3].any(axis=2), :3], axis=0)} == {
+        (0, 128, 128),
+        (128, 0, 128),
+    }
+    np.testing.assert_allclose(
+        np.unique(pbr[pbr[..., 2] > 0, 1:3], axis=0),
+        [[102, 128]],
+        atol=1,
+    )
+
+
+def test_partial_surface_finish_fails_closed_over_a_composited_texture() -> None:
     image = Image.new("RGBA", (2, 2), (180, 170, 160, 255))
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
@@ -282,12 +341,13 @@ def test_partial_surface_finish_fails_closed_over_a_textured_material() -> None:
     )
     mesh = trimesh.creation.box(extents=(10.0, 10.0, 10.0))
 
-    with pytest.raises(ValueError, match="material cannot overlap a textured material"):
+    with pytest.raises(ValueError, match="material cannot overlap a composited texture"):
         paint.paint_mesh(
             mesh,
             paint.PaintRequest(
                 strokes=[
                     paint.Stroke(material=textured),
+                    paint.Stroke(material=finish, opacity=0.5),
                     paint.Stroke(material=finish, opacity=0.5),
                 ]
             ),

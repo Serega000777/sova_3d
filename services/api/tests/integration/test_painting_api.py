@@ -608,6 +608,75 @@ def test_partial_untextured_material_replays_over_saved_pbr_layer(
     )
 
 
+def test_partial_pbr_finish_samples_one_saved_textured_underlay(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    """Reference 77: one trusted texture can be sampled into the next PBR layer."""
+    import trimesh
+
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    underlay_id = "interior.concrete.architectural-light.v1"
+    underlay = paint(
+        api_client,
+        actor,
+        version_id,
+        strokes=[{"catalog_material_id": underlay_id}],
+        layer_name="Concrete base",
+    )
+    assert underlay.status_code == 202, underlay.text
+    (underlay_job,) = run_all(db_session, storage)
+    assert underlay_job.status is JobStatus.succeeded, underlay_job.error
+
+    finish_id = "interior.metal.steel.v1"
+    finish = paint(
+        api_client,
+        actor,
+        str((underlay_job.result or {})["version_id"]),
+        strokes=[{"catalog_material_id": finish_id, "opacity": 0.5}],
+        layer_name="Steel finish",
+    )
+    assert finish.status_code == 202, finish.text
+    (finish_job,) = run_all(db_session, storage)
+    assert finish_job.status is JobStatus.succeeded, finish_job.error
+
+    result = finish_job.result or {}
+    assert result["paint"]["materials"] == [underlay_id, finish_id]
+    made = db_session.get(ProjectVersion, result["version_id"])
+    assert made is not None
+    preview_id = {link.role: link.asset_id for link in made.assets}[AssetRole.preview]
+    preview = db_session.get(Asset, preview_id)
+    assert preview is not None
+    loaded = trimesh.load(
+        trimesh.util.wrap_as_stream(storage.get(preview.storage_key)),
+        file_type="glb",
+        force="scene",
+        process=False,
+    )
+    pbr = next(
+        material
+        for geometry in loaded.geometry.values()
+        if (material := getattr(geometry.visual, "material", None)) is not None
+        and material.name == finish_id
+    )
+    base = np.asarray(pbr.baseColorTexture.convert("RGBA"))
+    channels = np.asarray(pbr.metallicRoughnessTexture.convert("RGBA"))
+    np.testing.assert_allclose(
+        np.unique(base[base[..., :3].any(axis=2), :3], axis=0),
+        [[146, 148, 147]],
+        atol=1,
+    )
+    assert np.all(base[..., 3] == 255)
+    np.testing.assert_allclose(
+        np.unique(channels[channels[..., 2] > 0, 1:3], axis=0),
+        [[171, 128]],
+        atol=1,
+    )
+
+
 def test_reordering_paint_layers_changes_which_colour_wins_the_overlap(
     api_client: TestClient,
     actor: Actor,
