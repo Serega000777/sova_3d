@@ -363,8 +363,12 @@ def _paint_mesh_state(
             )
         else:
             assert stroke.colour is not None
-            if stroke.opacity < 1.0 and np.any(current_textured[selected]):
-                raise ValueError("semi-transparent colour cannot overlap a textured material")
+            selected_textured = current_textured[selected].copy()
+            selected_texture_sources = current_texture_source_ids[selected].copy()
+            if stroke.opacity < 1.0 and np.any(
+                selected_textured & (selected_texture_sources == "")
+            ):
+                raise ValueError("semi-transparent colour cannot overlap a composited texture")
             pbr_underlay = stroke.opacity < 1.0 and np.any(material_ids[selected] != "")
             if pbr_underlay:
                 composite = _colour_composite_material(stroke.colour)
@@ -372,7 +376,7 @@ def _paint_mesh_state(
                 material_underlays[selected] = colours[selected, :3]
                 material_underlay_roughness[selected] = current_roughness[selected]
                 material_underlay_metallic[selected] = current_metallic[selected]
-                material_underlay_texture_ids[selected] = ""
+                material_underlay_texture_ids[selected] = selected_texture_sources
                 material_opacities[selected] = stroke.opacity
                 material_ids[selected] = composite.catalog_material_id
             source = np.asarray(rgb(stroke.colour), dtype=float)
@@ -393,7 +397,7 @@ def _paint_mesh_state(
                 material_underlay_texture_ids[selected] = ""
                 current_roughness[selected] = 1.0
                 current_metallic[selected] = 0.0
-            current_textured[selected] = False
+            current_textured[selected] = selected_textured if pbr_underlay else False
             current_texture_source_ids[selected] = ""
         painted |= selected
 
