@@ -282,21 +282,14 @@ def resolve_scene(
     return resolved
 
 
-def editable_object(
+def direct_object(
     db: Session,
     *,
     version: ProjectVersion,
     workspace_id: uuid.UUID,
     node_id: str,
 ) -> dict[str, Any]:
-    """Resolve one direct object and prove its world transform preserves millimetres.
-
-    Mesh-edit requests use world-space selections because that is what the viewport displays.
-    A proper rigid transform is invertible without changing distances, angles or handedness, so
-    every existing mesh operation keeps its exact millimetre meaning after conversion to the
-    object's local asset.  Scaled, mirrored or sheared nodes stay viewable/exportable but need a
-    future explicit bake-transform operation before component editing.
-    """
+    """Resolve one direct scene object without weakening caller-specific transform checks."""
     if not has_explicit_scene(version):
         raise ValidationFailedError(
             "scene_node_id is only valid for an explicit multi-object scene",
@@ -321,6 +314,30 @@ def editable_object(
             "an instance must be made unique before its geometry can be edited",
             {"scene_node_id": node_id, "instance_of": target["instance_of"]},
         )
+    return target
+
+
+def editable_object(
+    db: Session,
+    *,
+    version: ProjectVersion,
+    workspace_id: uuid.UUID,
+    node_id: str,
+) -> dict[str, Any]:
+    """Resolve one direct object and prove its world transform preserves millimetres.
+
+    Mesh-edit requests use world-space selections because that is what the viewport displays.
+    A proper rigid transform is invertible without changing distances, angles or handedness, so
+    every existing mesh operation keeps its exact millimetre meaning after conversion to the
+    object's local asset.  Scaled, mirrored or sheared nodes stay viewable/exportable but need a
+    future explicit bake-transform operation before component editing.
+    """
+    target = direct_object(
+        db,
+        version=version,
+        workspace_id=workspace_id,
+        node_id=node_id,
+    )
     matrix = target["world_transform"]
     linear = [row[:3] for row in matrix[:3]]
     for row in range(3):
@@ -411,9 +428,11 @@ def replace_object_asset(
     workspace_id: uuid.UUID,
     node_id: str,
     asset_id: uuid.UUID,
+    require_rigid: bool = True,
 ) -> tuple[list[dict[str, Any]], set[uuid.UUID]]:
     """Replace one direct node and return validated stored nodes plus every resolved asset."""
-    editable_object(
+    resolver = editable_object if require_rigid else direct_object
+    resolver(
         db,
         version=version,
         workspace_id=workspace_id,

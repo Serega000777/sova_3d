@@ -39,6 +39,20 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
     scene_node_id = str(scene_node_id) if scene_node_id is not None else None
     if version is None or source is None:
         raise JobFailureError("input_missing", "version or asset no longer exists")
+    if scene_node_id is not None:
+        try:
+            trusted_source, _ = painting.scene_source(
+                ctx.db,
+                version=version,
+                workspace_id=ctx.job.workspace_id,
+                scene_node_id=scene_node_id,
+            )
+        except ValidationFailedError as exc:
+            raise JobFailureError("scene_target_invalid", str(exc)) from None
+        if trusted_source.id != source.id:
+            raise JobFailureError(
+                "scene_source_mismatch", "paint job source does not match the scene target"
+            )
 
     try:
         trusted_strokes = painting.worker_strokes(ctx.job.input.get("strokes") or [])
@@ -107,6 +121,7 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
                 workspace_id=ctx.job.workspace_id,
                 node_id=scene_node_id,
                 asset_id=painted.id,
+                require_rigid=False,
             )
         except ValidationFailedError as exc:
             raise JobFailureError("scene_target_invalid", str(exc)) from None

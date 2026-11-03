@@ -1329,8 +1329,10 @@ export default function ProjectScreen() {
     const matrix = selectedSceneNode.world_transform;
     return matrix.length === 4 && [0, 1, 2].every((row) =>
       matrix[row]?.length === 4
+      && Number.isFinite(matrix[row]?.[row])
+      && (matrix[row]?.[row] ?? 0) > 0
       && [0, 1, 2].every((column) =>
-        Math.abs((matrix[row]?.[column] ?? Number.NaN) - (row === column ? 1 : 0)) <= 1e-7
+        row === column || Math.abs(matrix[row]?.[column] ?? Number.NaN) <= 1e-7
       )
     );
   }, [hasExplicitScene, selectedSceneNode]);
@@ -2435,8 +2437,8 @@ export default function ProjectScreen() {
     ) {
       setError(
         ru
-          ? "Выберите видимый прямой объект сцены без поворота или масштаба и нанесите штрихи заново. Экземпляр сначала сделайте уникальным."
-          : "Select a visible direct scene object without rotation or scale and redraw the strokes. Make an instance unique first.",
+          ? "Выберите видимый прямой объект сцены без поворота, отражения или сдвига осей и нанесите штрихи заново. Экземпляр сначала сделайте уникальным."
+          : "Select a visible direct scene object without rotation, reflection, or shear and redraw the strokes. Make an instance unique first.",
       );
       return;
     }
@@ -6084,8 +6086,8 @@ export default function ProjectScreen() {
             if (hasExplicitScene && (!selectedSceneNodeId || !selectedSceneNodePaintable)) {
               setError(
                 ru
-                  ? "Для покраски выберите видимый прямой объект сцены без поворота или масштаба. Экземпляр сначала сделайте уникальным."
-                  : "To paint, select a visible direct scene object without rotation or scale. Make an instance unique first.",
+                  ? "Для покраски выберите видимый прямой объект сцены без поворота, отражения или сдвига осей. Экземпляр сначала сделайте уникальным."
+                  : "To paint, select a visible direct scene object without rotation, reflection, or shear. Make an instance unique first.",
               );
               return;
             }
@@ -6206,8 +6208,8 @@ export default function ProjectScreen() {
                   if (hasExplicitScene && (!draftSceneNodeId || !selectedSceneNodePaintable)) {
                     setError(
                       ru
-                        ? "Этот узел нельзя покрасить: нужен видимый прямой объект без поворота или масштаба."
-                        : "This node cannot be painted; select a visible direct object without rotation or scale.",
+                        ? "Этот узел нельзя покрасить: нужен видимый прямой объект без поворота, отражения или сдвига осей."
+                        : "This node cannot be painted; select a visible direct object without rotation, reflection, or shear.",
                     );
                     return;
                   }

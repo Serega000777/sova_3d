@@ -118,7 +118,7 @@ def inherited_layers(
     return trusted
 
 
-def _scene_source(
+def scene_source(
     db: Session,
     *,
     version: ProjectVersion,
@@ -127,12 +127,13 @@ def _scene_source(
 ) -> tuple[Asset, dict[str, Any]]:
     """Resolve one visible direct object and its trusted bare paint source.
 
-    Current paint regions are axis-aligned boxes/lassos. A world rotation would turn those into
-    oriented regions the worker cannot represent honestly, so this bounded path accepts only a
-    translation and converts every new region into node-local millimetres.
+    Current paint regions are axis-aligned boxes/lassos. A world rotation or shear would turn
+    those into oriented regions the worker cannot represent honestly, so this bounded path
+    accepts translation plus positive axis-aligned scale and converts every new region into
+    node-local millimetres.
     """
 
-    target = scenes.editable_object(
+    target = scenes.direct_object(
         db,
         version=version,
         workspace_id=workspace_id,
@@ -144,12 +145,13 @@ def _scene_source(
         )
     matrix = target["world_transform"]
     if any(
-        abs(float(matrix[row][column]) - (1.0 if row == column else 0.0)) > 1e-7
+        abs(float(matrix[row][column])) > 1e-7
         for row in range(3)
         for column in range(3)
-    ):
+        if row != column
+    ) or any(float(matrix[axis][axis]) <= 0 for axis in range(3)):
         raise ValidationFailedError(
-            "scene painting currently requires a translation-only object transform",
+            "scene painting requires positive axis-aligned scale without rotation or shear",
             {"scene_node_id": scene_node_id},
         )
 
@@ -191,27 +193,31 @@ def _region_in_object_space(
             "paint region is malformed", {"scene_node_id": scene_node_id}
         ) from exc
     translation = [float(world_transform[index][3]) for index in range(3)]
+    scale = [float(world_transform[index][index]) for index in range(3)]
     if isinstance(region, BoxRegion):
         return BoxRegion(
             min_mm=(
-                region.min_mm[0] - translation[0],
-                region.min_mm[1] - translation[1],
-                region.min_mm[2] - translation[2],
+                (region.min_mm[0] - translation[0]) / scale[0],
+                (region.min_mm[1] - translation[1]) / scale[1],
+                (region.min_mm[2] - translation[2]) / scale[2],
             ),
             max_mm=(
-                region.max_mm[0] - translation[0],
-                region.max_mm[1] - translation[1],
-                region.max_mm[2] - translation[2],
+                (region.max_mm[0] - translation[0]) / scale[0],
+                (region.max_mm[1] - translation[1]) / scale[1],
+                (region.max_mm[2] - translation[2]) / scale[2],
             ),
         ).model_dump(mode="json")
     axis_index = "xyz".index(region.axis)
     plane = [index for index in range(3) if index != axis_index]
     return LassoRegion(
         axis=region.axis,
-        offset_mm=region.offset_mm - translation[axis_index],
-        depth_mm=region.depth_mm,
+        offset_mm=(region.offset_mm - translation[axis_index]) / scale[axis_index],
+        depth_mm=region.depth_mm / scale[axis_index],
         points_mm=[
-            (point[0] - translation[plane[0]], point[1] - translation[plane[1]])
+            (
+                (point[0] - translation[plane[0]]) / scale[plane[0]],
+                (point[1] - translation[plane[1]]) / scale[plane[1]],
+            )
             for point in region.points_mm
         ],
     ).model_dump(mode="json")
@@ -256,7 +262,7 @@ def reorder_layers(
             raise ValidationFailedError(
                 "a multi-object scene paint request must name scene_node_id"
             )
-        asset, _ = _scene_source(
+        asset, _ = scene_source(
             db,
             version=version,
             workspace_id=project.workspace_id,
@@ -359,7 +365,7 @@ def enqueue_paint(
             raise ValidationFailedError(
                 "a multi-object scene paint request must name scene_node_id"
             )
-        asset, target = _scene_source(
+        asset, target = scene_source(
             db,
             version=version,
             workspace_id=project.workspace_id,

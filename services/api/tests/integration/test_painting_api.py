@@ -120,7 +120,7 @@ def test_painting_keeps_the_shape_and_adds_a_coloured_preview(
     assert result["paint"]["layers"] == painted.provenance["paint"]["layers"]
 
 
-def test_scene_paint_targets_one_translated_direct_object_and_preserves_siblings(
+def test_scene_paint_targets_one_translated_scaled_object_and_preserves_siblings(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
@@ -132,8 +132,11 @@ def test_scene_paint_targets_one_translated_direct_object_and_preserves_siblings
         "nodes"
     ][0]["resolved_asset_id"]
     identity = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-    translated = [row[:] for row in identity]
-    translated[0][3] = 10
+    scaled = [row[:] for row in identity]
+    scaled[0][0] = 2
+    scaled[1][1] = 0.5
+    scaled[2][2] = 1.5
+    scaled[0][3] = 10
     assembled = api_client.post(
         f"/api/v1/models/{source_id}/scene",
         json={
@@ -144,7 +147,7 @@ def test_scene_paint_targets_one_translated_direct_object_and_preserves_siblings
                     "name": "Painted part",
                     "kind": "object",
                     "parent_id": "root",
-                    "transform": translated,
+                    "transform": scaled,
                     "asset_id": original,
                 },
                 {
@@ -185,8 +188,12 @@ def test_scene_paint_targets_one_translated_direct_object_and_preserves_siblings
     )
     world_top = {
         **TOP_FACE,
-        "points_mm": [[x + 10, y] for x, y in TOP_FACE["points_mm"]],
+        "offset_mm": TOP_FACE["offset_mm"] * 1.5,
+        "depth_mm": TOP_FACE["depth_mm"] * 1.5,
+        "points_mm": [[10 + x * 2, y * 0.5] for x, y in TOP_FACE["points_mm"]],
     }
+    local_box = {"kind": "box", "min_mm": [0, 0, 8], "max_mm": [30, 20, 11]}
+    world_box = {"kind": "box", "min_mm": [10, 0, 12], "max_mm": [70, 10, 16.5]}
     assert (
         paint(
             api_client,
@@ -218,7 +225,7 @@ def test_scene_paint_targets_one_translated_direct_object_and_preserves_siblings
     by_id = {node["id"]: node for node in scene}
     assert by_id["part"]["resolved_asset_id"] == result["painted_asset_id"]
     assert by_id["part"]["appearance"] is None
-    assert by_id["part"]["world_transform"] == translated
+    assert by_id["part"]["world_transform"] == scaled
     assert by_id["part"]["parent_id"] == "root"
     assert by_id["sibling"]["resolved_asset_id"] == original
     assert by_id["sibling"]["world_transform"] == identity
@@ -239,7 +246,7 @@ def test_scene_paint_targets_one_translated_direct_object_and_preserves_siblings
         actor,
         painted_id,
         scene_node_id="part",
-        strokes=[{"colour": "#1188ff", "region": world_top}],
+        strokes=[{"colour": "#1188ff", "region": world_box}],
         layer_name="Edge accent",
     )
     assert second.status_code == 202, second.text
@@ -261,6 +268,7 @@ def test_scene_paint_targets_one_translated_direct_object_and_preserves_siblings
     assert made is not None
     record = made.provenance["scene_paint"]["part"]
     assert [layer["name"] for layer in record["layers"]] == ["Edge accent", "Part accent"]
+    assert record["strokes"][0]["region"] == local_box
     scene = api_client.get(f"/api/v1/models/{painted_id}/scene", headers=actor.headers).json()[
         "nodes"
     ]
@@ -300,7 +308,7 @@ def test_scene_paint_targets_one_translated_direct_object_and_preserves_siblings
     assert replaced_row.provenance["scene_edit"]["dropped_paint_node_ids"] == ["part"]
 
 
-def test_scene_paint_fails_closed_for_non_direct_hidden_or_rotated_targets(
+def test_scene_paint_fails_closed_for_non_direct_hidden_rotated_reflected_or_sheared_targets(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
@@ -312,6 +320,8 @@ def test_scene_paint_fails_closed_for_non_direct_hidden_or_rotated_targets(
         "nodes"
     ][0]["resolved_asset_id"]
     rotated = [[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    reflected = [[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    sheared = [[1, 0.25, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
     scene = api_client.post(
         f"/api/v1/models/{source_id}/scene",
         json={
@@ -338,6 +348,20 @@ def test_scene_paint_fails_closed_for_non_direct_hidden_or_rotated_targets(
                     "visible": False,
                     "asset_id": asset_id,
                 },
+                {
+                    "id": "reflected",
+                    "name": "Reflected",
+                    "kind": "object",
+                    "transform": reflected,
+                    "asset_id": asset_id,
+                },
+                {
+                    "id": "sheared",
+                    "name": "Sheared",
+                    "kind": "object",
+                    "transform": sheared,
+                    "asset_id": asset_id,
+                },
             ]
         },
         headers=actor.headers,
@@ -358,6 +382,8 @@ def test_scene_paint_fails_closed_for_non_direct_hidden_or_rotated_targets(
     assert status("copy") == 422
     assert status("hidden") == 422
     assert status("part") == 422
+    assert status("reflected") == 422
+    assert status("sheared") == 422
     viewer = make_actor(db_session, workspace=actor.workspace, role=WorkspaceRole.viewer)
     assert status("part", viewer) == 403
     stranger = make_actor(db_session)
