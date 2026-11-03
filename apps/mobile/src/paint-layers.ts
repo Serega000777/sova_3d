@@ -12,8 +12,12 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-export function paintLayerSummaries(provenance: Record<string, unknown> | null | undefined): PaintLayerSummary[] {
-  const paint = record(provenance?.paint);
+export function paintLayerSummaries(
+  provenance: Record<string, unknown> | null | undefined,
+  sceneNodeId: string | null = null,
+): PaintLayerSummary[] {
+  const scenePaint = record(provenance?.scene_paint);
+  const paint = sceneNodeId ? record(scenePaint?.[sceneNodeId]) : record(provenance?.paint);
   const strokes = Array.isArray(paint?.strokes) ? paint.strokes : null;
   const layers = Array.isArray(paint?.layers) ? paint.layers : null;
   if (!strokes || !layers) return [];

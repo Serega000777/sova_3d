@@ -49,6 +49,7 @@ class PaintBody(BaseModel):
     base_colour: str | None = Field(default=None, pattern=COLOUR)
     label: str | None = Field(default=None, max_length=200)
     layer_name: str | None = Field(default=None, max_length=80)
+    scene_node_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     # By default new strokes go on top of the paint the version already has.
     replace: bool = False
 
@@ -83,6 +84,7 @@ def paint_model(
         base_colour=body.base_colour,
         label=body.label,
         layer_name=body.layer_name,
+        scene_node_id=body.scene_node_id,
         replace=body.replace,
         idempotency_key=idempotency_key,
     )
@@ -91,6 +93,7 @@ def paint_model(
 
 class PaintLayerReorderBody(BaseModel):
     layer_order: list[LayerName] = Field(min_length=1, max_length=64)
+    scene_node_id: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
 
     @field_validator("layer_order")
     @classmethod
@@ -117,6 +120,7 @@ def reorder_paint_layers(
         user_id=principal.user_id,
         version_id=version_id,
         layer_order=body.layer_order,
+        scene_node_id=body.scene_node_id,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

@@ -431,6 +431,30 @@ def replace_object_asset(
     }
 
 
+def carried_scene_paint(
+    provenance: dict[str, Any], nodes: Sequence[dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Carry paint only with the same stable direct node and its exact painted asset."""
+
+    raw = provenance.get("scene_paint")
+    if not isinstance(raw, dict):
+        return {}
+    direct_assets = {
+        str(node.get("id")): str(node.get("asset_id"))
+        for node in nodes
+        if node.get("kind") == "object"
+        and node.get("instance_of") is None
+        and node.get("asset_id") is not None
+    }
+    return {
+        node_id: dict(record)
+        for node_id, record in raw.items()
+        if isinstance(node_id, str)
+        and isinstance(record, dict)
+        and record.get("painted_asset_id") == direct_assets.get(node_id)
+    }
+
+
 def create_scene_version(
     db: Session,
     *,
@@ -495,6 +519,11 @@ def create_scene_version(
         if node["kind"] == "object" and node.get("appearance") is not None
     }
     dropped_material_node_ids = sorted(set(prior_appearance) - remaining_appearance_ids)
+    carried_paint = carried_scene_paint(source.provenance or {}, stored)
+    prior_paint = (source.provenance or {}).get("scene_paint")
+    dropped_paint_node_ids = sorted(
+        set(prior_paint if isinstance(prior_paint, dict) else {}) - set(carried_paint)
+    )
     old_direct = {
         str(node["id"]): node["resolved_asset_id"]
         for node in source_resolved
@@ -535,8 +564,10 @@ def create_scene_version(
             "source_version_id": str(source.id),
             "node_count": len(stored),
             "dropped_material_node_ids": dropped_material_node_ids,
+            "dropped_paint_node_ids": dropped_paint_node_ids,
         },
         "mesh_modifier_stacks": kept_metadata,
+        "scene_paint": carried_paint,
     }
     if operation_details is not None:
         provenance[operation] = operation_details

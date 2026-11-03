@@ -28489,6 +28489,18 @@
             ],
             "title": "Layer Name"
           },
+          "scene_node_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Node Id"
+          },
           "replace": {
             "type": "boolean",
             "title": "Replace",
@@ -28511,6 +28523,18 @@
             "maxItems": 64,
             "minItems": 1,
             "title": "Layer Order"
+          },
+          "scene_node_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Node Id"
           }
         },
         "type": "object",

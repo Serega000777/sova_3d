@@ -177,6 +177,12 @@ test("paint-layer reorder posts the complete bottom-to-top order", async () => {
   assert.deepEqual(JSON.parse(String(request!.init.body)), {
     layer_order: ["Accent", "Base"],
   });
+
+  await client.reorderPaintLayers("version-2", ["Base", "Accent"], "part_a");
+  assert.deepEqual(JSON.parse(String(request!.init.body)), {
+    layer_order: ["Base", "Accent"],
+    scene_node_id: "part_a",
+  });
 });
 
 test("model paint posts the bounded brush opacity with its exact region", async () => {
@@ -213,10 +219,12 @@ test("model paint posts a trusted catalogue material id without client-authored 
   await client.paintModel("version-1", {
     strokes: [{ catalog_material_id: "interior.wood.oak-natural.v1", region: { kind: "box" } }],
     layer_name: "Oak accent",
+    scene_node_id: "chair",
   });
   assert.deepEqual(JSON.parse(String(request!.init.body)), {
     strokes: [{ catalog_material_id: "interior.wood.oak-natural.v1", region: { kind: "box" } }],
     layer_name: "Oak accent",
+    scene_node_id: "chair",
   });
 });
 

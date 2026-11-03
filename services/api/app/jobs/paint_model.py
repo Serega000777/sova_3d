@@ -21,9 +21,9 @@ from worker import paint
 from app.api.errors import ValidationFailedError
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
-from app.models.execution import JobArtifact, Operation
+from app.models.execution import JobArtifact, MeshModifier, Operation
 from app.models.versioning import Asset, AssetRole, ProjectVersion
-from app.services import painting, projects
+from app.services import painting, projects, scenes
 from app.storage import ObjectNotFoundError
 
 PAINTED_FORMAT = "glb"  # carries per-face colour and every client can draw it
@@ -35,6 +35,8 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
     asset_id = uuid.UUID(str(ctx.job.input["asset_id"]))
     version = ctx.db.get(ProjectVersion, version_id)
     source = ctx.db.get(Asset, asset_id)
+    scene_node_id = ctx.job.input.get("scene_node_id")
+    scene_node_id = str(scene_node_id) if scene_node_id is not None else None
     if version is None or source is None:
         raise JobFailureError("input_missing", "version or asset no longer exists")
 
@@ -96,33 +98,83 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
 
     report = result.model_dump(mode="json")
     parent_provenance = version.provenance or {}
-    provenance: dict[str, Any] = {
-        "operation": painting.PAINT_JOB,
-        "job_id": str(ctx.job.id),
-        "source_version_id": str(version.id),
-        # The one shape every painted version carries (see painting.inherited_paint).
-        "paint": {
-            # Keep the compact server-validated request as provenance. Expanded PBR snapshots
-            # and base64 texture bytes are sandbox inputs only and must never become history.
+    scene_asset_ids: set[uuid.UUID] | None = None
+    if scene_node_id is not None:
+        try:
+            scene_nodes, scene_asset_ids = scenes.replace_object_asset(
+                ctx.db,
+                version=version,
+                workspace_id=ctx.job.workspace_id,
+                node_id=scene_node_id,
+                asset_id=painted.id,
+            )
+        except ValidationFailedError as exc:
+            raise JobFailureError("scene_target_invalid", str(exc)) from None
+        cleared_material_id: str | None = None
+        for node in scene_nodes:
+            if str(node.get("id")) == scene_node_id:
+                appearance = node.get("appearance")
+                if isinstance(appearance, dict):
+                    value = appearance.get("catalog_material_id")
+                    cleared_material_id = str(value) if value is not None else None
+                node["appearance"] = None
+                break
+        carried = scenes.carried_scene_paint(parent_provenance, scene_nodes)
+        carried[scene_node_id] = {
+            # The bare local object is retained as replay source; the painted GLB is the node's
+            # current immutable asset. Neither id is accepted from the client.
+            "source_asset_id": str(source.id),
+            "painted_asset_id": str(painted.id),
             "strokes": ctx.job.input.get("strokes") or [],
             "base_colour": request.base_colour,
             "layers": ctx.job.input.get("layers") or [],
             "report": report,
-        },
-    }
-    if parent_provenance.get("bodies"):
-        provenance["bodies"] = parent_provenance["bodies"]  # the kernel bodies, for targeting
-    # The shape is unchanged, so every asset but the old preview carries over as it is.
-    inherited: dict[AssetRole, uuid.UUID] = {
-        link.role: link.asset_id for link in version.assets if link.role != AssetRole.preview
-    }
+        }
+        provenance = {
+            **parent_provenance,
+            "operation": painting.PAINT_JOB,
+            "job_id": str(ctx.job.id),
+            "source_version_id": str(version.id),
+            "scene": {"schema_version": scenes.SCENE_SCHEMA_VERSION, "nodes": scene_nodes},
+            "scene_paint": carried,
+            "scene_paint_edit": {
+                "source_version_id": str(version.id),
+                "scene_node_id": scene_node_id,
+                "source_asset_id": str(source.id),
+                "painted_asset_id": str(painted.id),
+                "cleared_material_id": cleared_material_id,
+            },
+        }
+        version_assets = None
+    else:
+        provenance = {
+            "operation": painting.PAINT_JOB,
+            "job_id": str(ctx.job.id),
+            "source_version_id": str(version.id),
+            # The one shape every painted version carries (see painting.inherited_paint).
+            "paint": {
+                # Keep the compact server-validated request as provenance. Expanded PBR snapshots
+                # and base64 texture bytes are sandbox inputs only and must never become history.
+                "strokes": ctx.job.input.get("strokes") or [],
+                "base_colour": request.base_colour,
+                "layers": ctx.job.input.get("layers") or [],
+                "report": report,
+            },
+        }
+        if parent_provenance.get("bodies"):
+            provenance["bodies"] = parent_provenance["bodies"]
+        # The shape is unchanged, so every asset but the old preview carries over as it is.
+        inherited: dict[AssetRole, uuid.UUID] = {
+            link.role: link.asset_id for link in version.assets if link.role != AssetRole.preview
+        }
+        version_assets = {**inherited, AssetRole.model: source.id, AssetRole.preview: painted.id}
     new_version = projects.create_version_internal(
         ctx.db,
         project_id=version.project_id,
         parent_version_id=version.id,
         label=ctx.job.input.get("label") or "Paint",
         provenance=provenance,
-        assets={**inherited, AssetRole.model: source.id, AssetRole.preview: painted.id},
+        assets=version_assets,
         finalize=False,
         created_by=ctx.job.created_by,
     )
@@ -144,15 +196,44 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
                 enabled=row.enabled,
             )
         )
+    modifiers = ctx.db.scalars(
+        sa.select(MeshModifier)
+        .where(MeshModifier.project_version_id == version.id)
+        .order_by(MeshModifier.sequence_no)
+    ).all()
+    for modifier in modifiers:
+        ctx.db.add(
+            MeshModifier(
+                project_version_id=new_version.id,
+                sequence_no=modifier.sequence_no,
+                scene_node_id=modifier.scene_node_id,
+                modifier_key=modifier.modifier_key,
+                modifier_type=modifier.modifier_type,
+                enabled=modifier.enabled,
+                tolerance_mm=modifier.tolerance_mm,
+                params=modifier.params,
+            )
+        )
+    if scene_asset_ids is not None:
+        for scene_asset_id in scene_asset_ids:
+            projects.attach_asset(
+                ctx.db,
+                new_version,
+                scene_asset_id,
+                AssetRole.model,
+                workspace_id=ctx.job.workspace_id,
+            )
     ctx.db.flush()
     projects.finalize_version(ctx.db, new_version)
-    ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=painted.id, role=AssetRole.preview.value))
+    artifact_role = AssetRole.model if scene_node_id is not None else AssetRole.preview
+    ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=painted.id, role=artifact_role.value))
     ctx.db.flush()
     ctx.progress(100, "done")
     return {
         "version_id": str(new_version.id),
         "source_version_id": str(version.id),
         "painted_asset_id": str(painted.id),
-        "model_asset_id": str(source.id),
+        "model_asset_id": str(painted.id if scene_node_id is not None else source.id),
+        "scene_node_id": scene_node_id,
         "paint": {**report, "layers": ctx.job.input.get("layers") or []},
     }

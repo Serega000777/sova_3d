@@ -1218,6 +1218,7 @@ export class PhysicalAiClient {
       base_colour?: string | null;
       label?: string | null;
       layer_name?: string | null;
+      scene_node_id?: string | null;
       /** Start from the bare model instead of on top of the version's paint. */
       replace?: boolean;
     },
@@ -1228,11 +1229,16 @@ export class PhysicalAiClient {
   }
 
   /** Replay every named paint layer in a new bottom-to-top order as a new immutable version. */
-  reorderPaintLayers(versionId: string, layerOrder: string[]) {
+  reorderPaintLayers(versionId: string, layerOrder: string[], sceneNodeId?: string | null) {
     return this.request<Schemas["JobAccepted"]>(
       "POST",
       `/api/v1/models/${versionId}/paint/reorder-layers`,
-      { body: { layer_order: layerOrder } },
+      {
+        body: {
+          layer_order: layerOrder,
+          ...(sceneNodeId ? { scene_node_id: sceneNodeId } : {}),
+        },
+      },
     );
   }
 

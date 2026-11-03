@@ -8277,6 +8277,8 @@ export interface components {
             label?: string | null;
             /** Layer Name */
             layer_name?: string | null;
+            /** Scene Node Id */
+            scene_node_id?: string | null;
             /**
              * Replace
              * @default false
@@ -8287,6 +8289,8 @@ export interface components {
         PaintLayerReorderBody: {
             /** Layer Order */
             layer_order: string[];
+            /** Scene Node Id */
+            scene_node_id?: string | null;
         };
         /** ParameterOut */
         ParameterOut: {

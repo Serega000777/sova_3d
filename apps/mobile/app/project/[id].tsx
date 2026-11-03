@@ -461,6 +461,7 @@ export default function ProjectScreen() {
   const [paintMaterialId, setPaintMaterialId] = useState<string | null>(null);
   const [strokes, setStrokes] = useState<PaintDraftStroke[]>([]);
   const [paintSourceVersionId, setPaintSourceVersionId] = useState<string | null>(null);
+  const [paintSourceSceneNodeId, setPaintSourceSceneNodeId] = useState<string | null>(null);
   const [paintLayerName, setPaintLayerName] = useState("Слой 1");
   const [paintReport, setPaintReport] = useState<{
     paintedFaces: number;
@@ -881,6 +882,7 @@ export default function ProjectScreen() {
     setPaintReport(null);
     setStrokes([]);
     setPaintSourceVersionId(null);
+    setPaintSourceSceneNodeId(null);
     setModelCheck(null);
     setModelCheckVersionId(null);
     setViewerTopology(null);
@@ -1317,6 +1319,35 @@ export default function ProjectScreen() {
     const position = [matrix[0]![3], matrix[1]![3], matrix[2]![3]];
     return position.every(Number.isFinite) ? position as [number, number, number] : null;
   }, [selectedSceneNode]);
+  const selectedSceneNodePaintable = useMemo(() => {
+    if (!hasExplicitScene) return true;
+    if (
+      selectedSceneNode?.kind !== "object"
+      || selectedSceneNode.instance_of !== null
+      || !selectedSceneNode.effective_visible
+    ) return false;
+    const matrix = selectedSceneNode.world_transform;
+    return matrix.length === 4 && [0, 1, 2].every((row) =>
+      matrix[row]?.length === 4
+      && [0, 1, 2].every((column) =>
+        Math.abs((matrix[row]?.[column] ?? Number.NaN) - (row === column ? 1 : 0)) <= 1e-7
+      )
+    );
+  }, [hasExplicitScene, selectedSceneNode]);
+
+  useEffect(() => {
+    const currentNodeId = hasExplicitScene ? selectedSceneNodeId : null;
+    if (strokes.length > 0 && paintSourceSceneNodeId !== currentNodeId) {
+      setStrokes([]);
+      setPaintSourceVersionId(null);
+      setPaintSourceSceneNodeId(null);
+      setNotice(
+        ru
+          ? "Выбран другой объект сцены; черновик покраски очищен."
+          : "A different scene object was selected; the paint draft was cleared.",
+      );
+    }
+  }, [hasExplicitScene, paintSourceSceneNodeId, ru, selectedSceneNodeId, strokes.length]);
   const engineeringRiskBoxOverlay = useMemo(
     () => engineeringRiskBox(engineeringRiskRegion),
     [engineeringRiskRegion],
@@ -2388,6 +2419,7 @@ export default function ProjectScreen() {
     if (!paintSourceVersionId || paintSourceVersionId !== active.id) {
       setStrokes([]);
       setPaintSourceVersionId(null);
+      setPaintSourceSceneNodeId(null);
       setError(
         ru
           ? "Версия модели изменилась. Черновик покраски очищен — нанесите штрихи заново."
@@ -2395,11 +2427,16 @@ export default function ProjectScreen() {
       );
       return;
     }
-    if (hasExplicitScene) {
+    if (
+      hasExplicitScene
+      && (!selectedSceneNodeId
+        || !selectedSceneNodePaintable
+        || paintSourceSceneNodeId !== selectedSceneNodeId)
+    ) {
       setError(
         ru
-          ? "Покраска сцены с несколькими объектами на телефоне пока не привязана к отдельному узлу."
-          : "Mobile painting is not yet scoped to one multi-object scene node.",
+          ? "Выберите видимый прямой объект сцены без поворота или масштаба и нанесите штрихи заново. Экземпляр сначала сделайте уникальным."
+          : "Select a visible direct scene object without rotation or scale and redraw the strokes. Make an instance unique first.",
       );
       return;
     }
@@ -2415,6 +2452,7 @@ export default function ProjectScreen() {
         })),
         label: paintLayerName.trim(),
         layer_name: paintLayerName.trim(),
+        ...(hasExplicitScene ? { scene_node_id: selectedSceneNodeId } : {}),
       });
       const job = await track(ru ? "Красим" : "Painting", accepted.job_id);
       if (job.status !== "succeeded") {
@@ -2429,6 +2467,7 @@ export default function ProjectScreen() {
       } | null)?.paint;
       setStrokes([]);
       setPaintSourceVersionId(null);
+      setPaintSourceSceneNodeId(null);
       setMode("orbit");
       await headAfterJob(job);
       setPaintReport({
@@ -2443,16 +2482,21 @@ export default function ProjectScreen() {
   }
 
   async function reorderPaintLayer(index: number, direction: -1 | 1) {
-    if (!client || !active || busy || hasExplicitScene || strokes.length) return;
+    if (!client || !active || busy || strokes.length) return;
+    if (hasExplicitScene && (!selectedSceneNodeId || !selectedSceneNodePaintable)) return;
     const layerOrder = movePaintLayerOrder(
-      paintLayerSummaries(active.provenance),
+      paintLayerSummaries(active.provenance, hasExplicitScene ? selectedSceneNodeId : null),
       index,
       direction,
     );
     if (!layerOrder) return;
     setError(null);
     try {
-      const accepted = await client.reorderPaintLayers(active.id, layerOrder);
+      const accepted = await client.reorderPaintLayers(
+        active.id,
+        layerOrder,
+        hasExplicitScene ? selectedSceneNodeId : null,
+      );
       const job = await track(ru ? "Меняем порядок слоёв" : "Reordering paint layers", accepted.job_id);
       if (job.status !== "succeeded") {
         setError(
@@ -2462,6 +2506,7 @@ export default function ProjectScreen() {
         return;
       }
       setPaintSourceVersionId(null);
+      setPaintSourceSceneNodeId(null);
       await headAfterJob(job);
       setNotice(
         ru
@@ -4290,7 +4335,10 @@ export default function ProjectScreen() {
   );
   const canUndoOneStep = Boolean(undoTarget && !canRedoOneStep);
   const measuredReplacement = parseReplacementMeasurements(replacementMeasurements);
-  const savedPaintLayers = paintLayerSummaries(active?.provenance);
+  const savedPaintLayers = paintLayerSummaries(
+    active?.provenance,
+    hasExplicitScene ? selectedSceneNodeId : null,
+  );
   const replacementReady = !replacementPartMode || (
     guidedPhotoAssessment.ready && measuredReplacement !== null
   );
@@ -6033,6 +6081,14 @@ export default function ProjectScreen() {
             setEditSheetOpen(false);
             setRegion(null);
           } else if (tool === "paint") {
+            if (hasExplicitScene && (!selectedSceneNodeId || !selectedSceneNodePaintable)) {
+              setError(
+                ru
+                  ? "Для покраски выберите видимый прямой объект сцены без поворота или масштаба. Экземпляр сначала сделайте уникальным."
+                  : "To paint, select a visible direct scene object without rotation or scale. Make an instance unique first.",
+              );
+              return;
+            }
             setDimensionHudVisible(false);
             setMode((current) => current === "paint" ? "orbit" : "paint");
             setEditSheetOpen(false);
@@ -6146,8 +6202,18 @@ export default function ProjectScreen() {
             onRegion={(next) => {
               if (mode === "paint") {
                 if (next && activeId) {
+                  const draftSceneNodeId = hasExplicitScene ? selectedSceneNodeId : null;
+                  if (hasExplicitScene && (!draftSceneNodeId || !selectedSceneNodePaintable)) {
+                    setError(
+                      ru
+                        ? "Этот узел нельзя покрасить: нужен видимый прямой объект без поворота или масштаба."
+                        : "This node cannot be painted; select a visible direct object without rotation or scale.",
+                    );
+                    return;
+                  }
                   setStrokes((all) =>
-                    paintSourceVersionId === null || paintSourceVersionId === activeId
+                    paintSourceVersionId === null
+                    || (paintSourceVersionId === activeId && paintSourceSceneNodeId === draftSceneNodeId)
                       ? [
                           ...all,
                           paintMaterialId
@@ -6161,6 +6227,7 @@ export default function ProjectScreen() {
                         ],
                   );
                   setPaintSourceVersionId(activeId);
+                  setPaintSourceSceneNodeId(draftSceneNodeId);
                 }
               } else {
                 setRegion(next);
@@ -7258,6 +7325,7 @@ export default function ProjectScreen() {
               onPress={() => {
                 setStrokes([]);
                 setPaintSourceVersionId(null);
+                setPaintSourceSceneNodeId(null);
               }}
             >
               <Text style={styles.buttonText}>{ru ? "Очистить слой" : "Clear layer"}</Text>
@@ -7267,8 +7335,8 @@ export default function ProjectScreen() {
             <View style={{ gap: 6 }} accessibilityLabel={ru ? "Штрихи текущего слоя" : "Current layer strokes"}>
               <Text style={styles.muted}>
                 {ru
-                  ? `Черновик привязан к версии ${paintSourceVersionId?.slice(0, 8) ?? "—"}. Последние штрихи:`
-                  : `Draft bound to version ${paintSourceVersionId?.slice(0, 8) ?? "—"}. Latest strokes:`}
+                  ? `Черновик привязан к версии ${paintSourceVersionId?.slice(0, 8) ?? "—"}${paintSourceSceneNodeId ? ` и узлу ${paintSourceSceneNodeId}` : ""}. Последние штрихи:`
+                  : `Draft bound to version ${paintSourceVersionId?.slice(0, 8) ?? "—"}${paintSourceSceneNodeId ? ` and node ${paintSourceSceneNodeId}` : ""}. Latest strokes:`}
               </Text>
               {strokes.slice(-5).map((stroke, visibleIndex) => {
                 const strokeIndex = Math.max(0, strokes.length - 5) + visibleIndex;

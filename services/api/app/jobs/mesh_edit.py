@@ -243,6 +243,7 @@ def handle_mesh_edit(ctx: JobContext) -> dict[str, Any]:
                 "asset_id": str(edited.id),
             },
             "mesh_modifier_stacks": node_metadata,
+            "scene_paint": scenes.carried_scene_paint(version.provenance or {}, scene_nodes),
         }
         provenance.pop("mesh_modifier_stack", None)
     labels = ", ".join(str(op["op"]).replace("_", " ") for op in active_operations[:3])

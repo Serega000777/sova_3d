@@ -86,8 +86,16 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
       layers: [{ name: "Oak wash", stroke_start: 0, stroke_count: 1 }],
     },
   }), [{ name: "Oak wash", strokeCount: 1, colours: [], materialIds: ["interior.wood.oak-natural.v1"], opacities: [0.85] }]);
+  assert.deepEqual(paintLayerSummaries({
+    scene_paint: {
+      part_a: {
+        strokes: [{ colour: "#1188ff", opacity: 0.75 }],
+        layers: [{ name: "Node accent", stroke_start: 0, stroke_count: 1 }],
+      },
+    },
+  }, "part_a"), [{ name: "Node accent", strokeCount: 1, colours: ["#1188ff"], materialIds: [], opacities: [0.75] }]);
   assert.match(project, /Сохранённые слои покраски/);
-  assert.match(project, /paintLayerSummaries\(active\?\.provenance\)/);
+  assert.match(project, /paintLayerSummaries\(\s*active\?\.provenance/);
 });
 
 test("saved layers can be moved only as one complete unique order", () => {
@@ -98,7 +106,7 @@ test("saved layers can be moved only as one complete unique order", () => {
   assert.deepEqual(movePaintLayerOrder(layers, 0, 1), ["Accent", "Base"]);
   assert.equal(movePaintLayerOrder(layers, 0, -1), null);
   assert.equal(movePaintLayerOrder([layers[0], layers[0]], 0, 1), null);
-  assert.match(project, /client\.reorderPaintLayers\(active\.id, layerOrder\)/);
+  assert.match(project, /client\.reorderPaintLayers\(\s*active\.id,\s*layerOrder/);
   assert.match(project, /await headAfterJob\(job\)/);
   assert.match(project, /Порядок: нижний → верхний/);
   assert.match(project, /Опустить слой/);
@@ -113,6 +121,17 @@ test("brush opacity is explicit, source-bound, and visible in the live trail", (
   assert.match(project, /catalogMaterialId: paintMaterialId, opacity: paintOpacity/);
   assert.match(project, /запекается в непрозрачную PBR-поверхность/);
   assert.match(viewer, /material\.opacity = mode === "paint" \? paintOpacity : 1/);
+});
+
+test("multi-object painting is bound to one selected direct scene node", () => {
+  assert.match(project, /paintSourceSceneNodeId/);
+  assert.match(project, /scene_node_id: selectedSceneNodeId/);
+  assert.match(project, /selectedSceneNode\.instance_of !== null/);
+  assert.match(project, /selectedSceneNodePaintable/);
+  assert.match(project, /paintLayerSummaries\(\s*active\?\.provenance,\s*hasExplicitScene \? selectedSceneNodeId : null/);
+  assert.match(project, /reorderPaintLayers\([\s\S]*?hasExplicitScene \? selectedSceneNodeId : null/);
+  assert.match(project, /if \(hasExplicitScene && \(!selectedSceneNodeId \|\| !selectedSceneNodePaintable\)\) return/);
+  assert.doesNotMatch(project, /busy \|\| hasExplicitScene \|\| strokes\.length/);
 });
 
 test("G07 keeps the current paint-layer palette beside the live viewport", () => {

@@ -60,10 +60,17 @@ def paint(api_client: TestClient, actor: Actor, version_id: str, **body: Any) ->
     return api_client.post(f"/api/v1/models/{version_id}/paint", json=body, headers=actor.headers)
 
 
-def reorder(api_client: TestClient, actor: Actor, version_id: str, layer_order: list[str]) -> Any:
+def reorder(
+    api_client: TestClient,
+    actor: Actor,
+    version_id: str,
+    layer_order: list[str],
+    *,
+    scene_node_id: str | None = None,
+) -> Any:
     return api_client.post(
         f"/api/v1/models/{version_id}/paint/reorder-layers",
-        json={"layer_order": layer_order},
+        json={"layer_order": layer_order, "scene_node_id": scene_node_id},
         headers=actor.headers,
     )
 
@@ -111,6 +118,250 @@ def test_painting_keeps_the_shape_and_adds_a_coloured_preview(
         {"name": "Front accent", "stroke_start": 0, "stroke_count": 1}
     ]
     assert result["paint"]["layers"] == painted.provenance["paint"]["layers"]
+
+
+def test_scene_paint_targets_one_translated_direct_object_and_preserves_siblings(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    source_id = imported_version(api_client, actor, db_session, storage, project)
+    original = api_client.get(f"/api/v1/models/{source_id}/scene", headers=actor.headers).json()[
+        "nodes"
+    ][0]["resolved_asset_id"]
+    identity = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    translated = [row[:] for row in identity]
+    translated[0][3] = 10
+    assembled = api_client.post(
+        f"/api/v1/models/{source_id}/scene",
+        json={
+            "nodes": [
+                {"id": "root", "name": "Assembly", "kind": "group"},
+                {
+                    "id": "part",
+                    "name": "Painted part",
+                    "kind": "object",
+                    "parent_id": "root",
+                    "transform": translated,
+                    "asset_id": original,
+                },
+                {
+                    "id": "sibling",
+                    "name": "Untouched sibling",
+                    "kind": "object",
+                    "parent_id": "root",
+                    "transform": identity,
+                    "asset_id": original,
+                },
+                {
+                    "id": "linked",
+                    "name": "Linked instance",
+                    "kind": "object",
+                    "parent_id": "root",
+                    "transform": identity,
+                    "instance_of": "part",
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert assembled.status_code == 201, assembled.text
+    assembled_id = assembled.json()["version_id"]
+    material_id = "interior.wood.oak-natural.v1"
+    assigned = api_client.post(
+        f"/api/v1/models/{assembled_id}/interior-material",
+        json={"scene_node_id": "part", "catalog_material_id": material_id},
+        headers=actor.headers,
+    )
+    assert assigned.status_code == 201, assigned.text
+    assembled_id = assigned.json()["version_id"]
+    assert (
+        next(node for node in assigned.json()["nodes"] if node["id"] == "part")["appearance"][
+            "catalog_material_id"
+        ]
+        == material_id
+    )
+    world_top = {
+        **TOP_FACE,
+        "points_mm": [[x + 10, y] for x, y in TOP_FACE["points_mm"]],
+    }
+    assert (
+        paint(
+            api_client,
+            actor,
+            assembled_id,
+            strokes=[{"colour": "#ff5533", "region": world_top}],
+            layer_name="Part accent",
+        ).status_code
+        == 422
+    )
+    response = paint(
+        api_client,
+        actor,
+        assembled_id,
+        scene_node_id="part",
+        strokes=[{"colour": "#ff5533", "opacity": 0.85, "region": world_top}],
+        layer_name="Part accent",
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    assert result["scene_node_id"] == "part"
+
+    painted_id = result["version_id"]
+    scene = api_client.get(f"/api/v1/models/{painted_id}/scene", headers=actor.headers).json()[
+        "nodes"
+    ]
+    by_id = {node["id"]: node for node in scene}
+    assert by_id["part"]["resolved_asset_id"] == result["painted_asset_id"]
+    assert by_id["part"]["appearance"] is None
+    assert by_id["part"]["world_transform"] == translated
+    assert by_id["part"]["parent_id"] == "root"
+    assert by_id["sibling"]["resolved_asset_id"] == original
+    assert by_id["sibling"]["world_transform"] == identity
+    assert by_id["linked"]["resolved_asset_id"] == result["painted_asset_id"]
+
+    made = db_session.get(ProjectVersion, painted_id)
+    assert made is not None
+    record = made.provenance["scene_paint"]["part"]
+    assert record["source_asset_id"] == original
+    assert record["painted_asset_id"] == result["painted_asset_id"]
+    assert record["strokes"] == [{"colour": "#ff5533", "opacity": 0.85, "region": TOP_FACE}]
+    assert record["layers"] == [{"name": "Part accent", "stroke_start": 0, "stroke_count": 1}]
+    assert made.provenance["scene_paint_edit"]["cleared_material_id"] == material_id
+
+    # A second node-scoped layer and its reorder replay only this target's trusted local history.
+    second = paint(
+        api_client,
+        actor,
+        painted_id,
+        scene_node_id="part",
+        strokes=[{"colour": "#1188ff", "region": world_top}],
+        layer_name="Edge accent",
+    )
+    assert second.status_code == 202, second.text
+    (second_job,) = run_all(db_session, storage)
+    assert second_job.status is JobStatus.succeeded, second_job.error
+    second_id = str((second_job.result or {})["version_id"])
+    reordered = reorder(
+        api_client,
+        actor,
+        second_id,
+        ["Edge accent", "Part accent"],
+        scene_node_id="part",
+    )
+    assert reordered.status_code == 202, reordered.text
+    (reorder_job,) = run_all(db_session, storage)
+    assert reorder_job.status is JobStatus.succeeded, reorder_job.error
+    painted_id = str((reorder_job.result or {})["version_id"])
+    made = db_session.get(ProjectVersion, painted_id)
+    assert made is not None
+    record = made.provenance["scene_paint"]["part"]
+    assert [layer["name"] for layer in record["layers"]] == ["Edge accent", "Part accent"]
+    scene = api_client.get(f"/api/v1/models/{painted_id}/scene", headers=actor.headers).json()[
+        "nodes"
+    ]
+    by_id = {node["id"]: node for node in scene}
+    assert by_id["sibling"]["resolved_asset_id"] == original
+    assert by_id["linked"]["resolved_asset_id"] == by_id["part"]["resolved_asset_id"]
+    assert by_id["part"]["appearance"] is None
+
+    # A metadata-only scene edit carries paint by the same stable direct node id and asset.
+    renamed_nodes = [
+        {**node, "name": "Renamed painted part"} if node["id"] == "part" else node for node in scene
+    ]
+    renamed = api_client.post(
+        f"/api/v1/models/{painted_id}/scene",
+        json={"nodes": renamed_nodes},
+        headers=actor.headers,
+    )
+    assert renamed.status_code == 201, renamed.text
+    renamed_row = db_session.get(ProjectVersion, renamed.json()["version_id"])
+    assert renamed_row is not None
+    assert renamed_row.provenance["scene_paint"]["part"] == record
+
+    # Replacing that node's geometry drops its paint instead of transferring by name or sibling.
+    replacement_nodes = [
+        {**node, "asset_id": original, "instance_of": None} if node["id"] == "part" else node
+        for node in renamed.json()["nodes"]
+    ]
+    replaced = api_client.post(
+        f"/api/v1/models/{renamed.json()['version_id']}/scene",
+        json={"nodes": replacement_nodes},
+        headers=actor.headers,
+    )
+    assert replaced.status_code == 201, replaced.text
+    replaced_row = db_session.get(ProjectVersion, replaced.json()["version_id"])
+    assert replaced_row is not None
+    assert replaced_row.provenance["scene_paint"] == {}
+    assert replaced_row.provenance["scene_edit"]["dropped_paint_node_ids"] == ["part"]
+
+
+def test_scene_paint_fails_closed_for_non_direct_hidden_or_rotated_targets(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    source_id = imported_version(api_client, actor, db_session, storage, project)
+    asset_id = api_client.get(f"/api/v1/models/{source_id}/scene", headers=actor.headers).json()[
+        "nodes"
+    ][0]["resolved_asset_id"]
+    rotated = [[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    scene = api_client.post(
+        f"/api/v1/models/{source_id}/scene",
+        json={
+            "nodes": [
+                {"id": "root", "name": "Root", "kind": "group"},
+                {
+                    "id": "part",
+                    "name": "Rotated",
+                    "kind": "object",
+                    "parent_id": "root",
+                    "transform": rotated,
+                    "asset_id": asset_id,
+                },
+                {
+                    "id": "copy",
+                    "name": "Instance",
+                    "kind": "object",
+                    "instance_of": "part",
+                },
+                {
+                    "id": "hidden",
+                    "name": "Hidden",
+                    "kind": "object",
+                    "visible": False,
+                    "asset_id": asset_id,
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+    version_id = scene.json()["version_id"]
+
+    def status(target: str, request_actor: Actor = actor) -> int:
+        return paint(
+            api_client,
+            request_actor,
+            version_id,
+            scene_node_id=target,
+            strokes=[{"colour": "#ff5533", "region": TOP_FACE}],
+        ).status_code
+
+    assert status("root") == 422
+    assert status("copy") == 422
+    assert status("hidden") == 422
+    assert status("part") == 422
+    viewer = make_actor(db_session, workspace=actor.workspace, role=WorkspaceRole.viewer)
+    assert status("part", viewer) == 403
+    stranger = make_actor(db_session)
+    assert status("part", stranger) == 404
 
 
 def test_named_layer_requires_a_nonblank_name_and_at_least_one_stroke(
