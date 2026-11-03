@@ -1,10 +1,19 @@
 """Paint endpoints (T-108, F-034): colour a model without changing its shape."""
 
+from __future__ import annotations
+
 import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
@@ -19,12 +28,25 @@ LayerName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
 class Stroke(BaseModel):
     """One swipe of colour. Without a region it covers the whole body."""
 
-    colour: str = Field(pattern=COLOUR)
+    model_config = ConfigDict(extra="forbid")
+
+    colour: str | None = Field(default=None, pattern=COLOUR)
+    catalog_material_id: str | None = Field(default=None, min_length=1, max_length=120)
     opacity: float = Field(default=1.0, ge=0.05, le=1.0)
     region: dict[str, Any] | None = None
 
+    @model_validator(mode="after")
+    def one_surface(self) -> Stroke:
+        if (self.colour is None) == (self.catalog_material_id is None):
+            raise ValueError("a stroke needs exactly one colour or catalogue material")
+        if self.catalog_material_id is not None and self.opacity != 1.0:
+            raise ValueError("catalogue material strokes are opaque")
+        return self
+
 
 class PaintBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     strokes: list[Stroke] = Field(default_factory=list, max_length=painting.MAX_STROKES)
     base_colour: str | None = Field(default=None, pattern=COLOUR)
     label: str | None = Field(default=None, max_length=200)

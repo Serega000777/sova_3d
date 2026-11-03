@@ -18,6 +18,7 @@ from typing import Any
 import sqlalchemy as sa
 from worker import paint
 
+from app.api.errors import ValidationFailedError
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact, Operation
@@ -37,7 +38,11 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
     if version is None or source is None:
         raise JobFailureError("input_missing", "version or asset no longer exists")
 
-    payload: dict[str, Any] = {"strokes": ctx.job.input.get("strokes") or []}
+    try:
+        trusted_strokes = painting.worker_strokes(ctx.job.input.get("strokes") or [])
+    except ValidationFailedError as exc:
+        raise JobFailureError("invalid_paint", str(exc)) from exc
+    payload: dict[str, Any] = {"strokes": trusted_strokes}
     if ctx.job.input.get("base_colour"):
         payload["base_colour"] = ctx.job.input["base_colour"]
     try:
@@ -83,6 +88,7 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
             "source_asset_id": str(source.id),
             "kind": "painted",
             "colours": ",".join(result.colours),
+            "materials": ",".join(result.materials),
         },
         created_by=ctx.job.created_by,
     )
@@ -96,7 +102,9 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
         "source_version_id": str(version.id),
         # The one shape every painted version carries (see painting.inherited_paint).
         "paint": {
-            "strokes": request.model_dump(mode="json")["strokes"],
+            # Keep the compact server-validated request as provenance. Expanded PBR snapshots
+            # and base64 texture bytes are sandbox inputs only and must never become history.
+            "strokes": ctx.job.input.get("strokes") or [],
             "base_colour": request.base_colour,
             "layers": ctx.job.input.get("layers") or [],
             "report": report,

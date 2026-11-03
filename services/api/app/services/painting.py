@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import uuid
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.api.errors import ValidationFailedError
+from app.interior_materials import material_by_id, texture_bytes
 from app.models.core import WorkspaceRole
 from app.models.execution import Job
 from app.models.versioning import ProjectVersion
@@ -18,6 +20,44 @@ from app.services.authz import require_workspace_role
 PAINT_JOB = "paint_model"
 PAINTABLE_FORMATS = frozenset({"stl", "obj", "ply", "glb", "gltf", "3mf"})
 MAX_STROKES = 512
+
+
+def worker_strokes(strokes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expand catalogue ids into trusted worker snapshots and content-addressed bytes."""
+    trusted: list[dict[str, Any]] = []
+    for stroke in strokes:
+        unexpected = set(stroke) - {"colour", "catalog_material_id", "opacity", "region"}
+        if unexpected:
+            raise ValidationFailedError(
+                "paint stroke contains unsupported fields", {"fields": sorted(unexpected)}
+            )
+        material_id = stroke.get("catalog_material_id")
+        if material_id is None:
+            trusted.append(dict(stroke))
+            continue
+        if not isinstance(material_id, str):
+            raise ValidationFailedError("paint material id must be a string")
+        material = material_by_id(material_id)
+        resolved: dict[str, Any] = {
+            "catalog_material_id": material.id,
+            "base_color": material.base_color,
+            "roughness": material.roughness,
+            "metallic": material.metallic,
+            "texture_sha256": material.texture_sha256,
+            "texture_tile_size_mm": material.texture_tile_size_mm,
+            "texture_data_b64": (
+                base64.b64encode(texture_bytes(material.texture_sha256)).decode("ascii")
+                if material.texture_sha256
+                else None
+            ),
+        }
+        trusted.append(
+            {
+                **{key: value for key, value in stroke.items() if key != "catalog_material_id"},
+                "material": resolved,
+            }
+        )
+    return trusted
 
 
 def inherited_paint(version: ProjectVersion) -> tuple[list[dict[str, Any]], str | None]:
@@ -173,6 +213,12 @@ def enqueue_paint(
             {"paintable_formats": sorted(PAINTABLE_FORMATS)},
         )
     new_stroke_count = len(strokes)
+    for stroke in strokes:
+        material_id = stroke.get("catalog_material_id")
+        if material_id is not None:
+            if not isinstance(material_id, str):
+                raise ValidationFailedError("paint material id must be a string")
+            material_by_id(material_id)
     if not strokes and not base_colour:
         raise ValidationFailedError("nothing to paint: give a stroke or a base colour")
     if layer_name and not strokes:

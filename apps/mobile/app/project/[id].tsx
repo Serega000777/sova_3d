@@ -227,6 +227,14 @@ const BRUSHES = [
   { label: "wide", mm: 12 },
 ];
 const PAINT_OPACITIES = [0.5, 0.75, 0.85, 1] as const;
+const PAINT_MATERIAL_KINDS = new Set(["concrete", "wood", "metal"]);
+type PaintDraftStroke = (
+  | { colour: string; catalogMaterialId?: never }
+  | { colour?: never; catalogMaterialId: string }
+) & {
+  opacity: number;
+  region: RegionSelection;
+};
 // Keep in step with services/api/app/ai/contract.py MAX_PHOTOS.
 const MAX_COMMAND_PHOTOS = 4;
 const PHOTO_ISSUE_RU: Record<GuidedPhotoIssue, string> = {
@@ -450,16 +458,14 @@ export default function ProjectScreen() {
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [paintOpacity, setPaintOpacity] = useState(0.85);
-  const [strokes, setStrokes] = useState<{
-    colour: string;
-    opacity: number;
-    region: RegionSelection;
-  }[]>([]);
+  const [paintMaterialId, setPaintMaterialId] = useState<string | null>(null);
+  const [strokes, setStrokes] = useState<PaintDraftStroke[]>([]);
   const [paintSourceVersionId, setPaintSourceVersionId] = useState<string | null>(null);
   const [paintLayerName, setPaintLayerName] = useState("Слой 1");
   const [paintReport, setPaintReport] = useState<{
     paintedFaces: number;
     colours: string[];
+    materials: string[];
     unusedStrokes: number;
   } | null>(null);
   // T-207: a held finger on the model opens this instead of scrolling down to the prompt.
@@ -2401,7 +2407,9 @@ export default function ProjectScreen() {
     try {
       const accepted = await client.paintModel(paintSourceVersionId, {
         strokes: strokes.map((stroke) => ({
-          colour: stroke.colour,
+          ...(stroke.catalogMaterialId !== undefined
+            ? { catalog_material_id: stroke.catalogMaterialId }
+            : { colour: stroke.colour }),
           opacity: stroke.opacity,
           region: stroke.region.region,
         })),
@@ -2417,7 +2425,7 @@ export default function ProjectScreen() {
         return;
       }
       const report = (job.result as {
-        paint?: { painted_faces?: number; colours?: string[]; unused_strokes?: number[] };
+        paint?: { painted_faces?: number; colours?: string[]; materials?: string[]; unused_strokes?: number[] };
       } | null)?.paint;
       setStrokes([]);
       setPaintSourceVersionId(null);
@@ -2426,6 +2434,7 @@ export default function ProjectScreen() {
       setPaintReport({
         paintedFaces: report?.painted_faces ?? 0,
         colours: report?.colours ?? [],
+        materials: report?.materials ?? [],
         unusedStrokes: report?.unused_strokes?.length ?? 0,
       });
     } catch (err) {
@@ -6104,8 +6113,8 @@ export default function ProjectScreen() {
               setComponentSelection(next);
               if (next) setEditSheetOpen(true);
             }}
-            paintColour={colour}
-            paintOpacity={paintOpacity}
+            paintColour={interiorMaterials.find((item) => item.id === paintMaterialId)?.base_color ?? colour}
+            paintOpacity={paintMaterialId ? 1 : paintOpacity}
             brushMm={brush}
             markers={[
               ...liveMarkers,
@@ -6139,8 +6148,17 @@ export default function ProjectScreen() {
                 if (next && activeId) {
                   setStrokes((all) =>
                     paintSourceVersionId === null || paintSourceVersionId === activeId
-                      ? [...all, { colour, opacity: paintOpacity, region: next }]
-                      : [{ colour, opacity: paintOpacity, region: next }],
+                      ? [
+                          ...all,
+                          paintMaterialId
+                            ? { catalogMaterialId: paintMaterialId, opacity: 1, region: next }
+                            : { colour, opacity: paintOpacity, region: next },
+                        ]
+                      : [
+                          paintMaterialId
+                            ? { catalogMaterialId: paintMaterialId, opacity: 1, region: next }
+                            : { colour, opacity: paintOpacity, region: next },
+                        ],
                   );
                   setPaintSourceVersionId(activeId);
                 }
@@ -6174,10 +6192,13 @@ export default function ProjectScreen() {
                 <Pressable
                   key={`viewport-${swatch}`}
                   accessibilityRole="radio"
-                  accessibilityState={{ checked: colour === swatch }}
+                  accessibilityState={{ checked: !paintMaterialId && colour === swatch }}
                   accessibilityLabel={`${ru ? "Цвет" : "Colour"} ${swatch}`}
-                  onPress={() => setColour(swatch)}
-                  style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: swatch, borderWidth: colour === swatch ? 3 : 1, borderColor: colour === swatch ? colors.topologyVertex : colors.border }}
+                  onPress={() => {
+                    setColour(swatch);
+                    setPaintMaterialId(null);
+                  }}
+                  style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: swatch, borderWidth: !paintMaterialId && colour === swatch ? 3 : 1, borderColor: !paintMaterialId && colour === swatch ? colors.topologyVertex : colors.border }}
                 />
               ))}
             </View>
@@ -7063,6 +7084,14 @@ export default function ProjectScreen() {
                   {layer.colours.slice(0, 4).map((savedColour) => (
                     <View key={savedColour} style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: savedColour }} />
                   ))}
+                  {layer.materialIds.slice(0, 3).map((materialId) => {
+                    const material = interiorMaterials.find((item) => item.id === materialId);
+                    return (
+                      <Text key={materialId} style={[styles.muted, { color: colors.accent }]}>
+                        PBR · {material ? (ru ? material.name_ru : material.name) : materialId}
+                      </Text>
+                    );
+                  })}
                   <Text style={styles.text}>{layer.name}</Text>
                 </View>
                 <Text style={styles.muted}>
@@ -7109,17 +7138,54 @@ export default function ProjectScreen() {
               <Pressable
                 key={swatch}
                 accessibilityLabel={swatch}
-                onPress={() => setColour(swatch)}
+                onPress={() => {
+                  setColour(swatch);
+                  setPaintMaterialId(null);
+                }}
                 style={{
                   width: 30,
                   height: 30,
                   borderRadius: 8,
                   backgroundColor: swatch,
                   borderWidth: 2,
-                  borderColor: colour === swatch ? colors.accent : colors.border,
+                  borderColor: !paintMaterialId && colour === swatch ? colors.accent : colors.border,
                 }}
               />
             ))}
+          </View>
+          <View style={{ gap: 6 }} accessibilityLabel={ru ? "PBR-материалы кисти" : "PBR brush materials"}>
+            <Text style={styles.muted}>
+              {ru ? "Материалы: бетон · дерево · металл" : "Materials: concrete · wood · metal"}
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {interiorMaterials.filter((item) => PAINT_MATERIAL_KINDS.has(item.kind)).map((item) => (
+                <Pressable
+                  key={item.id}
+                  accessibilityLabel={`${ru ? item.name_ru : item.name} · PBR`}
+                  accessibilityState={{ selected: paintMaterialId === item.id }}
+                  onPress={() => setPaintMaterialId(item.id)}
+                  style={[
+                    styles.card,
+                    { width: 142, gap: 5, backgroundColor: colors.panel },
+                    paintMaterialId === item.id && { borderColor: colors.accent },
+                  ]}
+                >
+                  <View style={{ height: 38, borderRadius: 7, overflow: "hidden", backgroundColor: item.base_color }}>
+                    {item.texture_url && client ? (
+                      <Image
+                        source={{ uri: client.absoluteUrl(item.texture_url) }}
+                        style={{ width: "100%", height: "100%" }}
+                        resizeMode="repeat"
+                      />
+                    ) : null}
+                  </View>
+                  <Text style={styles.text}>{ru ? item.name_ru : item.name}</Text>
+                  <Text style={styles.muted}>
+                    PBR · R {Math.round(item.roughness * 100)}% · M {Math.round(item.metallic * 100)}%
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
           <View style={styles.row}>
             {BRUSHES.map((option) => (
@@ -7141,10 +7207,11 @@ export default function ProjectScreen() {
                 <Pressable
                   key={opacity}
                   accessibilityLabel={`${ru ? "Непрозрачность" : "Opacity"} ${Math.round(opacity * 100)}%`}
-                  accessibilityState={{ selected: paintOpacity === opacity }}
+                  accessibilityState={{ selected: !paintMaterialId && paintOpacity === opacity, disabled: Boolean(paintMaterialId) }}
+                  disabled={Boolean(paintMaterialId)}
                   style={[
                     styles.chip,
-                    paintOpacity === opacity && {
+                    !paintMaterialId && paintOpacity === opacity && {
                       borderColor: colors.accent,
                       backgroundColor: colors.accentWash,
                     },
@@ -7155,6 +7222,13 @@ export default function ProjectScreen() {
                 </Pressable>
               ))}
             </View>
+            {paintMaterialId ? (
+              <Text style={styles.muted}>
+                {ru
+                  ? "PBR-материал наносится непрозрачно; проценты остаются для цветной кисти."
+                  : "PBR material strokes are opaque; percentages remain available for the colour brush."}
+              </Text>
+            ) : null}
           </View>
           <Text style={styles.muted}>
             {ru
@@ -7199,12 +7273,16 @@ export default function ProjectScreen() {
               </Text>
               {strokes.slice(-5).map((stroke, visibleIndex) => {
                 const strokeIndex = Math.max(0, strokes.length - 5) + visibleIndex;
+                const material = stroke.catalogMaterialId
+                  ? interiorMaterials.find((item) => item.id === stroke.catalogMaterialId)
+                  : null;
                 return (
-                  <View key={`${strokeIndex}-${stroke.colour}`} style={[styles.row, { justifyContent: "space-between" }]}>
+                  <View key={`${strokeIndex}-${stroke.colour ?? stroke.catalogMaterialId}`} style={[styles.row, { justifyContent: "space-between" }]}>
                     <View style={[styles.row, { flex: 1 }]}>
-                      <View style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: stroke.colour }} />
+                      <View style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: material?.base_color ?? stroke.colour }} />
                       <Text style={styles.muted}>
                         {ru ? `Штрих ${strokeIndex + 1}` : `Stroke ${strokeIndex + 1}`} · {stroke.region.region.kind} · {Math.round(stroke.opacity * 100)}%
+                        {stroke.catalogMaterialId ? ` · PBR ${material ? (ru ? material.name_ru : material.name) : stroke.catalogMaterialId}` : ""}
                       </Text>
                     </View>
                     <Pressable
@@ -7230,6 +7308,7 @@ export default function ProjectScreen() {
               <Text style={styles.muted}>
                 {ru ? "Окрашено граней" : "Painted faces"}: {paintReport.paintedFaces.toLocaleString()}
                 {` · ${ru ? "цветов" : "colours"}: ${paintReport.colours.length}`}
+                {paintReport.materials.length ? ` · PBR: ${paintReport.materials.length}` : ""}
               </Text>
               {paintReport.unusedStrokes ? (
                 <Text style={[styles.muted, { color: colors.yellow }]}>

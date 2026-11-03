@@ -122,6 +122,7 @@ class SceneAppearanceInput(BaseModel):
     base_color: str = Field(pattern=r"^#[0-9A-F]{6}$")
     gloss_pct: int = Field(ge=0, le=100)
     roughness: float = Field(ge=0.04, le=1)
+    metallic: float = Field(default=0.0, ge=0, le=1)
     texture_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     texture_tile_size_mm: float | None = Field(default=None, ge=10, le=5000)
 

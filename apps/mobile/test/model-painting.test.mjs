@@ -19,12 +19,16 @@ test("mobile painting saves bounded strokes through the real immutable paint job
   assert.match(viewer, /mode === "paint" \? brushMm : undefined/);
 });
 
-test("paint result reports worker evidence and does not claim a material library", () => {
+test("paint result reports worker evidence and exposes only trusted concrete wood metal materials", () => {
   assert.match(project, /painted_faces/);
   assert.match(project, /unused_strokes/);
+  assert.match(project, /materials\?: string\[\]/);
   assert.match(project, /Покраска сохранена новой версией/);
   assert.match(project, /Геометрия не меняется/);
-  assert.doesNotMatch(project, /Бетон|Дерево|Металл/);
+  assert.match(project, /PAINT_MATERIAL_KINDS = new Set\(\["concrete", "wood", "metal"\]\)/);
+  assert.match(project, /catalog_material_id: stroke\.catalogMaterialId/);
+  assert.match(project, /item\.roughness/);
+  assert.match(project, /item\.metallic/);
 });
 
 test("paint draft is source-version bound and individual strokes can be removed", () => {
@@ -54,8 +58,8 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
       ],
     },
   }), [
-    { name: "Body", strokeCount: 2, colours: ["#ff5533"], opacities: [1] },
-    { name: "Green compartment", strokeCount: 1, colours: ["#4caf50"], opacities: [1] },
+    { name: "Body", strokeCount: 2, colours: ["#ff5533"], materialIds: [], opacities: [1] },
+    { name: "Green compartment", strokeCount: 1, colours: ["#4caf50"], materialIds: [], opacities: [1] },
   ]);
   assert.deepEqual(paintLayerSummaries({ paint: { strokes: [], layers: [{ name: "Empty", stroke_start: 0, stroke_count: 1 }] } }), []);
   assert.deepEqual(paintLayerSummaries({
@@ -63,11 +67,23 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
       strokes: [{ colour: "#ff5533", opacity: 0.85 }],
       layers: [{ name: "Soft", stroke_start: 0, stroke_count: 1 }],
     },
-  }), [{ name: "Soft", strokeCount: 1, colours: ["#ff5533"], opacities: [0.85] }]);
+  }), [{ name: "Soft", strokeCount: 1, colours: ["#ff5533"], materialIds: [], opacities: [0.85] }]);
+  assert.deepEqual(paintLayerSummaries({
+    paint: {
+      strokes: [{ catalog_material_id: "interior.wood.oak-natural.v1", opacity: 1 }],
+      layers: [{ name: "Oak", stroke_start: 0, stroke_count: 1 }],
+    },
+  }), [{ name: "Oak", strokeCount: 1, colours: [], materialIds: ["interior.wood.oak-natural.v1"], opacities: [1] }]);
   assert.deepEqual(paintLayerSummaries({
     paint: {
       strokes: [{ colour: "#ff5533", opacity: 2 }],
       layers: [{ name: "Forged opacity", stroke_start: 0, stroke_count: 1 }],
+    },
+  }), []);
+  assert.deepEqual(paintLayerSummaries({
+    paint: {
+      strokes: [{ catalog_material_id: "interior.wood.oak-natural.v1", opacity: 0.85 }],
+      layers: [{ name: "Forged material opacity", stroke_start: 0, stroke_count: 1 }],
     },
   }), []);
   assert.match(project, /Сохранённые слои покраски/);
@@ -76,8 +92,8 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
 
 test("saved layers can be moved only as one complete unique order", () => {
   const layers = [
-    { name: "Base", strokeCount: 1, colours: ["#000000"], opacities: [1] },
-    { name: "Accent", strokeCount: 1, colours: ["#ffffff"], opacities: [0.85] },
+    { name: "Base", strokeCount: 1, colours: ["#000000"], materialIds: [], opacities: [1] },
+    { name: "Accent", strokeCount: 1, colours: ["#ffffff"], materialIds: [], opacities: [0.85] },
   ];
   assert.deepEqual(movePaintLayerOrder(layers, 0, 1), ["Accent", "Base"]);
   assert.equal(movePaintLayerOrder(layers, 0, -1), null);
@@ -93,7 +109,7 @@ test("brush opacity is explicit, source-bound, and visible in the live trail", (
   assert.match(project, /const PAINT_OPACITIES = \[0\.5, 0\.75, 0\.85, 1\]/);
   assert.match(project, /Непрозрачность кисти/);
   assert.match(project, /opacity: paintOpacity/);
-  assert.match(project, /paintOpacity=\{paintOpacity\}/);
+  assert.match(project, /paintOpacity=\{paintMaterialId \? 1 : paintOpacity\}/);
   assert.match(viewer, /material\.opacity = mode === "paint" \? paintOpacity : 1/);
 });
 
@@ -101,7 +117,7 @@ test("G07 keeps the current paint-layer palette beside the live viewport", () =>
   assert.match(project, /\{mode === "paint" && \(/);
   assert.match(project, /accessibilityLabel=\{ru \? "Цвет текущего слоя покраски"/);
   assert.match(project, /key=\{`viewport-\$\{swatch\}`\}/);
-  assert.match(project, /accessibilityState=\{\{ checked: colour === swatch \}\}/);
-  assert.match(project, /onPress=\{\(\) => setColour\(swatch\)\}/);
+  assert.match(project, /accessibilityState=\{\{ checked: !paintMaterialId && colour === swatch \}\}/);
+  assert.match(project, /setColour\(swatch\);[\s\S]*?setPaintMaterialId\(null\)/);
   assert.match(project, /setDimensionHudVisible\(false\);[\s\S]*?setMode\(\(current\) => current === "paint"/);
 });

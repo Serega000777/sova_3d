@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
+from app.api.errors import ValidationFailedError
+from app.interior_materials import material_by_id, snapshot_for, validate_snapshot
 from app.models import Asset, Job, ProjectVersion
 from app.models.core import WorkspaceRole
 from app.models.execution import JobStatus
@@ -44,6 +46,8 @@ def test_catalogue_and_texture_are_bounded_and_content_addressed(api_client: Tes
     }
     paint = next(item for item in materials if item["kind"] == "paint")
     assert paint["base_color"].startswith("#") and paint["texture_url"] is None
+    assert {item["kind"] for item in materials} >= {"concrete", "wood", "metal"}
+    assert next(item for item in materials if item["kind"] == "metal")["metallic"] == 1.0
     textured = next(item for item in materials if item["texture_url"])
     texture = api_client.get(textured["texture_url"])
     assert texture.status_code == 200 and texture.headers["content-type"] == "image/png"
@@ -53,6 +57,13 @@ def test_catalogue_and_texture_are_bounded_and_content_addressed(api_client: Tes
         api_client.get("/api/v1/interior-materials/textures/" + "0" * 64 + ".png").status_code
         == 422
     )
+    legacy = snapshot_for(material_by_id("interior.wood.oak-natural.v1"))
+    legacy.pop("metallic")
+    assert validate_snapshot(legacy, node_id="legacy_wood")["metallic"] == 0.0
+    forged_metal = snapshot_for(material_by_id("interior.metal.steel.v1"))
+    forged_metal.pop("metallic")
+    with pytest.raises(ValidationFailedError):
+        validate_snapshot(forged_metal, node_id="forged_metal")
 
 
 def test_assign_carry_clear_and_drop_interior_material(
@@ -113,6 +124,7 @@ def test_assign_carry_clear_and_drop_interior_material(
         "catalog_material_id": material_id,
         "base_color": node["appearance"]["base_color"],
         "roughness": node["appearance"]["roughness"],
+        "metallic": node["appearance"]["metallic"],
         "source_texture_sha256": node["appearance"]["texture_sha256"],
         "embedded_texture_px": [256, 256],
     }

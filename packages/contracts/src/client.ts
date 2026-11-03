@@ -1208,7 +1208,13 @@ export class PhysicalAiClient {
   paintModel(
     versionId: string,
     body: {
-      strokes: { colour: string; opacity?: number; region?: unknown }[];
+      strokes: ((
+        | { colour: string; catalog_material_id?: never }
+        | { colour?: never; catalog_material_id: string }
+      ) & {
+        opacity?: number;
+        region?: unknown;
+      })[];
       base_colour?: string | null;
       label?: string | null;
       layer_name?: string | null;

@@ -28,6 +28,7 @@ class SceneAppearanceOut(BaseModel):
     base_color: str
     gloss_pct: int
     roughness: float
+    metallic: float
     texture_sha256: str | None
     texture_tile_size_mm: float | None
     texture_url: str | None
@@ -117,6 +118,7 @@ def _appearance_out(value: dict[str, object] | None) -> SceneAppearanceOut | Non
     return SceneAppearanceOut.model_validate(
         {
             **value,
+            "metallic": material.metallic,
             "name": material.name,
             "name_ru": material.name_ru,
             "texture_url": (

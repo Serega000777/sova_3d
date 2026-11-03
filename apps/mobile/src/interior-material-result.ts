@@ -26,6 +26,7 @@ export function interiorMaterialResultMatches(
     && appearance.base_color === material.base_color
     && appearance.gloss_pct === material.gloss_pct
     && appearance.roughness === material.roughness
+    && appearance.metallic === material.metallic
     && appearance.texture_sha256 === material.texture_sha256
     && appearance.texture_tile_size_mm === material.texture_tile_size_mm
     && appearance.texture_url === material.texture_url

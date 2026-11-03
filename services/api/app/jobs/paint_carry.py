@@ -51,6 +51,7 @@ def carry_paint(
     payload: dict[str, Any] = {"strokes": strokes}
     if base_colour:
         payload["base_colour"] = base_colour
+    payload["strokes"] = painting.worker_strokes(strokes)
     request = paint.PaintRequest.model_validate(payload)
 
     with tempfile.TemporaryDirectory(prefix="repaint-") as tmp:
@@ -83,6 +84,7 @@ def carry_paint(
             "kind": "painted",
             "carried_from": str(parent.id),
             "colours": ",".join(result.colours),
+            "materials": ",".join(result.materials),
         },
         created_by=created_by,
     )

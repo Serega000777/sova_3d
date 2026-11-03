@@ -11,13 +11,17 @@ The region shapes mirror `app/geometry/region.py` deliberately: the worker stays
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import io
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import numpy as np
 import trimesh
+from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from trimesh.visual.material import PBRMaterial
 
 from worker.importers.common import Z_UP_TO_Y_UP, as_single_mesh, to_platform_axes
 
@@ -52,12 +56,51 @@ class LassoRegion(Strict):
 Region = Annotated[BoxRegion | LassoRegion, Field(discriminator="kind")]
 
 
+class MaterialInput(Strict):
+    """One server-resolved immutable catalogue material.
+
+    The worker never accepts a client-authored material property: the API expands a catalogue id
+    into this snapshot and the worker independently checks content-addressed texture bytes.
+    """
+
+    catalog_material_id: Annotated[str, Field(min_length=1, max_length=120)]
+    base_color: Annotated[str, Field(pattern=r"^#[0-9A-F]{6}$")]
+    roughness: Annotated[float, Field(ge=0.04, le=1.0)]
+    metallic: Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
+    texture_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    texture_tile_size_mm: Annotated[float, Field(ge=10, le=5000)] | None = None
+    texture_data_b64: Annotated[str, Field(max_length=500_000)] | None = None
+
+    @model_validator(mode="after")
+    def _texture_evidence(self) -> MaterialInput:
+        values = (self.texture_sha256, self.texture_tile_size_mm, self.texture_data_b64)
+        if any(value is None for value in values) != all(value is None for value in values):
+            raise ValueError("material texture hash, tile size and bytes must be supplied together")
+        if self.texture_data_b64 is not None:
+            try:
+                payload = base64.b64decode(self.texture_data_b64, validate=True)
+            except ValueError as exc:
+                raise ValueError("material texture bytes are not valid base64") from exc
+            if hashlib.sha256(payload).hexdigest() != self.texture_sha256:
+                raise ValueError("material texture bytes do not match their sha256")
+        return self
+
+
 class Stroke(Strict):
     """One swipe of colour. Without a region it paints the whole body."""
 
-    colour: Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
+    colour: Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")] | None = None
+    material: MaterialInput | None = None
     opacity: Annotated[float, Field(ge=0.05, le=1.0)] = 1.0
     region: Region | None = None
+
+    @model_validator(mode="after")
+    def _one_surface(self) -> Stroke:
+        if (self.colour is None) == (self.material is None):
+            raise ValueError("a stroke needs exactly one colour or catalogue material")
+        if self.material is not None and self.opacity != 1.0:
+            raise ValueError("catalogue material strokes are opaque")
+        return self
 
 
 class PaintRequest(Strict):
@@ -77,6 +120,7 @@ class PaintResult(BaseModel):
     faces_before: int = 0
     painted_faces: int = 0
     colours: list[str] = Field(default_factory=list)
+    materials: list[str] = Field(default_factory=list)
     unused_strokes: list[int] = Field(default_factory=list)
     subdivided: bool = False
     message: str | None = None
@@ -207,19 +251,26 @@ def paint_mesh(mesh: trimesh.Trimesh, request: PaintRequest) -> PaintResult:
     return paint_mesh_into(mesh, request)[0]
 
 
-def paint_mesh_into(
+def _paint_mesh_state(
     mesh: trimesh.Trimesh, request: PaintRequest
-) -> tuple[PaintResult, trimesh.Trimesh]:
+) -> tuple[PaintResult, trimesh.Trimesh, np.ndarray, dict[str, MaterialInput]]:
     """Colour the faces each stroke covers. The shape is untouched; only colour is added."""
     before = len(mesh.faces)
     if before == 0:
-        return PaintResult(ok=False, message="the model has no faces to paint"), mesh
+        return (
+            PaintResult(ok=False, message="the model has no faces to paint"),
+            mesh,
+            np.empty(0, dtype=object),
+            {},
+        )
     mesh, subdivided = _refine_for(mesh, request)
     faces = len(mesh.faces)
 
     colours = np.tile(np.array([*rgb(request.base_colour), 255], dtype=np.uint8), (faces, 1))
     centres = mesh.triangles_center
     painted = np.zeros(faces, dtype=bool)
+    material_ids = np.full(faces, "", dtype=object)
+    materials: dict[str, MaterialInput] = {}
     unused: list[int] = []
 
     for index, stroke in enumerate(request.strokes):
@@ -232,15 +283,26 @@ def paint_mesh_into(
         if not selected.any():
             unused.append(index)  # the user drew somewhere the model is not
             continue
-        source = np.asarray(rgb(stroke.colour), dtype=float)
-        current = colours[selected, :3].astype(float)
-        colours[selected, :3] = np.rint(
-            current * (1.0 - stroke.opacity) + source * stroke.opacity
-        ).astype(np.uint8)
+        if stroke.material is not None:
+            material_id = stroke.material.catalog_material_id
+            existing = materials.get(material_id)
+            if existing is not None and existing != stroke.material:
+                raise ValueError("one catalogue material id resolved to different snapshots")
+            materials[material_id] = stroke.material
+            material_ids[selected] = material_id
+            colours[selected, :3] = np.asarray(rgb(stroke.material.base_color), dtype=np.uint8)
+        else:
+            assert stroke.colour is not None
+            source = np.asarray(rgb(stroke.colour), dtype=float)
+            current = colours[selected, :3].astype(float)
+            colours[selected, :3] = np.rint(
+                current * (1.0 - stroke.opacity) + source * stroke.opacity
+            ).astype(np.uint8)
+            material_ids[selected] = ""
         painted |= selected
 
     mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, face_colors=colours)
-    used = [request.base_colour, *(s.colour for s in request.strokes)]
+    used = [request.base_colour, *(s.colour for s in request.strokes if s.colour is not None)]
     return (
         PaintResult(
             ok=True,
@@ -248,11 +310,81 @@ def paint_mesh_into(
             faces_before=before,
             painted_faces=int(painted.sum()),
             colours=list(dict.fromkeys(used)),
+            materials=list(materials),
             unused_strokes=unused,
             subdivided=subdivided,
         ),
         mesh,
+        material_ids,
+        materials,
     )
+
+
+def paint_mesh_into(
+    mesh: trimesh.Trimesh, request: PaintRequest
+) -> tuple[PaintResult, trimesh.Trimesh]:
+    """Colour the faces each stroke covers. The shape is untouched; only colour is added."""
+    result, painted, _, _ = _paint_mesh_state(mesh, request)
+    return result, painted
+
+
+def _material_uv(mesh: trimesh.Trimesh, tile_size_mm: float) -> np.ndarray:
+    """Per-face box projection in physical millimetres; vertices must be unmerged."""
+    uv = np.zeros((len(mesh.vertices), 2), dtype=np.float64)
+    triangles = mesh.vertices[mesh.faces]
+    for index, triangle in enumerate(triangles):
+        normal = np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
+        axis = int(np.argmax(np.abs(normal)))
+        plane = (1, 2) if axis == 0 else (0, 2) if axis == 1 else (0, 1)
+        uv[mesh.faces[index]] = triangle[:, plane] / tile_size_mm
+    return uv
+
+
+def _painted_glb(
+    mesh: trimesh.Trimesh,
+    colours: np.ndarray,
+    material_ids: np.ndarray,
+    materials: dict[str, MaterialInput],
+) -> bytes:
+    """Export exact face groups with real PBR materials and repeatable box-projected maps."""
+    scene = trimesh.Scene()
+    plain_faces = np.flatnonzero(material_ids == "")
+    if plain_faces.size:
+        plain = cast(trimesh.Trimesh, mesh.submesh([plain_faces], append=True, repair=False))
+        plain.visual = trimesh.visual.ColorVisuals(mesh=plain, face_colors=colours[plain_faces])
+        plain.unmerge_vertices()
+        plain.apply_scale(0.001)
+        plain.apply_transform(Z_UP_TO_Y_UP)
+        scene.add_geometry(plain, node_name="PaintColour", geom_name="PaintColour")
+
+    for material_id, material in materials.items():
+        face_ids = np.flatnonzero(material_ids == material_id)
+        if not face_ids.size:
+            continue
+        part = cast(trimesh.Trimesh, mesh.submesh([face_ids], append=True, repair=False))
+        part.unmerge_vertices()
+        image = None
+        uv = None
+        if material.texture_data_b64 is not None:
+            payload = base64.b64decode(material.texture_data_b64, validate=True)
+            image = Image.open(io.BytesIO(payload)).convert("RGBA")
+            uv = _material_uv(part, material.texture_tile_size_mm or 1.0)
+        pbr = PBRMaterial(
+            name=material_id,
+            baseColorFactor=[*rgb(material.base_color), 255],
+            baseColorTexture=image,
+            metallicFactor=material.metallic,
+            roughnessFactor=material.roughness,
+        )
+        part.visual = trimesh.visual.TextureVisuals(uv=uv, material=pbr)
+        part.apply_scale(0.001)
+        part.apply_transform(Z_UP_TO_Y_UP)
+        safe_name = "Material_" + hashlib.sha256(material_id.encode()).hexdigest()[:12]
+        scene.add_geometry(part, node_name=safe_name, geom_name=safe_name)
+    payload = scene.export(file_type="glb")
+    if not isinstance(payload, bytes):
+        raise ValueError("GLB exporter did not return bytes")
+    return payload
 
 
 def paint_file(
@@ -272,19 +404,16 @@ def paint_file(
         return PaintResult(ok=False, message="the file has no mesh to paint")
     mesh = to_platform_axes(mesh.copy(), source_format)
 
-    result, mesh = paint_mesh_into(mesh, request)
+    result, mesh, material_ids, materials = _paint_mesh_state(mesh, request)
     if not result.ok:
         return result
 
+    payload: bytes | str | dict[str, Any]
     if target_format == "glb":
-        scaled = mesh.copy()
-        # glTF and OBJ colour vertices, not faces: with shared vertices every stroke edge
-        # would smear across the neighbouring triangles. Give each face its own vertices so
-        # the colours come out exactly as painted (the mesh is a preview; size is fine).
-        scaled.unmerge_vertices()
-        scaled.apply_scale(0.001)  # glTF is metres and Y-up by spec
-        scaled.apply_transform(Z_UP_TO_Y_UP)
-        payload = trimesh.Scene(scaled).export(file_type="glb")
+        if not isinstance(mesh.visual, trimesh.visual.ColorVisuals):
+            return PaintResult(ok=False, message="painted mesh has no face colours")
+        face_colours = np.asarray(mesh.visual.face_colors, dtype=np.uint8)
+        payload = _painted_glb(mesh, face_colours, material_ids, materials)
     elif target_format == "ply":
         payload = mesh.export(file_type="ply", encoding="binary")  # PLY keeps face colours
     elif target_format == "3mf":

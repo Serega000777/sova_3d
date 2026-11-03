@@ -139,6 +139,83 @@ def test_named_layer_requires_a_nonblank_name_and_at_least_one_stroke(
     assert empty.status_code == 422
 
 
+def test_material_brush_resolves_the_catalogue_and_embeds_pbr_evidence(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    import trimesh
+
+    material_id = "interior.concrete.architectural-light.v1"
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    response = paint(
+        api_client,
+        actor,
+        version_id,
+        strokes=[{"catalog_material_id": material_id, "region": TOP_FACE}],
+        layer_name="Concrete accent",
+    )
+    assert response.status_code == 202, response.text
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    assert result["paint"]["materials"] == [material_id]
+    made = db_session.get(ProjectVersion, result["version_id"])
+    assert made is not None
+    assert made.provenance["paint"]["strokes"] == [
+        {"catalog_material_id": material_id, "opacity": 1.0, "region": TOP_FACE}
+    ]
+    preview_id = {link.role: link.asset_id for link in made.assets}[AssetRole.preview]
+    preview = db_session.get(Asset, preview_id)
+    assert preview is not None
+    loaded = trimesh.load(
+        trimesh.util.wrap_as_stream(storage.get(preview.storage_key)),
+        file_type="glb",
+        force="scene",
+        process=False,
+    )
+    pbr = next(
+        material
+        for geometry in loaded.geometry.values()
+        if (material := getattr(geometry.visual, "material", None)) is not None
+        and material.name == material_id
+    )
+    assert pbr.baseColorTexture is not None
+    assert pbr.metallicFactor == pytest.approx(0.0)
+    assert pbr.roughnessFactor == pytest.approx(0.92)
+
+    assert (
+        paint(
+            api_client,
+            actor,
+            version_id,
+            strokes=[{"catalog_material_id": "unknown.material"}],
+        ).status_code
+        == 422
+    )
+    assert (
+        paint(
+            api_client,
+            actor,
+            version_id,
+            strokes=[{"catalog_material_id": material_id, "opacity": 0.85}],
+        ).status_code
+        == 422
+    )
+    assert (
+        paint(
+            api_client,
+            actor,
+            version_id,
+            strokes=[{"catalog_material_id": material_id, "colour": "#ffffff"}],
+        ).status_code
+        == 422
+    )
+
+
 def test_reordering_paint_layers_changes_which_colour_wins_the_overlap(
     api_client: TestClient,
     actor: Actor,

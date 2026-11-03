@@ -155,6 +155,7 @@ export interface VerifiedGameSceneObject {
     catalogMaterialId: string;
     baseColor: string;
     roughness: number;
+    metallic: number;
     sourceTextureSha256: string | null;
     embeddedTexturePx: number[];
   } | null;
@@ -246,10 +247,16 @@ export function gameReadySceneReportMatchesRequest(
         catalog_material_id?: unknown;
         base_color?: unknown;
         roughness?: unknown;
+        metallic?: unknown;
         source_texture_sha256?: unknown;
         embedded_texture_px?: unknown;
       };
       const sourceTextureSha256 = candidate.source_texture_sha256;
+      const metallic = candidate.metallic === undefined
+        && typeof candidate.catalog_material_id === "string"
+        && !candidate.catalog_material_id.startsWith("interior.metal.")
+        ? 0
+        : candidate.metallic;
       if (
         typeof candidate.catalog_material_id !== "string"
         || candidate.catalog_material_id.length < 1
@@ -260,6 +267,10 @@ export function gameReadySceneReportMatchesRequest(
         || !Number.isFinite(candidate.roughness)
         || candidate.roughness < 0.04
         || candidate.roughness > 1
+        || typeof metallic !== "number"
+        || !Number.isFinite(metallic)
+        || metallic < 0
+        || metallic > 1
         || (sourceTextureSha256 !== null && (
           typeof sourceTextureSha256 !== "string"
           || !/^[0-9a-f]{64}$/.test(sourceTextureSha256)
@@ -276,6 +287,7 @@ export function gameReadySceneReportMatchesRequest(
         catalogMaterialId: candidate.catalog_material_id,
         baseColor: candidate.base_color,
         roughness: candidate.roughness,
+        metallic,
         sourceTextureSha256,
         embeddedTexturePx: candidate.embedded_texture_px as number[],
       };

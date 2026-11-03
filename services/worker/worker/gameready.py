@@ -107,6 +107,7 @@ class GameMaterialReport(BaseModel):
     catalog_material_id: str = Field(min_length=1, max_length=120)
     base_color: str = Field(pattern=r"^#[0-9A-F]{6}$")
     roughness: float = Field(ge=0.04, le=1.0)
+    metallic: float = Field(default=0.0, ge=0.0, le=1.0)
     source_texture_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     embedded_texture_px: list[int] = Field(default_factory=list, max_length=5)
 
@@ -397,7 +398,7 @@ def build(
         else [int(round(c * 255)) for c in request.base_color]
     )
     roughness = appearance.roughness if appearance is not None else request.roughness
-    metallic = 0.0 if appearance is not None else request.metallic
+    metallic = appearance.metallic if appearance is not None else request.metallic
     material_name = (
         appearance.catalog_material_id if appearance is not None else f"{request.name}_Material"
     )
@@ -511,6 +512,7 @@ def build(
                 catalog_material_id=appearance.catalog_material_id,
                 base_color=appearance.base_color,
                 roughness=appearance.roughness,
+                metallic=appearance.metallic,
                 source_texture_sha256=appearance.texture_sha256,
                 embedded_texture_px=material_texture_sizes,
             )

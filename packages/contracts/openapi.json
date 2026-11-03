@@ -25052,7 +25052,9 @@
               "plaster",
               "wood",
               "stone",
-              "tile"
+              "tile",
+              "concrete",
+              "metal"
             ],
             "title": "Kind"
           },
@@ -25067,6 +25069,10 @@
           "roughness": {
             "type": "number",
             "title": "Roughness"
+          },
+          "metallic": {
+            "type": "number",
+            "title": "Metallic"
           },
           "texture_sha256": {
             "anyOf": [
@@ -25113,6 +25119,7 @@
           "base_color",
           "gloss_pct",
           "roughness",
+          "metallic",
           "texture_sha256",
           "texture_tile_size_mm",
           "texture_url"
@@ -28488,6 +28495,7 @@
             "default": false
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "PaintBody"
       },
@@ -33422,6 +33430,10 @@
             "type": "number",
             "title": "Roughness"
           },
+          "metallic": {
+            "type": "number",
+            "title": "Metallic"
+          },
           "texture_sha256": {
             "anyOf": [
               {
@@ -33465,6 +33477,7 @@
           "base_color",
           "gloss_pct",
           "roughness",
+          "metallic",
           "texture_sha256",
           "texture_tile_size_mm",
           "texture_url"
@@ -34966,9 +34979,29 @@
       "Stroke": {
         "properties": {
           "colour": {
-            "type": "string",
-            "pattern": "^#[0-9a-fA-F]{6}$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Colour"
+          },
+          "catalog_material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Material Id"
           },
           "opacity": {
             "type": "number",
@@ -34990,10 +35023,8 @@
             "title": "Region"
           }
         },
+        "additionalProperties": false,
         "type": "object",
-        "required": [
-          "colour"
-        ],
         "title": "Stroke",
         "description": "One swipe of colour. Without a region it covers the whole body."
       },

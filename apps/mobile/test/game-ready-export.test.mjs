@@ -185,6 +185,7 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
     catalog_material_id: "interior.wood.oak-natural.v1",
     base_color: "#B28452",
     roughness: 0.76,
+    metallic: 0,
     source_texture_sha256: "a".repeat(64),
     embedded_texture_px: [256, 256],
   };
@@ -219,6 +220,7 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
           catalogMaterialId: texturedMaterial.catalog_material_id,
           baseColor: texturedMaterial.base_color,
           roughness: texturedMaterial.roughness,
+          metallic: texturedMaterial.metallic,
           sourceTextureSha256: texturedMaterial.source_texture_sha256,
           embeddedTexturePx: texturedMaterial.embedded_texture_px,
         },
@@ -230,6 +232,16 @@ test("references 83/84/86 verify every visible scene object's own evidence", () 
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], { ...report.per_object[1], report: { ...report.per_object[1].report, ok: false } }] }, 4096, "base", 20_000, 1, true, "convex"), null);
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, animated_node_id: "missing" }, 4096, "base", 20_000, 1, true, "convex"), null);
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, animations: 2 }, 4096, "base", 20_000, 1, true, "convex"), null);
+  const legacyMaterial = { ...texturedMaterial };
+  delete legacyMaterial.metallic;
+  assert.equal(
+    gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], { ...report.per_object[1], report: objectReport("Obj1", legacyMaterial) }] }, 4096, "base", 20_000, 1, true, "convex")?.[1]?.material?.metallic,
+    0,
+  );
+  assert.equal(
+    gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], { ...report.per_object[1], report: objectReport("Obj1", { ...legacyMaterial, catalog_material_id: "interior.metal.steel.v1" }) }] }, 4096, "base", 20_000, 1, true, "convex"),
+    null,
+  );
   const forgedMaterial = { ...texturedMaterial, source_texture_sha256: "bad", embedded_texture_px: [256] };
   assert.equal(gameReadySceneReportMatchesRequest({ ...report, per_object: [report.per_object[0], { ...report.per_object[1], report: objectReport("Obj1", forgedMaterial) }] }, 4096, "base", 20_000, 1, true, "convex"), null);
   assert.match(project, /gameReadySceneReportMatchesRequest\(/);

@@ -18,7 +18,7 @@ test("applied PBR result reports canonical parameters without fake editable slid
   assert.match(sheet, /current\.appearance\.gloss_pct/);
   assert.match(sheet, /current\.appearance\.texture_sha256/);
   assert.match(sheet, /current\.appearance\.texture_tile_size_mm/);
-  assert.match(sheet, /металличность.*0%/s);
+  assert.match(sheet, /current\.appearance\.metallic/);
   assert.match(sheet, /accessibilityState=\{\{ selected: current\.appearance\?\.catalog_material_id === item\.id/);
   assert.doesNotMatch(sheet, /setRoughness|setMetalness|metallicFactor/);
 });
@@ -31,6 +31,7 @@ test("applied PBR snapshot is bound to the exact source version and scene node",
     base_color: "#a07040",
     gloss_pct: 20,
     roughness: 0.8,
+    metallic: 0,
     texture_sha256: "abc",
     texture_tile_size_mm: 300,
     texture_url: "/textures/abc.png",
@@ -43,6 +44,7 @@ test("applied PBR snapshot is bound to the exact source version and scene node",
     base_color: material.base_color,
     gloss_pct: material.gloss_pct,
     roughness: material.roughness,
+    metallic: material.metallic,
     texture_sha256: material.texture_sha256,
     texture_tile_size_mm: material.texture_tile_size_mm,
     texture_url: material.texture_url,

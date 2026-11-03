@@ -18,7 +18,9 @@ from typing import Any, Literal
 from app.api.errors import ValidationFailedError
 
 MaterialTab = Literal["wall", "floor", "furniture", "tile"]
-MaterialKind = Literal["paint", "wallpaper", "plaster", "wood", "stone", "tile"]
+MaterialKind = Literal[
+    "paint", "wallpaper", "plaster", "wood", "stone", "tile", "concrete", "metal"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +32,7 @@ class InteriorMaterial:
     kind: MaterialKind
     base_color: str
     gloss_pct: int
+    metallic: float = 0.0
     texture_sha256: str | None = None
     texture_tile_size_mm: float | None = None
 
@@ -121,6 +124,7 @@ _MATERIALS = (
         "wallpaper",
         "#E8DECD",
         4,
+        0.0,
         _texture("wallpaper"),
         320,
     ),
@@ -132,6 +136,7 @@ _MATERIALS = (
         "plaster",
         "#D6CFC3",
         5,
+        0.0,
         _texture("plaster"),
         450,
     ),
@@ -143,6 +148,7 @@ _MATERIALS = (
         "wood",
         "#B28452",
         24,
+        0.0,
         _texture("wood"),
         180,
     ),
@@ -154,6 +160,7 @@ _MATERIALS = (
         "stone",
         "#AAAAA6",
         12,
+        0.0,
         _texture("stone"),
         500,
     ),
@@ -165,8 +172,31 @@ _MATERIALS = (
         "tile",
         "#DCD7CD",
         42,
+        0.0,
         _texture("tile"),
         300,
+    ),
+    InteriorMaterial(
+        "interior.concrete.architectural-light.v1",
+        "Light architectural concrete",
+        "Светлый архитектурный бетон",
+        ("wall", "floor", "furniture"),
+        "concrete",
+        "#B8B6AF",
+        8,
+        0.0,
+        _texture("stone"),
+        500,
+    ),
+    InteriorMaterial(
+        "interior.metal.steel.v1",
+        "Steel",
+        "Сталь",
+        ("wall", "floor", "furniture", "tile"),
+        "metal",
+        "#A9AFB5",
+        58,
+        1.0,
     ),
 )
 _BY_ID = {item.id: item for item in _MATERIALS}
@@ -197,6 +227,7 @@ def snapshot_for(material: InteriorMaterial) -> dict[str, Any]:
         "base_color": material.base_color,
         "gloss_pct": material.gloss_pct,
         "roughness": material.roughness,
+        "metallic": material.metallic,
         "texture_sha256": material.texture_sha256,
         "texture_tile_size_mm": material.texture_tile_size_mm,
     }
@@ -208,7 +239,8 @@ def validate_snapshot(value: object, *, node_id: str) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         raise ValidationFailedError("a scene appearance must be an object", {"node_id": node_id})
     expected_keys = set(snapshot_for(_MATERIALS[0]))
-    if set(value) != expected_keys:
+    legacy_keys = expected_keys - {"metallic"}
+    if set(value) not in (expected_keys, legacy_keys):
         raise ValidationFailedError(
             "a scene appearance has unsupported fields", {"node_id": node_id}
         )
@@ -219,7 +251,12 @@ def validate_snapshot(value: object, *, node_id: str) -> dict[str, Any] | None:
     roughness = value.get("roughness")
     if not isinstance(roughness, int | float) or not math.isfinite(float(roughness)):
         raise ValidationFailedError("a scene appearance roughness is invalid", {"node_id": node_id})
-    normalized = {**value, "roughness": float(roughness)}
+    metallic = value.get("metallic", 0.0)
+    if not isinstance(metallic, int | float) or not math.isfinite(float(metallic)):
+        raise ValidationFailedError(
+            "a scene appearance metallic value is invalid", {"node_id": node_id}
+        )
+    normalized = {**value, "roughness": float(roughness), "metallic": float(metallic)}
     if normalized != expected:
         raise ValidationFailedError(
             "a scene appearance does not match its immutable catalogue snapshot",

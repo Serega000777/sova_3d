@@ -200,6 +200,26 @@ test("model paint posts the bounded brush opacity with its exact region", async 
   });
 });
 
+test("model paint posts a trusted catalogue material id without client-authored PBR values", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse({ job_id: "job-material", status: "queued", type: "paint_model" }, { status: 202 });
+    },
+  });
+
+  await client.paintModel("version-1", {
+    strokes: [{ catalog_material_id: "interior.wood.oak-natural.v1", region: { kind: "box" } }],
+    layer_name: "Oak accent",
+  });
+  assert.deepEqual(JSON.parse(String(request!.init.body)), {
+    strokes: [{ catalog_material_id: "interior.wood.oak-natural.v1", region: { kind: "box" } }],
+    layer_name: "Oak accent",
+  });
+});
+
 test("3D generation estimate posts the typed request and returns an honest null cost", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const client = new PhysicalAiClient({

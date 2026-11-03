@@ -2,6 +2,7 @@ export interface PaintLayerSummary {
   name: string;
   strokeCount: number;
   colours: string[];
+  materialIds: string[];
   opacities: number[];
 }
 
@@ -32,11 +33,19 @@ export function paintLayerSummaries(provenance: Record<string, unknown> | null |
       || (start as number) + (count as number) > strokes.length
     ) return [];
     const layerStrokes = strokes.slice(start as number, (start as number) + (count as number));
-    const colours = [...new Set(
-      layerStrokes
-        .map((stroke) => record(stroke)?.colour)
-        .filter((colour): colour is string => typeof colour === "string" && /^#[0-9a-f]{6}$/i.test(colour)),
-    )];
+    const surfaces = layerStrokes.map((stroke) => {
+      const value = record(stroke);
+      const colour = value?.colour;
+      const materialId = value?.catalog_material_id;
+      const validColour = typeof colour === "string" && /^#[0-9a-f]{6}$/i.test(colour);
+      const validMaterial = typeof materialId === "string" && materialId.length >= 1 && materialId.length <= 120;
+      return validColour !== validMaterial
+        ? { colour: validColour ? colour : null, materialId: validMaterial ? materialId : null }
+        : null;
+    });
+    if (surfaces.some((surface) => surface === null)) return [];
+    const colours = [...new Set(surfaces.flatMap((surface) => surface?.colour ? [surface.colour] : []))];
+    const materialIds = [...new Set(surfaces.flatMap((surface) => surface?.materialId ? [surface.materialId] : []))];
     const opacityValues = layerStrokes.map((stroke) => {
       const opacity = record(stroke)?.opacity;
       if (opacity === undefined) return 1;
@@ -44,9 +53,12 @@ export function paintLayerSummaries(provenance: Record<string, unknown> | null |
         ? opacity
         : null;
     });
-    if (opacityValues.some((opacity) => opacity === null)) return [];
+    if (
+      opacityValues.some((opacity) => opacity === null)
+      || layerStrokes.some((stroke, index) => record(stroke)?.catalog_material_id && opacityValues[index] !== 1)
+    ) return [];
     const opacities = [...new Set(opacityValues as number[])];
-    return [{ name, strokeCount: count as number, colours, opacities }];
+    return [{ name, strokeCount: count as number, colours, materialIds, opacities }];
   });
 }
 

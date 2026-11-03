@@ -7075,13 +7075,15 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "paint" | "wallpaper" | "plaster" | "wood" | "stone" | "tile";
+            kind: "paint" | "wallpaper" | "plaster" | "wood" | "stone" | "tile" | "concrete" | "metal";
             /** Base Color */
             base_color: string;
             /** Gloss Pct */
             gloss_pct: number;
             /** Roughness */
             roughness: number;
+            /** Metallic */
+            metallic: number;
             /** Texture Sha256 */
             texture_sha256: string | null;
             /** Texture Tile Size Mm */
@@ -10037,6 +10039,8 @@ export interface components {
             gloss_pct: number;
             /** Roughness */
             roughness: number;
+            /** Metallic */
+            metallic: number;
             /** Texture Sha256 */
             texture_sha256: string | null;
             /** Texture Tile Size Mm */
@@ -10652,7 +10656,9 @@ export interface components {
          */
         Stroke: {
             /** Colour */
-            colour: string;
+            colour?: string | null;
+            /** Catalog Material Id */
+            catalog_material_id?: string | null;
             /**
              * Opacity
              * @default 1

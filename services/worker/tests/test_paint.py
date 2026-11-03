@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import io
+
 import numpy as np
 import pytest
 import trimesh
+from PIL import Image
 from pydantic import ValidationError
 
 from worker import paint
@@ -32,3 +37,79 @@ def test_stroke_opacity_blends_in_order_and_keeps_the_preview_opaque() -> None:
 def test_stroke_opacity_is_bounded(opacity: float) -> None:
     with pytest.raises(ValidationError):
         paint.Stroke(colour="#ff0000", opacity=opacity)
+
+
+def test_catalogue_material_is_exported_as_real_pbr_group(tmp_path) -> None:
+    source = tmp_path / "box.stl"
+    output = tmp_path / "painted.glb"
+    source.write_bytes(trimesh.creation.box(extents=(10.0, 10.0, 10.0)).export(file_type="stl"))
+    request = paint.PaintRequest(
+        strokes=[
+            paint.Stroke(
+                material=paint.MaterialInput(
+                    catalog_material_id="interior.metal.steel.v1",
+                    base_color="#A9AFB5",
+                    roughness=0.42,
+                    metallic=1.0,
+                )
+            )
+        ]
+    )
+
+    result = paint.paint_file(source, "stl", request, output, "glb")
+
+    assert result.ok and result.materials == ["interior.metal.steel.v1"]
+    loaded = trimesh.load(output, force="scene", process=False)
+    materials = [geometry.visual.material for geometry in loaded.geometry.values()]
+    material = next(item for item in materials if item.name == "interior.metal.steel.v1")
+    assert material.metallicFactor == pytest.approx(1.0)
+    assert material.roughnessFactor == pytest.approx(0.42)
+
+
+def test_catalogue_texture_is_content_addressed_and_has_repeatable_uv(tmp_path) -> None:
+    image = Image.new("RGBA", (4, 4), (180, 170, 160, 255))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    payload = buffer.getvalue()
+    encoded = base64.b64encode(payload).decode("ascii")
+    digest = hashlib.sha256(payload).hexdigest()
+    source = tmp_path / "box.stl"
+    output = tmp_path / "painted.glb"
+    box = trimesh.creation.box(extents=(1000.0, 1000.0, 1000.0))
+    source.write_bytes(box.export(file_type="stl"))
+    material = paint.MaterialInput(
+        catalog_material_id="interior.concrete.test.v1",
+        base_color="#B8B6AF",
+        roughness=0.92,
+        texture_sha256=digest,
+        texture_tile_size_mm=100.0,
+        texture_data_b64=encoded,
+    )
+
+    result = paint.paint_file(
+        source,
+        "stl",
+        paint.PaintRequest(strokes=[paint.Stroke(material=material)]),
+        output,
+        "glb",
+    )
+
+    assert result.ok
+    loaded = trimesh.load(output, force="scene", process=False)
+    textured = next(
+        geometry
+        for geometry in loaded.geometry.values()
+        if geometry.visual.material.name == "interior.concrete.test.v1"
+    )
+    assert textured.visual.material.baseColorTexture is not None
+    assert np.ptp(np.asarray(textured.visual.uv), axis=0).max() > 1.0
+
+    with pytest.raises(ValidationError, match="sha256"):
+        paint.MaterialInput(
+            catalog_material_id="interior.concrete.test.v1",
+            base_color="#B8B6AF",
+            roughness=0.92,
+            texture_sha256="0" * 64,
+            texture_tile_size_mm=100.0,
+            texture_data_b64=encoded,
+        )

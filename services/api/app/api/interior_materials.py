@@ -22,10 +22,11 @@ class InteriorMaterialOut(BaseModel):
     name: str
     name_ru: str
     tabs: list[Literal["wall", "floor", "furniture", "tile"]]
-    kind: Literal["paint", "wallpaper", "plaster", "wood", "stone", "tile"]
+    kind: Literal["paint", "wallpaper", "plaster", "wood", "stone", "tile", "concrete", "metal"]
     base_color: str
     gloss_pct: int
     roughness: float
+    metallic: float
     texture_sha256: str | None
     texture_tile_size_mm: float | None
     texture_url: str | None
@@ -49,6 +50,7 @@ def catalogue_out() -> list[InteriorMaterialOut]:
             base_color=item.base_color,
             gloss_pct=item.gloss_pct,
             roughness=item.roughness,
+            metallic=item.metallic,
             texture_sha256=item.texture_sha256,
             texture_tile_size_mm=item.texture_tile_size_mm,
             texture_url=(

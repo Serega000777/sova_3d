@@ -477,7 +477,7 @@ export function SceneTreeSheet({
                     {current.appearance.texture_sha256
                       ? `${ru ? "Карта цвета" : "Colour map"} · ${current.appearance.texture_tile_size_mm ?? "—"} ${ru ? "мм/тайл" : "mm/tile"}`
                       : (ru ? "Однотонный цвет · без карты" : "Solid colour · no map")}
-                    {` · ${ru ? "металличность" : "metalness"} 0%`}
+                    {` · ${ru ? "металличность" : "metalness"} ${Math.round(current.appearance.metallic * 100)}%`}
                   </Text>
                   {!appliedMaterial ? (
                     <Text style={[styles.muted, { color: colors.yellow }]}>
