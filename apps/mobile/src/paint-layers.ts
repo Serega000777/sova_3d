@@ -41,10 +41,24 @@ export function paintLayerSummaries(
       const value = record(stroke);
       const colour = value?.colour;
       const materialId = value?.catalog_material_id;
+      const customAssetId = value?.custom_texture_asset_id;
+      const customTileSize = value?.custom_texture_tile_size_mm;
+      const customRoughness = value?.custom_texture_roughness;
+      const customMetallic = value?.custom_texture_metallic;
       const validColour = typeof colour === "string" && /^#[0-9a-f]{6}$/i.test(colour);
       const validMaterial = typeof materialId === "string" && materialId.length >= 1 && materialId.length <= 120;
-      return validColour !== validMaterial
-        ? { colour: validColour ? colour : null, materialId: validMaterial ? materialId : null }
+      const validCustom = typeof customAssetId === "string"
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(customAssetId)
+        && typeof customTileSize === "number" && customTileSize >= 10 && customTileSize <= 5000
+        && typeof customRoughness === "number" && customRoughness >= 0.04 && customRoughness <= 1
+        && typeof customMetallic === "number" && customMetallic >= 0 && customMetallic <= 1;
+      return Number(validColour) + Number(validMaterial) + Number(validCustom) === 1
+        ? {
+            colour: validColour ? colour : null,
+            materialId: validMaterial
+              ? materialId
+              : validCustom ? `workspace.texture.${customAssetId}` : null,
+          }
         : null;
     });
     if (surfaces.some((surface) => surface === null)) return [];

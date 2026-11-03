@@ -1211,6 +1211,14 @@ export class PhysicalAiClient {
       strokes: ((
         | { colour: string; catalog_material_id?: never }
         | { colour?: never; catalog_material_id: string }
+        | {
+            colour?: never;
+            catalog_material_id?: never;
+            custom_texture_asset_id: string;
+            custom_texture_tile_size_mm: number;
+            custom_texture_roughness: number;
+            custom_texture_metallic: number;
+          }
       ) & {
         opacity?: number;
         region?: unknown;

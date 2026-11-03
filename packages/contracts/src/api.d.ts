@@ -10663,6 +10663,14 @@ export interface components {
             colour?: string | null;
             /** Catalog Material Id */
             catalog_material_id?: string | null;
+            /** Custom Texture Asset Id */
+            custom_texture_asset_id?: string | null;
+            /** Custom Texture Tile Size Mm */
+            custom_texture_tile_size_mm?: number | null;
+            /** Custom Texture Roughness */
+            custom_texture_roughness?: number | null;
+            /** Custom Texture Metallic */
+            custom_texture_metallic?: number | null;
             /**
              * Opacity
              * @default 1

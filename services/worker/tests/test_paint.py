@@ -113,6 +113,23 @@ def test_catalogue_texture_is_content_addressed_and_has_repeatable_uv(tmp_path) 
             texture_tile_size_mm=100.0,
             texture_data_b64=encoded,
         )
+    invalid_image = b"\x89PNG\r\n\x1a\nnot-an-image"
+    invalid_material = paint.MaterialInput(
+        catalog_material_id="workspace.texture.invalid",
+        base_color="#FFFFFF",
+        roughness=0.8,
+        texture_sha256=hashlib.sha256(invalid_image).hexdigest(),
+        texture_tile_size_mm=100.0,
+        texture_data_b64=base64.b64encode(invalid_image).decode("ascii"),
+    )
+    with pytest.raises(ValueError, match="valid image"):
+        paint.paint_file(
+            source,
+            "stl",
+            paint.PaintRequest(strokes=[paint.Stroke(material=invalid_material)]),
+            output,
+            "glb",
+        )
 
 
 def test_catalogue_material_opacity_bakes_opaque_base_and_pbr_atlases(tmp_path) -> None:

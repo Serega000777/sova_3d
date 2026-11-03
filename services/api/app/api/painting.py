@@ -32,13 +32,28 @@ class Stroke(BaseModel):
 
     colour: str | None = Field(default=None, pattern=COLOUR)
     catalog_material_id: str | None = Field(default=None, min_length=1, max_length=120)
+    custom_texture_asset_id: uuid.UUID | None = None
+    custom_texture_tile_size_mm: float | None = Field(default=None, ge=10, le=5000)
+    custom_texture_roughness: float | None = Field(default=None, ge=0.04, le=1.0)
+    custom_texture_metallic: float | None = Field(default=None, ge=0.0, le=1.0)
     opacity: float = Field(default=1.0, ge=0.05, le=1.0)
     region: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def one_surface(self) -> Stroke:
-        if (self.colour is None) == (self.catalog_material_id is None):
-            raise ValueError("a stroke needs exactly one colour or catalogue material")
+        custom_values = (
+            self.custom_texture_asset_id,
+            self.custom_texture_tile_size_mm,
+            self.custom_texture_roughness,
+            self.custom_texture_metallic,
+        )
+        custom = all(value is not None for value in custom_values)
+        if any(value is not None for value in custom_values) and not custom:
+            raise ValueError("a custom texture needs asset, tile size, roughness and metallic")
+        if sum((self.colour is not None, self.catalog_material_id is not None, custom)) != 1:
+            raise ValueError(
+                "a stroke needs exactly one colour, catalogue material or custom texture"
+            )
         return self
 
 
@@ -80,7 +95,7 @@ def paint_model(
         db,
         user_id=principal.user_id,
         version_id=version_id,
-        strokes=[stroke.model_dump(exclude_none=True) for stroke in body.strokes],
+        strokes=[stroke.model_dump(mode="json", exclude_none=True) for stroke in body.strokes],
         base_colour=body.base_colour,
         label=body.label,
         layer_name=body.layer_name,

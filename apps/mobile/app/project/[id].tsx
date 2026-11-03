@@ -229,8 +229,30 @@ const BRUSHES = [
 const PAINT_OPACITIES = [0.5, 0.75, 0.85, 1] as const;
 const PAINT_MATERIAL_KINDS = new Set(["concrete", "wood", "metal"]);
 type PaintDraftStroke = (
-  | { colour: string; catalogMaterialId?: never }
-  | { colour?: never; catalogMaterialId: string }
+  | {
+      colour: string;
+      catalogMaterialId?: never;
+      customTextureAssetId?: never;
+      customTextureTileSizeMm?: never;
+      customTextureRoughness?: never;
+      customTextureMetallic?: never;
+    }
+  | {
+      colour?: never;
+      catalogMaterialId: string;
+      customTextureAssetId?: never;
+      customTextureTileSizeMm?: never;
+      customTextureRoughness?: never;
+      customTextureMetallic?: never;
+    }
+  | {
+      colour?: never;
+      catalogMaterialId?: never;
+      customTextureAssetId: string;
+      customTextureTileSizeMm: number;
+      customTextureRoughness: number;
+      customTextureMetallic: number;
+    }
 ) & {
   opacity: number;
   region: RegionSelection;
@@ -459,6 +481,11 @@ export default function ProjectScreen() {
   const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [paintOpacity, setPaintOpacity] = useState(0.85);
   const [paintMaterialId, setPaintMaterialId] = useState<string | null>(null);
+  const [paintCustomTexture, setPaintCustomTexture] = useState<{
+    assetId: string;
+    uri: string;
+  } | null>(null);
+  const [paintCustomTileMm, setPaintCustomTileMm] = useState("250");
   const [strokes, setStrokes] = useState<PaintDraftStroke[]>([]);
   const [paintSourceVersionId, setPaintSourceVersionId] = useState<string | null>(null);
   const [paintSourceSceneNodeId, setPaintSourceSceneNodeId] = useState<string | null>(null);
@@ -2456,7 +2483,14 @@ export default function ProjectScreen() {
         strokes: strokes.map((stroke) => ({
           ...(stroke.catalogMaterialId !== undefined
             ? { catalog_material_id: stroke.catalogMaterialId }
-            : { colour: stroke.colour }),
+            : stroke.customTextureAssetId !== undefined
+              ? {
+                  custom_texture_asset_id: stroke.customTextureAssetId,
+                  custom_texture_tile_size_mm: stroke.customTextureTileSizeMm,
+                  custom_texture_roughness: stroke.customTextureRoughness,
+                  custom_texture_metallic: stroke.customTextureMetallic,
+                }
+              : { colour: stroke.colour }),
           opacity: stroke.opacity,
           region: stroke.region.region,
         })),
@@ -2488,6 +2522,28 @@ export default function ProjectScreen() {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function choosePaintTexture() {
+    if (!client || !session || busy) return;
+    setError(null);
+    try {
+      const [photo] = await pickPhotos("library", 1);
+      if (!photo) return;
+      if (photo.byteSize !== null && photo.byteSize > 6 * 1024 * 1024) {
+        throw new Error(
+          ru ? "Текстура должна быть не больше 6 МБ." : "The texture must be no larger than 6 MiB.",
+        );
+      }
+      setBusy(ru ? "Загружаем текстуру" : "Uploading texture");
+      const assetId = await uploadPhoto(client, session.workspaceId, photo);
+      setPaintCustomTexture({ assetId, uri: photo.uri });
+      setPaintMaterialId(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -6179,7 +6235,9 @@ export default function ProjectScreen() {
               setComponentSelection(next);
               if (next) setEditSheetOpen(true);
             }}
-            paintColour={interiorMaterials.find((item) => item.id === paintMaterialId)?.base_color ?? colour}
+            paintColour={paintCustomTexture
+              ? "#ffffff"
+              : interiorMaterials.find((item) => item.id === paintMaterialId)?.base_color ?? colour}
             paintOpacity={paintOpacity}
             brushMm={brush}
             markers={[
@@ -6221,20 +6279,40 @@ export default function ProjectScreen() {
                     );
                     return;
                   }
+                  const customTileSizeMm = Number(paintCustomTileMm.replace(",", "."));
+                  if (
+                    paintCustomTexture
+                    && (!Number.isFinite(customTileSizeMm)
+                      || customTileSizeMm < 10
+                      || customTileSizeMm > 5000)
+                  ) {
+                    setError(
+                      ru
+                        ? "Размер повтора пользовательской текстуры — от 10 до 5000 мм."
+                        : "Custom texture repeat size must be between 10 and 5000 mm.",
+                    );
+                    return;
+                  }
+                  const surface: PaintDraftStroke = paintCustomTexture
+                    ? {
+                        customTextureAssetId: paintCustomTexture.assetId,
+                        customTextureTileSizeMm: customTileSizeMm,
+                        customTextureRoughness: 0.8,
+                        customTextureMetallic: 0,
+                        opacity: paintOpacity,
+                        region: next,
+                      }
+                    : paintMaterialId
+                      ? { catalogMaterialId: paintMaterialId, opacity: paintOpacity, region: next }
+                      : { colour, opacity: paintOpacity, region: next };
                   setStrokes((all) =>
                     paintSourceVersionId === null
                     || (paintSourceVersionId === activeId && paintSourceSceneNodeId === draftSceneNodeId)
                       ? [
                           ...all,
-                          paintMaterialId
-                            ? { catalogMaterialId: paintMaterialId, opacity: paintOpacity, region: next }
-                            : { colour, opacity: paintOpacity, region: next },
+                          surface,
                         ]
-                      : [
-                          paintMaterialId
-                            ? { catalogMaterialId: paintMaterialId, opacity: paintOpacity, region: next }
-                            : { colour, opacity: paintOpacity, region: next },
-                        ],
+                      : [surface],
                   );
                   setPaintSourceVersionId(activeId);
                   setPaintSourceSceneNodeId(draftSceneNodeId);
@@ -6274,6 +6352,7 @@ export default function ProjectScreen() {
                   onPress={() => {
                     setColour(swatch);
                     setPaintMaterialId(null);
+                    setPaintCustomTexture(null);
                   }}
                   style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: swatch, borderWidth: !paintMaterialId && colour === swatch ? 3 : 1, borderColor: !paintMaterialId && colour === swatch ? colors.topologyVertex : colors.border }}
                 />
@@ -7218,6 +7297,7 @@ export default function ProjectScreen() {
                 onPress={() => {
                   setColour(swatch);
                   setPaintMaterialId(null);
+                  setPaintCustomTexture(null);
                 }}
                 style={{
                   width: 30,
@@ -7240,7 +7320,10 @@ export default function ProjectScreen() {
                   key={item.id}
                   accessibilityLabel={`${ru ? item.name_ru : item.name} · PBR`}
                   accessibilityState={{ selected: paintMaterialId === item.id }}
-                  onPress={() => setPaintMaterialId(item.id)}
+                  onPress={() => {
+                    setPaintMaterialId(item.id);
+                    setPaintCustomTexture(null);
+                  }}
                   style={[
                     styles.card,
                     { width: 142, gap: 5, backgroundColor: colors.panel },
@@ -7263,6 +7346,45 @@ export default function ProjectScreen() {
                 </Pressable>
               ))}
             </ScrollView>
+          </View>
+          <View style={{ gap: 7 }} accessibilityLabel={ru ? "Пользовательская текстура" : "Custom texture"}>
+            <Text style={styles.muted}>
+              {ru ? "Своя PNG/JPEG-текстура" : "Your PNG/JPEG texture"}
+            </Text>
+            <View style={styles.row}>
+              <Pressable
+                style={[styles.button, busy && { opacity: 0.5 }]}
+                disabled={Boolean(busy)}
+                onPress={() => void choosePaintTexture()}
+              >
+                <Text style={styles.buttonText}>
+                  {paintCustomTexture
+                    ? (ru ? "Заменить текстуру" : "Replace texture")
+                    : (ru ? "Загрузить текстуру" : "Upload texture")}
+                </Text>
+              </Pressable>
+              {paintCustomTexture ? (
+                <>
+                  <Image source={{ uri: paintCustomTexture.uri }} style={{ width: 52, height: 52, borderRadius: 8 }} />
+                  <TextInput
+                    style={[styles.input, { width: 130 }]}
+                    value={paintCustomTileMm}
+                    onChangeText={setPaintCustomTileMm}
+                    keyboardType="decimal-pad"
+                    placeholder={ru ? "Повтор, мм" : "Repeat, mm"}
+                    placeholderTextColor={colors.muted}
+                  />
+                  <Pressable style={styles.button} onPress={() => setPaintCustomTexture(null)}>
+                    <Text style={styles.buttonText}>{ru ? "Убрать" : "Remove"}</Text>
+                  </Pressable>
+                </>
+              ) : null}
+            </View>
+            <Text style={styles.muted}>
+              {ru
+                ? "До 6 МБ и 16 Мп; базовый материал — неметаллический, roughness 80%. Файл хранится как hash-verified asset рабочего пространства."
+                : "Up to 6 MiB and 16 MP; the base material is non-metallic with 80% roughness. The file is stored as a hash-verified workspace asset."}
+            </Text>
           </View>
           <View style={styles.row}>
             {BRUSHES.map((option) => (
@@ -7298,11 +7420,11 @@ export default function ProjectScreen() {
                 </Pressable>
               ))}
             </View>
-            {paintMaterialId ? (
+            {paintMaterialId || paintCustomTexture ? (
               <Text style={styles.muted}>
                 {ru
-                  ? "Процент запекается в непрозрачную PBR-поверхность поверх цветной основы; это не прозрачность геометрии. Частичное покрытие поверх другого PBR-материала отклоняется."
-                  : "The percentage is baked into an opaque PBR surface over the colour base; it does not make geometry transparent. Partial coverage over another PBR material is rejected."}
+                  ? "Процент запекается в непрозрачную PBR-поверхность, а не делает геометрию прозрачной. На одной грани воспроизводится до восьми эффективных PBR/texture-слоёв."
+                  : "The percentage is baked into an opaque PBR surface; it does not make geometry transparent. Up to eight effective PBR/texture layers replay on one face."}
               </Text>
             ) : null}
           </View>
@@ -7354,12 +7476,13 @@ export default function ProjectScreen() {
                   ? interiorMaterials.find((item) => item.id === stroke.catalogMaterialId)
                   : null;
                 return (
-                  <View key={`${strokeIndex}-${stroke.colour ?? stroke.catalogMaterialId}`} style={[styles.row, { justifyContent: "space-between" }]}>
+                  <View key={`${strokeIndex}-${stroke.colour ?? stroke.catalogMaterialId ?? stroke.customTextureAssetId}`} style={[styles.row, { justifyContent: "space-between" }]}>
                     <View style={[styles.row, { flex: 1 }]}>
-                      <View style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: material?.base_color ?? stroke.colour }} />
+                      <View style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: material?.base_color ?? stroke.colour ?? "#ffffff" }} />
                       <Text style={styles.muted}>
                         {ru ? `Штрих ${strokeIndex + 1}` : `Stroke ${strokeIndex + 1}`} · {stroke.region.region.kind} · {Math.round(stroke.opacity * 100)}%
                         {stroke.catalogMaterialId ? ` · PBR ${material ? (ru ? material.name_ru : material.name) : stroke.catalogMaterialId}` : ""}
+                        {stroke.customTextureAssetId !== undefined ? ` · ${ru ? "своя текстура" : "custom texture"} · ${stroke.customTextureTileSizeMm} mm` : ""}
                       </Text>
                     </View>
                     <Pressable

@@ -725,6 +725,89 @@ def test_bounded_partial_stack_replays_one_saved_textured_underlay(
     )
 
 
+def test_workspace_image_upload_is_a_hash_checked_custom_paint_texture(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    """Reference 77: an authorized immutable PNG can be replayed as a bounded PBR stroke."""
+    import trimesh
+    from PIL import Image
+
+    image = Image.new("RGBA", (2, 2))
+    image.putdata([(255, 0, 0, 255), (0, 255, 0, 255)] * 2)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    payload = buffer.getvalue()
+    texture_asset_id = upload(api_client, actor, payload, "paint-texture.png", "image/png")
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    stroke = {
+        "custom_texture_asset_id": texture_asset_id,
+        "custom_texture_tile_size_mm": 125,
+        "custom_texture_roughness": 0.35,
+        "custom_texture_metallic": 0.1,
+        "opacity": 0.75,
+    }
+
+    response = paint(
+        api_client,
+        actor,
+        version_id,
+        strokes=[stroke],
+        layer_name="Uploaded weave",
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    made = db_session.get(ProjectVersion, result["version_id"])
+    assert made is not None
+    assert made.provenance["paint"]["strokes"] == [stroke]
+    custom_material_id = f"workspace.texture.{texture_asset_id}"
+    assert result["paint"]["materials"] == [custom_material_id]
+    preview_id = {link.role: link.asset_id for link in made.assets}[AssetRole.preview]
+    preview = db_session.get(Asset, preview_id)
+    assert preview is not None
+    loaded = trimesh.load(
+        trimesh.util.wrap_as_stream(storage.get(preview.storage_key)),
+        file_type="glb",
+        force="scene",
+        process=False,
+    )
+    material = next(
+        geometry.visual.material
+        for geometry in loaded.geometry.values()
+        if geometry.visual.material.name == custom_material_id
+    )
+    assert material.baseColorTexture is not None
+    assert material.metallicRoughnessTexture is not None
+    assert material.alphaMode == "OPAQUE"
+
+    stranger = make_actor(db_session)
+    foreign_asset_id = upload(api_client, stranger, payload, "foreign.png", "image/png")
+    foreign = paint(
+        api_client,
+        actor,
+        version_id,
+        strokes=[{**stroke, "custom_texture_asset_id": foreign_asset_id}],
+        layer_name="Foreign",
+    )
+    assert foreign.status_code == 422
+    assert foreign.json()["error"]["message"] == "custom paint texture is unavailable"
+    assert (
+        paint(
+            api_client,
+            actor,
+            version_id,
+            strokes=[{"custom_texture_asset_id": texture_asset_id}],
+            layer_name="Incomplete",
+        ).status_code
+        == 422
+    )
+
+
 def test_reordering_paint_layers_changes_which_colour_wins_the_overlap(
     api_client: TestClient,
     actor: Actor,

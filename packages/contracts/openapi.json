@@ -35027,6 +35027,57 @@
             ],
             "title": "Catalog Material Id"
           },
+          "custom_texture_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Texture Asset Id"
+          },
+          "custom_texture_tile_size_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 5000.0,
+                "minimum": 10.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Texture Tile Size Mm"
+          },
+          "custom_texture_roughness": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.04
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Texture Roughness"
+          },
+          "custom_texture_metallic": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Texture Metallic"
+          },
           "opacity": {
             "type": "number",
             "maximum": 1.0,

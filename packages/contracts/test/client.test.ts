@@ -228,6 +228,40 @@ test("model paint posts a trusted catalogue material id without client-authored 
   });
 });
 
+test("model paint posts one bounded workspace custom texture snapshot", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse({ job_id: "job-custom", status: "queued", type: "paint_model" }, { status: 202 });
+    },
+  });
+
+  await client.paintModel("version-1", {
+    strokes: [{
+      custom_texture_asset_id: "123e4567-e89b-42d3-a456-426614174000",
+      custom_texture_tile_size_mm: 250,
+      custom_texture_roughness: 0.8,
+      custom_texture_metallic: 0,
+      opacity: 0.75,
+      region: { kind: "box" },
+    }],
+    layer_name: "My weave",
+  });
+  assert.deepEqual(JSON.parse(String(request!.init.body)), {
+    strokes: [{
+      custom_texture_asset_id: "123e4567-e89b-42d3-a456-426614174000",
+      custom_texture_tile_size_mm: 250,
+      custom_texture_roughness: 0.8,
+      custom_texture_metallic: 0,
+      opacity: 0.75,
+      region: { kind: "box" },
+    }],
+    layer_name: "My weave",
+  });
+});
+
 test("3D generation estimate posts the typed request and returns an honest null cost", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const client = new PhysicalAiClient({

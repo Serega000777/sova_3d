@@ -51,7 +51,12 @@ def carry_paint(
     payload: dict[str, Any] = {"strokes": strokes}
     if base_colour:
         payload["base_colour"] = base_colour
-    payload["strokes"] = painting.worker_strokes(strokes)
+    payload["strokes"] = painting.worker_strokes(
+        strokes,
+        db=ctx.db,
+        storage=ctx.storage,
+        workspace_id=workspace_id,
+    )
     request = paint.PaintRequest.model_validate(payload)
 
     with tempfile.TemporaryDirectory(prefix="repaint-") as tmp:

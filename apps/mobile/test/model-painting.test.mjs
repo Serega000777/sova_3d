@@ -86,6 +86,24 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
       layers: [{ name: "Oak wash", stroke_start: 0, stroke_count: 1 }],
     },
   }), [{ name: "Oak wash", strokeCount: 1, colours: [], materialIds: ["interior.wood.oak-natural.v1"], opacities: [0.85] }]);
+  const customTextureAssetId = "123e4567-e89b-42d3-a456-426614174000";
+  assert.deepEqual(paintLayerSummaries({
+    paint: {
+      strokes: [{
+        custom_texture_asset_id: customTextureAssetId,
+        custom_texture_tile_size_mm: 250,
+        custom_texture_roughness: 0.8,
+        custom_texture_metallic: 0,
+      }],
+      layers: [{ name: "My texture", stroke_start: 0, stroke_count: 1 }],
+    },
+  }), [{
+    name: "My texture",
+    strokeCount: 1,
+    colours: [],
+    materialIds: [`workspace.texture.${customTextureAssetId}`],
+    opacities: [1],
+  }]);
   assert.deepEqual(paintLayerSummaries({
     scene_paint: {
       part_a: {
@@ -96,6 +114,10 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
   }, "part_a"), [{ name: "Node accent", strokeCount: 1, colours: ["#1188ff"], materialIds: [], opacities: [0.75] }]);
   assert.match(project, /Сохранённые слои покраски/);
   assert.match(project, /paintLayerSummaries\(\s*active\?\.provenance/);
+  assert.match(project, /async function choosePaintTexture\(\)/);
+  assert.match(project, /await uploadPhoto\(client, session\.workspaceId, photo\)/);
+  assert.match(project, /custom_texture_asset_id: stroke\.customTextureAssetId/);
+  assert.match(project, /До 6 МБ и 16 Мп/);
 });
 
 test("saved layers can be moved only as one complete unique order", () => {

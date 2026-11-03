@@ -55,7 +55,12 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
             )
 
     try:
-        trusted_strokes = painting.worker_strokes(ctx.job.input.get("strokes") or [])
+        trusted_strokes = painting.worker_strokes(
+            ctx.job.input.get("strokes") or [],
+            db=ctx.db,
+            storage=ctx.storage,
+            workspace_id=ctx.job.workspace_id,
+        )
     except ValidationFailedError as exc:
         raise JobFailureError("invalid_paint", str(exc)) from exc
     payload: dict[str, Any] = {"strokes": trusted_strokes}

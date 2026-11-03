@@ -20,25 +20,90 @@ from app.models.versioning import Asset, ProjectVersion
 from app.services import jobs, projects, scenes
 from app.services.assets import model_asset_of
 from app.services.authz import require_workspace_role
+from app.storage import ObjectNotFoundError, ObjectStorage
 
 PAINT_JOB = "paint_model"
 PAINTABLE_FORMATS = frozenset({"stl", "obj", "ply", "glb", "gltf", "3mf"})
 MAX_STROKES = 512
+MAX_CUSTOM_TEXTURE_BYTES = 6 * 1024 * 1024
+CUSTOM_TEXTURE_FORMATS = frozenset({"jpeg", "png"})
 REGION_ADAPTER: TypeAdapter[Region] = TypeAdapter(Region)
 
 
-def worker_strokes(strokes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _custom_texture_asset(db: Session, *, workspace_id: uuid.UUID, asset_id: object) -> Asset:
+    try:
+        parsed = uuid.UUID(str(asset_id))
+    except (TypeError, ValueError) as exc:
+        raise ValidationFailedError("custom paint texture id is malformed") from exc
+    asset = db.get(Asset, parsed)
+    if (
+        asset is None
+        or asset.workspace_id != workspace_id
+        or asset.format not in CUSTOM_TEXTURE_FORMATS
+        or asset.byte_size > MAX_CUSTOM_TEXTURE_BYTES
+    ):
+        raise ValidationFailedError(
+            "custom paint texture is unavailable",
+            {"max_bytes": MAX_CUSTOM_TEXTURE_BYTES, "formats": sorted(CUSTOM_TEXTURE_FORMATS)},
+        )
+    return asset
+
+
+def worker_strokes(
+    strokes: list[dict[str, Any]],
+    *,
+    db: Session,
+    storage: ObjectStorage,
+    workspace_id: uuid.UUID,
+) -> list[dict[str, Any]]:
     """Expand catalogue ids into trusted worker snapshots and content-addressed bytes."""
     trusted: list[dict[str, Any]] = []
     for stroke in strokes:
-        unexpected = set(stroke) - {"colour", "catalog_material_id", "opacity", "region"}
+        unexpected = set(stroke) - {
+            "colour",
+            "catalog_material_id",
+            "custom_texture_asset_id",
+            "custom_texture_tile_size_mm",
+            "custom_texture_roughness",
+            "custom_texture_metallic",
+            "opacity",
+            "region",
+        }
         if unexpected:
             raise ValidationFailedError(
                 "paint stroke contains unsupported fields", {"fields": sorted(unexpected)}
             )
         material_id = stroke.get("catalog_material_id")
-        if material_id is None:
+        custom_asset_id = stroke.get("custom_texture_asset_id")
+        if material_id is None and custom_asset_id is None:
             trusted.append(dict(stroke))
+            continue
+        if material_id is not None and custom_asset_id is not None:
+            raise ValidationFailedError("paint stroke contains more than one surface source")
+        if custom_asset_id is not None:
+            asset = _custom_texture_asset(db, workspace_id=workspace_id, asset_id=custom_asset_id)
+            try:
+                payload = storage.get(asset.storage_key)
+            except ObjectNotFoundError as exc:
+                raise ValidationFailedError("custom paint texture is unavailable") from exc
+            if len(payload) != asset.byte_size or len(payload) > MAX_CUSTOM_TEXTURE_BYTES:
+                raise ValidationFailedError("custom paint texture bytes are invalid")
+            custom_resolved = {
+                "catalog_material_id": f"workspace.texture.{asset.id}",
+                "base_color": "#FFFFFF",
+                "roughness": stroke.get("custom_texture_roughness"),
+                "metallic": stroke.get("custom_texture_metallic"),
+                "texture_sha256": asset.sha256,
+                "texture_tile_size_mm": stroke.get("custom_texture_tile_size_mm"),
+                "texture_data_b64": base64.b64encode(payload).decode("ascii"),
+            }
+            trusted.append(
+                {
+                    "material": custom_resolved,
+                    **({"opacity": stroke["opacity"]} if "opacity" in stroke else {}),
+                    **({"region": stroke["region"]} if "region" in stroke else {}),
+                }
+            )
             continue
         if not isinstance(material_id, str):
             raise ValidationFailedError("paint material id must be a string")
@@ -63,6 +128,15 @@ def worker_strokes(strokes: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return trusted
+
+
+def validate_custom_texture_assets(
+    db: Session, *, workspace_id: uuid.UUID, strokes: list[dict[str, Any]]
+) -> None:
+    for stroke in strokes:
+        asset_id = stroke.get("custom_texture_asset_id")
+        if asset_id is not None:
+            _custom_texture_asset(db, workspace_id=workspace_id, asset_id=asset_id)
 
 
 def inherited_paint(
@@ -431,6 +505,7 @@ def enqueue_paint(
             if not isinstance(material_id, str):
                 raise ValidationFailedError("paint material id must be a string")
             material_by_id(material_id)
+    validate_custom_texture_assets(db, workspace_id=project.workspace_id, strokes=strokes)
     if not strokes and not base_colour:
         raise ValidationFailedError("nothing to paint: give a stroke or a base colour")
     if layer_name and not strokes:

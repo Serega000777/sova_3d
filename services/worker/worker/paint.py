@@ -19,7 +19,7 @@ from typing import Annotated, Any, Literal, cast
 
 import numpy as np
 import trimesh
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from trimesh.visual.material import PBRMaterial
 
@@ -33,6 +33,8 @@ DEFAULT_COLOUR = "#c9ced8"
 # each face's colour as a discrete Core base material, matching PLY without interpolation.
 COLOUR_FORMATS = frozenset({"glb", "ply", "obj", "3mf"})
 EXACT_COLOUR_FORMATS = frozenset({"ply", "3mf"})
+MAX_TEXTURE_BYTES = 6 * 1024 * 1024
+MAX_TEXTURE_PIXELS = 4096 * 4096
 
 
 class Strict(BaseModel):
@@ -69,7 +71,7 @@ class MaterialInput(Strict):
     metallic: Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
     texture_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
     texture_tile_size_mm: Annotated[float, Field(ge=10, le=5000)] | None = None
-    texture_data_b64: Annotated[str, Field(max_length=500_000)] | None = None
+    texture_data_b64: Annotated[str, Field(max_length=8_400_000)] | None = None
 
     @model_validator(mode="after")
     def _texture_evidence(self) -> MaterialInput:
@@ -81,6 +83,8 @@ class MaterialInput(Strict):
                 payload = base64.b64decode(self.texture_data_b64, validate=True)
             except ValueError as exc:
                 raise ValueError("material texture bytes are not valid base64") from exc
+            if len(payload) > MAX_TEXTURE_BYTES:
+                raise ValueError("material texture exceeds the 6 MiB paint limit")
             if hashlib.sha256(payload).hexdigest() != self.texture_sha256:
                 raise ValueError("material texture bytes do not match their sha256")
         return self
@@ -127,6 +131,22 @@ class PaintResult(BaseModel):
 def rgb(colour: str) -> tuple[int, int, int]:
     value = colour.lstrip("#")
     return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
+
+
+def _texture_image(payload: bytes) -> Image.Image:
+    """Decode bounded untrusted texture bytes only inside the worker sandbox."""
+
+    try:
+        with Image.open(io.BytesIO(payload)) as image:
+            if image.format not in {"PNG", "JPEG"}:
+                raise ValueError("material texture must be PNG or JPEG")
+            width, height = image.size
+            if width < 1 or height < 1 or width * height > MAX_TEXTURE_PIXELS:
+                raise ValueError("material texture exceeds the 16 megapixel paint limit")
+            image.verify()
+        return Image.open(io.BytesIO(payload)).convert("RGBA")
+    except (OSError, UnidentifiedImageError) as exc:
+        raise ValueError("material texture is not a valid image") from exc
 
 
 def _colour_composite_material(colour: str) -> MaterialInput:
@@ -501,9 +521,7 @@ def _bake_material_composite(
         if snapshot.texture_data_b64 is None:
             continue
         payload = base64.b64decode(snapshot.texture_data_b64, validate=True)
-        texture_cache[material_id] = np.asarray(
-            Image.open(io.BytesIO(payload)).convert("RGBA"), dtype=np.uint8
-        )
+        texture_cache[material_id] = np.asarray(_texture_image(payload), dtype=np.uint8)
 
     def sample_material(
         snapshot: MaterialInput,
@@ -665,7 +683,7 @@ def _painted_glb(
             uv = None
             if material.texture_data_b64 is not None:
                 payload = base64.b64decode(material.texture_data_b64, validate=True)
-                image = Image.open(io.BytesIO(payload)).convert("RGBA")
+                image = _texture_image(payload)
                 uv = _material_uv(part, material.texture_tile_size_mm or 1.0)
             pbr = PBRMaterial(
                 name=material_id,
