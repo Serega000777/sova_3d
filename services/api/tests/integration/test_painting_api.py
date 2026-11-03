@@ -555,6 +555,58 @@ def test_partial_untextured_material_replays_over_saved_pbr_layer(
         atol=1,
     )
 
+    colour = paint(
+        api_client,
+        actor,
+        str(result["version_id"]),
+        strokes=[{"colour": "#0000ff", "opacity": 0.5}],
+        layer_name="Blue glaze",
+    )
+    assert colour.status_code == 202, colour.text
+    (colour_job,) = run_all(db_session, storage)
+    assert colour_job.status is JobStatus.succeeded, colour_job.error
+
+    colour_result = colour_job.result or {}
+    assert colour_result["paint"]["materials"] == [base_id, finish_id]
+    coloured = db_session.get(ProjectVersion, colour_result["version_id"])
+    assert coloured is not None
+    assert [layer["name"] for layer in coloured.provenance["paint"]["layers"]] == [
+        "Metal base",
+        "White finish",
+        "Blue glaze",
+    ]
+    assert coloured.provenance["paint"]["strokes"][-1] == {
+        "colour": "#0000ff",
+        "opacity": 0.5,
+    }
+    coloured_preview_id = {link.role: link.asset_id for link in coloured.assets}[AssetRole.preview]
+    coloured_preview = db_session.get(Asset, coloured_preview_id)
+    assert coloured_preview is not None
+    coloured_scene = trimesh.load(
+        trimesh.util.wrap_as_stream(storage.get(coloured_preview.storage_key)),
+        file_type="glb",
+        force="scene",
+        process=False,
+    )
+    colour_pbr = next(
+        material
+        for geometry in coloured_scene.geometry.values()
+        if (material := getattr(geometry.visual, "material", None)) is not None
+        and material.name == "paint:colour-composite:0000FF"
+    )
+    colour_base = np.asarray(colour_pbr.baseColorTexture.convert("RGBA"))
+    colour_channels = np.asarray(colour_pbr.metallicRoughnessTexture.convert("RGBA"))
+    np.testing.assert_allclose(
+        np.unique(colour_base[colour_base[..., :3].any(axis=2), :3], axis=0),
+        [[94, 95, 223]],
+        atol=1,
+    )
+    np.testing.assert_allclose(
+        np.unique(colour_channels[colour_channels[..., 2] > 0, 1:3], axis=0),
+        [[197, 96]],
+        atol=1,
+    )
+
 
 def test_reordering_paint_layers_changes_which_colour_wins_the_overlap(
     api_client: TestClient,

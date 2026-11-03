@@ -129,6 +129,18 @@ def rgb(colour: str) -> tuple[int, int, int]:
     return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
 
 
+def _colour_composite_material(colour: str) -> MaterialInput:
+    """Internal fully-rough, non-metallic surface used to bake colour over PBR."""
+
+    normalized = "#" + colour.lstrip("#").upper()
+    return MaterialInput(
+        catalog_material_id=f"paint:colour-composite:{normalized[1:]}",
+        base_color=normalized,
+        roughness=1.0,
+        metallic=0.0,
+    )
+
+
 def _inside_box(centres: np.ndarray, region: BoxRegion) -> np.ndarray:
     low = np.asarray(region.min_mm, dtype=float)
     high = np.asarray(region.max_mm, dtype=float)
@@ -288,7 +300,8 @@ def _paint_mesh_state(
     current_roughness = np.ones(faces, dtype=np.float64)
     current_metallic = np.zeros(faces, dtype=np.float64)
     current_textured = np.zeros(faces, dtype=bool)
-    materials: dict[str, MaterialInput] = {}
+    catalogue_materials: dict[str, MaterialInput] = {}
+    render_materials: dict[str, MaterialInput] = {}
     unused: list[int] = []
 
     for index, stroke in enumerate(request.strokes):
@@ -307,10 +320,11 @@ def _paint_mesh_state(
                     "semi-transparent catalogue material cannot overlap a textured material"
                 )
             material_id = stroke.material.catalog_material_id
-            existing = materials.get(material_id)
+            existing = catalogue_materials.get(material_id)
             if existing is not None and existing != stroke.material:
                 raise ValueError("one catalogue material id resolved to different snapshots")
-            materials[material_id] = stroke.material
+            catalogue_materials[material_id] = stroke.material
+            render_materials[material_id] = stroke.material
             material_underlays[selected] = colours[selected, :3]
             material_underlay_roughness[selected] = current_roughness[selected]
             material_underlay_metallic[selected] = current_metallic[selected]
@@ -332,20 +346,34 @@ def _paint_mesh_state(
             current_textured[selected] = stroke.material.texture_data_b64 is not None
         else:
             assert stroke.colour is not None
-            if stroke.opacity < 1.0 and np.any(material_ids[selected] != ""):
-                raise ValueError("semi-transparent colour cannot overlap a catalogue material")
+            if stroke.opacity < 1.0 and np.any(current_textured[selected]):
+                raise ValueError("semi-transparent colour cannot overlap a textured material")
+            pbr_underlay = stroke.opacity < 1.0 and np.any(material_ids[selected] != "")
+            if pbr_underlay:
+                composite = _colour_composite_material(stroke.colour)
+                render_materials[composite.catalog_material_id] = composite
+                material_underlays[selected] = colours[selected, :3]
+                material_underlay_roughness[selected] = current_roughness[selected]
+                material_underlay_metallic[selected] = current_metallic[selected]
+                material_opacities[selected] = stroke.opacity
+                material_ids[selected] = composite.catalog_material_id
             source = np.asarray(rgb(stroke.colour), dtype=float)
             current = colours[selected, :3].astype(float)
             colours[selected, :3] = np.rint(
                 current * (1.0 - stroke.opacity) + source * stroke.opacity
             ).astype(np.uint8)
-            material_ids[selected] = ""
-            material_opacities[selected] = 1.0
-            material_underlays[selected] = colours[selected, :3]
-            material_underlay_roughness[selected] = 1.0
-            material_underlay_metallic[selected] = 0.0
-            current_roughness[selected] = 1.0
-            current_metallic[selected] = 0.0
+            current_roughness[selected] = (
+                current_roughness[selected] * (1.0 - stroke.opacity) + stroke.opacity
+            )
+            current_metallic[selected] = current_metallic[selected] * (1.0 - stroke.opacity)
+            if not pbr_underlay:
+                material_ids[selected] = ""
+                material_opacities[selected] = 1.0
+                material_underlays[selected] = colours[selected, :3]
+                material_underlay_roughness[selected] = 1.0
+                material_underlay_metallic[selected] = 0.0
+                current_roughness[selected] = 1.0
+                current_metallic[selected] = 0.0
             current_textured[selected] = False
         painted |= selected
 
@@ -358,13 +386,13 @@ def _paint_mesh_state(
             faces_before=before,
             painted_faces=int(painted.sum()),
             colours=list(dict.fromkeys(used)),
-            materials=list(materials),
+            materials=list(catalogue_materials),
             unused_strokes=unused,
             subdivided=subdivided,
         ),
         mesh,
         material_ids,
-        materials,
+        render_materials,
         material_opacities,
         material_underlays,
         material_underlay_roughness,
