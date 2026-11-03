@@ -260,7 +260,7 @@ def test_partial_colour_blends_over_existing_untextured_pbr(tmp_path) -> None:
     )
 
 
-def test_partial_material_samples_one_textured_pbr_underlay(tmp_path) -> None:
+def test_partial_material_blends_two_textured_pbr_layers(tmp_path) -> None:
     source = tmp_path / "box.stl"
     output = tmp_path / "painted.glb"
     source.write_bytes(trimesh.creation.box(extents=(10.0, 10.0, 10.0)).export(file_type="stl"))
@@ -279,11 +279,19 @@ def test_partial_material_samples_one_textured_pbr_underlay(tmp_path) -> None:
         texture_tile_size_mm=10.0,
         texture_data_b64=encoded,
     )
+    finish_image = Image.new("RGBA", (2, 2))
+    finish_image.putdata([(0, 0, 255, 255), (255, 255, 0, 255)] * 2)
+    finish_buffer = io.BytesIO()
+    finish_image.save(finish_buffer, format="PNG")
+    finish_payload = finish_buffer.getvalue()
     finish = paint.MaterialInput(
         catalog_material_id="interior.metal.steel.v1",
-        base_color="#0000FF",
+        base_color="#FFFFFF",
         roughness=0.6,
         metallic=0.2,
+        texture_sha256=hashlib.sha256(finish_payload).hexdigest(),
+        texture_tile_size_mm=100.0,
+        texture_data_b64=base64.b64encode(finish_payload).decode("ascii"),
     )
 
     result = paint.paint_file(
@@ -309,8 +317,8 @@ def test_partial_material_samples_one_textured_pbr_underlay(tmp_path) -> None:
     base = np.asarray(exported.baseColorTexture.convert("RGBA"))
     pbr = np.asarray(exported.metallicRoughnessTexture.convert("RGBA"))
     assert {tuple(value) for value in np.unique(base[base[..., :3].any(axis=2), :3], axis=0)} == {
-        (0, 128, 128),
         (128, 0, 128),
+        (128, 255, 0),
     }
     np.testing.assert_allclose(
         np.unique(pbr[pbr[..., 2] > 0, 1:3], axis=0),
@@ -371,47 +379,79 @@ def test_partial_colour_samples_one_textured_pbr_underlay(tmp_path) -> None:
     )
 
 
-def test_partial_surface_finish_fails_closed_over_a_composited_texture() -> None:
-    image = Image.new("RGBA", (2, 2), (180, 170, 160, 255))
+def test_bounded_surface_stack_replays_texture_material_and_colour(tmp_path) -> None:
+    image = Image.new("RGBA", (2, 2))
+    image.putdata([(255, 0, 0, 255), (0, 255, 0, 255)] * 2)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     payload = buffer.getvalue()
     encoded = base64.b64encode(payload).decode("ascii")
     textured = paint.MaterialInput(
         catalog_material_id="interior.concrete.test.v1",
-        base_color="#B8B6AF",
-        roughness=0.92,
+        base_color="#FFFFFF",
+        roughness=0.2,
+        metallic=0.8,
         texture_sha256=hashlib.sha256(payload).hexdigest(),
         texture_tile_size_mm=100.0,
         texture_data_b64=encoded,
     )
     finish = paint.MaterialInput(
         catalog_material_id="interior.metal.steel.v1",
+        base_color="#0000FF",
+        roughness=0.6,
+        metallic=0.2,
+    )
+    source = tmp_path / "box.stl"
+    output = tmp_path / "painted.glb"
+    source.write_bytes(trimesh.creation.box(extents=(10.0, 10.0, 10.0)).export(file_type="stl"))
+
+    result = paint.paint_file(
+        source,
+        "stl",
+        paint.PaintRequest(
+            strokes=[
+                paint.Stroke(material=textured),
+                paint.Stroke(material=finish, opacity=0.5),
+                paint.Stroke(colour="#00ff00", opacity=0.25),
+            ]
+        ),
+        output,
+        "glb",
+    )
+
+    assert result.ok
+    loaded = trimesh.load(output, force="scene", process=False)
+    exported = next(
+        geometry.visual.material
+        for geometry in loaded.geometry.values()
+        if geometry.visual.material.name == "paint:colour-composite:00FF00"
+    )
+    base = np.asarray(exported.baseColorTexture.convert("RGBA"))
+    pbr = np.asarray(exported.metallicRoughnessTexture.convert("RGBA"))
+    assert {tuple(value) for value in np.unique(base[base[..., :3].any(axis=2), :3], axis=0)} == {
+        (0, 159, 96),
+        (96, 64, 96),
+    }
+    np.testing.assert_allclose(
+        np.unique(pbr[pbr[..., 2] > 0, 1:3], axis=0),
+        [[140, 96]],
+        atol=1,
+    )
+
+
+def test_surface_stack_fails_closed_above_the_eight_layer_bound() -> None:
+    material = paint.MaterialInput(
+        catalog_material_id="interior.metal.steel.v1",
         base_color="#A9AFB5",
         roughness=0.42,
         metallic=1.0,
     )
-    mesh = trimesh.creation.box(extents=(10.0, 10.0, 10.0))
+    strokes = [paint.Stroke(material=material)] + [
+        paint.Stroke(material=material, opacity=0.5) for _ in range(paint.MAX_SURFACE_LAYERS)
+    ]
 
-    with pytest.raises(ValueError, match="material cannot overlap a composited texture"):
+    with pytest.raises(ValueError, match="surface composite exceeds 8 effective layers"):
         paint.paint_mesh(
-            mesh,
-            paint.PaintRequest(
-                strokes=[
-                    paint.Stroke(material=textured),
-                    paint.Stroke(material=finish, opacity=0.5),
-                    paint.Stroke(material=finish, opacity=0.5),
-                ]
-            ),
-        )
-    with pytest.raises(ValueError, match="colour cannot overlap a composited texture"):
-        paint.paint_mesh(
-            mesh,
-            paint.PaintRequest(
-                strokes=[
-                    paint.Stroke(material=textured),
-                    paint.Stroke(colour="#ff0000", opacity=0.5),
-                    paint.Stroke(colour="#0000ff", opacity=0.5),
-                ]
-            ),
+            trimesh.creation.box(extents=(10.0, 10.0, 10.0)),
+            paint.PaintRequest(strokes=strokes),
         )

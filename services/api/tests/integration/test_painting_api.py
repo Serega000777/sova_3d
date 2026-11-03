@@ -608,14 +608,14 @@ def test_partial_untextured_material_replays_over_saved_pbr_layer(
     )
 
 
-def test_partial_pbr_finish_samples_one_saved_textured_underlay(
+def test_bounded_partial_stack_replays_one_saved_textured_underlay(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
     storage: S3Storage,
     project: str,  # noqa: F811
 ) -> None:
-    """Reference 77: one trusted texture can be sampled into the next PBR layer."""
+    """Reference 77: one trusted texture can feed a bounded multi-layer PBR stack."""
     import trimesh
 
     version_id = imported_version(api_client, actor, db_session, storage, project)
@@ -679,7 +679,7 @@ def test_partial_pbr_finish_samples_one_saved_textured_underlay(
     colour = paint(
         api_client,
         actor,
-        str((underlay_job.result or {})["version_id"]),
+        str(result["version_id"]),
         strokes=[{"colour": "#0000ff", "opacity": 0.5}],
         layer_name="Blue glaze",
     )
@@ -688,9 +688,14 @@ def test_partial_pbr_finish_samples_one_saved_textured_underlay(
     assert colour_job.status is JobStatus.succeeded, colour_job.error
 
     colour_result = colour_job.result or {}
-    assert colour_result["paint"]["materials"] == [underlay_id]
+    assert colour_result["paint"]["materials"] == [underlay_id, finish_id]
     coloured = db_session.get(ProjectVersion, colour_result["version_id"])
     assert coloured is not None
+    assert [layer["name"] for layer in coloured.provenance["paint"]["layers"]] == [
+        "Concrete base",
+        "Steel finish",
+        "Blue glaze",
+    ]
     colour_preview_id = {link.role: link.asset_id for link in coloured.assets}[AssetRole.preview]
     colour_preview = db_session.get(Asset, colour_preview_id)
     assert colour_preview is not None
@@ -710,12 +715,12 @@ def test_partial_pbr_finish_samples_one_saved_textured_underlay(
     colour_channels = np.asarray(colour_pbr.metallicRoughnessTexture.convert("RGBA"))
     np.testing.assert_allclose(
         np.unique(colour_base[colour_base[..., :3].any(axis=2), :3], axis=0),
-        [[62, 60, 184]],
+        [[73, 74, 201]],
         atol=1,
     )
     np.testing.assert_allclose(
         np.unique(colour_channels[colour_channels[..., 1] > 0, 1:3], axis=0),
-        [[245, 0]],
+        [[213, 64]],
         atol=1,
     )
 

@@ -175,6 +175,9 @@ def _inside_lasso(centres: np.ndarray, region: LassoRegion) -> np.ndarray:
 # shape does not change — only how finely it is tessellated — and the printable model is a
 # separate asset that is never touched.
 MAX_PAINT_FACES = 60_000
+# Atlas baking replays the effective PBR surface stack for every covered texel. Keep that
+# work and its sandbox memory predictable while still allowing several saved texture layers.
+MAX_SURFACE_LAYERS = 8
 
 
 def inside_region(points: np.ndarray, region: Region) -> np.ndarray:
@@ -299,11 +302,10 @@ def _paint_mesh_state(
     material_underlays = colours[:, :3].copy()
     material_underlay_roughness = np.ones(faces, dtype=np.float64)
     material_underlay_metallic = np.zeros(faces, dtype=np.float64)
-    material_underlay_texture_ids = np.full(faces, "", dtype=object)
+    material_layer_stacks = np.empty(faces, dtype=object)
+    material_layer_stacks.fill(())
     current_roughness = np.ones(faces, dtype=np.float64)
     current_metallic = np.zeros(faces, dtype=np.float64)
-    current_textured = np.zeros(faces, dtype=bool)
-    current_texture_source_ids = np.full(faces, "", dtype=object)
     catalogue_materials: dict[str, MaterialInput] = {}
     render_materials: dict[str, MaterialInput] = {}
     unused: list[int] = []
@@ -319,24 +321,26 @@ def _paint_mesh_state(
             unused.append(index)  # the user drew somewhere the model is not
             continue
         if stroke.material is not None:
-            selected_textured = current_textured[selected].copy()
-            selected_texture_sources = current_texture_source_ids[selected].copy()
-            if stroke.opacity < 1.0 and np.any(
-                selected_textured & (selected_texture_sources == "")
-            ):
-                raise ValueError(
-                    "semi-transparent catalogue material cannot overlap a composited texture"
-                )
             material_id = stroke.material.catalog_material_id
             existing = catalogue_materials.get(material_id)
             if existing is not None and existing != stroke.material:
                 raise ValueError("one catalogue material id resolved to different snapshots")
             catalogue_materials[material_id] = stroke.material
             render_materials[material_id] = stroke.material
-            material_underlays[selected] = colours[selected, :3]
-            material_underlay_roughness[selected] = current_roughness[selected]
-            material_underlay_metallic[selected] = current_metallic[selected]
-            material_underlay_texture_ids[selected] = selected_texture_sources
+            for face_index in np.flatnonzero(selected):
+                stack = material_layer_stacks[face_index]
+                if stroke.opacity == 1.0:
+                    material_layer_stacks[face_index] = ((material_id, 1.0),)
+                else:
+                    if not stack:
+                        material_underlays[face_index] = colours[face_index, :3]
+                        material_underlay_roughness[face_index] = current_roughness[face_index]
+                        material_underlay_metallic[face_index] = current_metallic[face_index]
+                    if len(stack) >= MAX_SURFACE_LAYERS:
+                        raise ValueError(
+                            f"surface composite exceeds {MAX_SURFACE_LAYERS} effective layers"
+                        )
+                    material_layer_stacks[face_index] = (*stack, (material_id, stroke.opacity))
             material_opacities[selected] = stroke.opacity
             material_ids[selected] = material_id
             source = np.asarray(rgb(stroke.material.base_color), dtype=float)
@@ -352,33 +356,29 @@ def _paint_mesh_state(
                 current_metallic[selected] * (1.0 - stroke.opacity)
                 + stroke.material.metallic * stroke.opacity
             )
-            material_is_textured = stroke.material.texture_data_b64 is not None
-            current_textured[selected] = (
-                material_is_textured
-                if stroke.opacity == 1.0
-                else selected_textured | material_is_textured
-            )
-            current_texture_source_ids[selected] = (
-                material_id if stroke.opacity == 1.0 and material_is_textured else ""
-            )
         else:
             assert stroke.colour is not None
-            selected_textured = current_textured[selected].copy()
-            selected_texture_sources = current_texture_source_ids[selected].copy()
-            if stroke.opacity < 1.0 and np.any(
-                selected_textured & (selected_texture_sources == "")
-            ):
-                raise ValueError("semi-transparent colour cannot overlap a composited texture")
-            pbr_underlay = stroke.opacity < 1.0 and np.any(material_ids[selected] != "")
+            selected_faces = np.flatnonzero(selected)
+            pbr_faces = np.asarray(
+                [face_index for face_index in selected_faces if material_layer_stacks[face_index]],
+                dtype=np.int64,
+            )
+            pbr_underlay = stroke.opacity < 1.0 and pbr_faces.size > 0
             if pbr_underlay:
                 composite = _colour_composite_material(stroke.colour)
                 render_materials[composite.catalog_material_id] = composite
-                material_underlays[selected] = colours[selected, :3]
-                material_underlay_roughness[selected] = current_roughness[selected]
-                material_underlay_metallic[selected] = current_metallic[selected]
-                material_underlay_texture_ids[selected] = selected_texture_sources
-                material_opacities[selected] = stroke.opacity
-                material_ids[selected] = composite.catalog_material_id
+                for face_index in pbr_faces:
+                    stack = material_layer_stacks[face_index]
+                    if len(stack) >= MAX_SURFACE_LAYERS:
+                        raise ValueError(
+                            f"surface composite exceeds {MAX_SURFACE_LAYERS} effective layers"
+                        )
+                    material_layer_stacks[face_index] = (
+                        *stack,
+                        (composite.catalog_material_id, stroke.opacity),
+                    )
+                material_opacities[pbr_faces] = stroke.opacity
+                material_ids[pbr_faces] = composite.catalog_material_id
             source = np.asarray(rgb(stroke.colour), dtype=float)
             current = colours[selected, :3].astype(float)
             colours[selected, :3] = np.rint(
@@ -388,17 +388,26 @@ def _paint_mesh_state(
                 current_roughness[selected] * (1.0 - stroke.opacity) + stroke.opacity
             )
             current_metallic[selected] = current_metallic[selected] * (1.0 - stroke.opacity)
-            if not pbr_underlay:
-                material_ids[selected] = ""
-                material_opacities[selected] = 1.0
-                material_underlays[selected] = colours[selected, :3]
-                material_underlay_roughness[selected] = 1.0
-                material_underlay_metallic[selected] = 0.0
-                material_underlay_texture_ids[selected] = ""
-                current_roughness[selected] = 1.0
-                current_metallic[selected] = 0.0
-            current_textured[selected] = selected_textured if pbr_underlay else False
-            current_texture_source_ids[selected] = ""
+            plain_faces = np.asarray(
+                [
+                    face_index
+                    for face_index in selected_faces
+                    if not material_layer_stacks[face_index]
+                ],
+                dtype=np.int64,
+            )
+            if stroke.opacity == 1.0:
+                for face_index in selected_faces:
+                    material_layer_stacks[face_index] = ()
+                plain_faces = selected_faces
+            if plain_faces.size:
+                material_ids[plain_faces] = ""
+                material_opacities[plain_faces] = 1.0
+                material_underlays[plain_faces] = colours[plain_faces, :3]
+                material_underlay_roughness[plain_faces] = 1.0
+                material_underlay_metallic[plain_faces] = 0.0
+                current_roughness[plain_faces] = 1.0
+                current_metallic[plain_faces] = 0.0
         painted |= selected
 
     mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, face_colors=colours)
@@ -421,7 +430,7 @@ def _paint_mesh_state(
         material_underlays,
         material_underlay_roughness,
         material_underlay_metallic,
-        material_underlay_texture_ids,
+        material_layer_stacks,
     )
 
 
@@ -467,9 +476,7 @@ def _bake_material_composite(
     underlays: np.ndarray,
     underlay_roughness: np.ndarray,
     underlay_metallic: np.ndarray,
-    underlay_texture_ids: np.ndarray,
-    opacities: np.ndarray,
-    material: MaterialInput,
+    layer_stacks: np.ndarray,
     materials: dict[str, MaterialInput],
     *,
     size: int = 512,
@@ -477,10 +484,10 @@ def _bake_material_composite(
     """Bake one opaque base-colour and metallic/roughness atlas for material opacity.
 
     Material opacity means surface-finish coverage over the preceding opaque surface, not
-    transparent geometry. The catalogue texture is sampled in its real millimetre tile size;
-    every output texel has alpha 255. Untyped RGB paint contributes the conservative
-    non-metallic, fully rough baseline, while a preceding untextured catalogue material carries
-    its exact roughness and metallic values into the blend.
+    transparent geometry. Up to ``MAX_SURFACE_LAYERS`` effective PBR/texture layers are replayed
+    in order. Every catalogue texture is sampled in its own real millimetre tile size and every
+    output texel has alpha 255. Untyped RGB paint contributes the conservative non-metallic,
+    fully rough baseline.
     """
 
     shaded = mesh.unwrap()
@@ -528,7 +535,6 @@ def _bake_material_composite(
     base_atlas = np.zeros((size, size, 4), dtype=np.uint8)
     pbr_atlas = np.zeros((size, size, 4), dtype=np.uint8)
     corners = np.c_[uv[:, 0] * (size - 1), (1.0 - uv[:, 1]) * (size - 1)]
-    base_factor = np.asarray(rgb(material.base_color), dtype=np.float64) / 255.0
 
     for face_index, face in enumerate(shaded.faces):
         destination = corners[face]
@@ -562,52 +568,35 @@ def _bake_material_composite(
             continue
 
         triangle_mm = shaded.vertices[face]
-        sampled = sample_material(
-            material,
-            triangle_mm,
-            weight_first,
-            weight_second,
-            weight_third,
-            inside,
-        )
-
-        coverage = opacities[face_index] * (sampled[:, 3:4].astype(np.float64) / 255.0)
-        material_rgb = sampled[:, :3].astype(np.float64) * base_factor
-        underlay_texture_id = str(underlay_texture_ids[face_index])
-        if underlay_texture_id:
-            underlay_material = materials.get(underlay_texture_id)
-            if underlay_material is None or underlay_material.texture_data_b64 is None:
-                raise ValueError("catalogue material texture underlay is unavailable")
-            underlay_sample = sample_material(
-                underlay_material,
+        composed = np.tile(underlays[face_index].astype(np.float64), (int(inside.sum()), 1))
+        roughness = np.full(int(inside.sum()), underlay_roughness[face_index], dtype=np.float64)
+        metallic = np.full(int(inside.sum()), underlay_metallic[face_index], dtype=np.float64)
+        stack = layer_stacks[face_index]
+        if not stack or len(stack) > MAX_SURFACE_LAYERS:
+            raise ValueError("surface composite layer evidence is invalid")
+        for material_id, opacity in stack:
+            layer = materials.get(str(material_id))
+            if layer is None:
+                raise ValueError("surface composite material is unavailable")
+            sampled = sample_material(
+                layer,
                 triangle_mm,
                 weight_first,
                 weight_second,
                 weight_third,
                 inside,
             )
-            underlay = underlay_sample[:, :3].astype(np.float64) * (
-                np.asarray(rgb(underlay_material.base_color), dtype=np.float64) / 255.0
+            coverage = float(opacity) * (sampled[:, 3:4].astype(np.float64) / 255.0)
+            material_rgb = sampled[:, :3].astype(np.float64) * (
+                np.asarray(rgb(layer.base_color), dtype=np.float64) / 255.0
             )
-        else:
-            underlay = underlays[face_index].astype(np.float64)
-        composed = np.rint(underlay * (1.0 - coverage) + material_rgb * coverage)
+            composed = composed * (1.0 - coverage) + material_rgb * coverage
+            roughness = roughness * (1.0 - coverage[:, 0]) + layer.roughness * coverage[:, 0]
+            metallic = metallic * (1.0 - coverage[:, 0]) + layer.metallic * coverage[:, 0]
+        composed = np.rint(composed)
         base_pixels = np.c_[np.clip(composed, 0, 255).astype(np.uint8), np.full(len(sampled), 255)]
-
-        roughness = np.rint(
-            (
-                underlay_roughness[face_index] * (1.0 - coverage[:, 0])
-                + material.roughness * coverage[:, 0]
-            )
-            * 255
-        )
-        metallic = np.rint(
-            (
-                underlay_metallic[face_index] * (1.0 - coverage[:, 0])
-                + material.metallic * coverage[:, 0]
-            )
-            * 255
-        )
+        roughness = np.rint(roughness * 255)
+        metallic = np.rint(metallic * 255)
         pbr_pixels = np.c_[
             np.full(len(sampled), 255),
             np.clip(roughness, 0, 255).astype(np.uint8),
@@ -633,7 +622,7 @@ def _painted_glb(
     material_underlays: np.ndarray,
     material_underlay_roughness: np.ndarray,
     material_underlay_metallic: np.ndarray,
-    material_underlay_texture_ids: np.ndarray,
+    material_layer_stacks: np.ndarray,
 ) -> bytes:
     """Export exact face groups with real PBR materials and repeatable box-projected maps."""
     scene = trimesh.Scene()
@@ -658,9 +647,7 @@ def _painted_glb(
                 material_underlays[face_ids],
                 material_underlay_roughness[face_ids],
                 material_underlay_metallic[face_ids],
-                material_underlay_texture_ids[face_ids],
-                material_opacities[face_ids],
-                material,
+                material_layer_stacks[face_ids],
                 materials,
             )
             uv = cast(trimesh.visual.TextureVisuals, part.visual).uv
@@ -725,7 +712,7 @@ def paint_file(
         material_underlays,
         material_underlay_roughness,
         material_underlay_metallic,
-        material_underlay_texture_ids,
+        material_layer_stacks,
     ) = _paint_mesh_state(mesh, request)
     if not result.ok:
         return result
@@ -744,7 +731,7 @@ def paint_file(
             material_underlays,
             material_underlay_roughness,
             material_underlay_metallic,
-            material_underlay_texture_ids,
+            material_layer_stacks,
         )
     elif target_format == "ply":
         payload = mesh.export(file_type="ply", encoding="binary")  # PLY keeps face colours
