@@ -203,9 +203,9 @@ def scene_source(
 ) -> tuple[Asset, dict[str, Any]]:
     """Resolve one visible direct object and its trusted bare paint source.
 
-    Current paint regions are axis-aligned boxes/lassos. Only a proper signed axis permutation
-    (90-degree rotations or reflections, optional scale and translation) keeps that
-    representation exact in object-local millimetres. Arbitrary rotation and shear fail closed.
+    Public paint regions are world-space axis-aligned boxes/lassos. Signed axis permutations
+    are converted to the compact local representation; every other invertible affine transform
+    is retained as a trusted object-to-world region wrapper for exact sandbox evaluation.
     """
 
     target = scenes.direct_object(
@@ -218,7 +218,11 @@ def scene_source(
         raise ValidationFailedError(
             "a hidden scene object cannot be painted", {"scene_node_id": scene_node_id}
         )
-    _axis_mapping(target["world_transform"], scene_node_id=scene_node_id)
+    if abs(_linear_determinant(target["world_transform"])) <= 1e-12:
+        raise ValidationFailedError(
+            "scene painting requires a non-collapsed affine transform",
+            {"scene_node_id": scene_node_id},
+        )
 
     current_asset_id = uuid.UUID(str(target["resolved_asset_id"]))
     source_asset_id = current_asset_id
@@ -268,18 +272,22 @@ def _axis_mapping(
         mapping.append(column)
         coefficients.append(float(world_transform[row][column]))
         used.add(column)
-    linear = [row[:3] for row in world_transform[:3]]
-    determinant = (
-        linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])
-        - linear[0][1] * (linear[1][0] * linear[2][2] - linear[1][2] * linear[2][0])
-        + linear[0][2] * (linear[1][0] * linear[2][1] - linear[1][1] * linear[2][0])
-    )
+    determinant = _linear_determinant(world_transform)
     if abs(determinant) <= 1e-12:
         raise ValidationFailedError(
             "scene painting requires a non-collapsed signed axis permutation",
             {"scene_node_id": scene_node_id},
         )
     return mapping, coefficients
+
+
+def _linear_determinant(matrix: Sequence[Sequence[float]]) -> float:
+    linear = [row[:3] for row in matrix[:3]]
+    return (
+        linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])
+        - linear[0][1] * (linear[1][0] * linear[2][2] - linear[1][2] * linear[2][0])
+        + linear[0][2] * (linear[1][0] * linear[2][1] - linear[1][1] * linear[2][0])
+    )
 
 
 def _region_in_object_space(
@@ -292,7 +300,16 @@ def _region_in_object_space(
             "paint region is malformed", {"scene_node_id": scene_node_id}
         ) from exc
     translation = [float(world_transform[index][3]) for index in range(3)]
-    mapping, coefficients = _axis_mapping(world_transform, scene_node_id=scene_node_id)
+    try:
+        mapping, coefficients = _axis_mapping(world_transform, scene_node_id=scene_node_id)
+    except ValidationFailedError:
+        if abs(_linear_determinant(world_transform)) <= 1e-12:
+            raise
+        return {
+            "kind": "affine",
+            "region": region.model_dump(mode="json"),
+            "object_to_world": [[float(value) for value in row] for row in world_transform],
+        }
 
     def local_point(world: Sequence[float]) -> list[float]:
         local = [0.0, 0.0, 0.0]
@@ -475,6 +492,16 @@ def enqueue_paint(
     version = projects.get_version(db, user_id=user_id, version_id=version_id)
     project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+
+    # `affine` is an internal server-created worker region. Public callers may submit only the
+    # canonical world-space box/lasso contract, including for legacy single-object versions.
+    for stroke in strokes:
+        if "region" not in stroke:
+            continue
+        try:
+            REGION_ADAPTER.validate_python(stroke["region"])
+        except ValidationError as exc:
+            raise ValidationFailedError("paint region is malformed") from exc
 
     if scenes.has_explicit_scene(version):
         if scene_node_id is None:

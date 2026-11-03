@@ -304,7 +304,7 @@ def test_scene_paint_targets_one_translated_scaled_object_and_preserves_siblings
     assert replaced_row.provenance["scene_edit"]["dropped_paint_node_ids"] == ["part"]
 
 
-def test_scene_paint_fails_closed_for_non_direct_hidden_arbitrary_rotated_or_sheared_targets(
+def test_scene_paint_supports_arbitrary_affine_direct_nodes_and_rejects_other_targets(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
@@ -323,6 +323,22 @@ def test_scene_paint_fails_closed_for_non_direct_hidden_arbitrary_rotated_or_she
         [0, 0, 0, 1],
     ]
     sheared = [[1, 0.25, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    forged_internal = paint(
+        api_client,
+        actor,
+        source_id,
+        strokes=[
+            {
+                "colour": "#ff5533",
+                "region": {
+                    "kind": "affine",
+                    "region": TOP_FACE,
+                    "object_to_world": rotated,
+                },
+            }
+        ],
+    )
+    assert forged_internal.status_code == 422
     scene = api_client.post(
         f"/api/v1/models/{source_id}/scene",
         json={
@@ -363,24 +379,91 @@ def test_scene_paint_fails_closed_for_non_direct_hidden_arbitrary_rotated_or_she
     assert scene.status_code == 201, scene.text
     version_id = scene.json()["version_id"]
 
-    def status(target: str, request_actor: Actor = actor) -> int:
+    def status(
+        target: str, request_actor: Actor = actor, region: dict[str, Any] | None = None
+    ) -> int:
         return paint(
             api_client,
             request_actor,
             version_id,
             scene_node_id=target,
-            strokes=[{"colour": "#ff5533", "region": TOP_FACE}],
+            strokes=[{"colour": "#ff5533", "region": region or TOP_FACE}],
+            layer_name="Affine accent",
         ).status_code
 
     assert status("root") == 422
     assert status("copy") == 422
     assert status("hidden") == 422
-    assert status("part") == 422
-    assert status("sheared") == 422
     viewer = make_actor(db_session, workspace=actor.workspace, role=WorkspaceRole.viewer)
     assert status("part", viewer) == 403
     stranger = make_actor(db_session)
     assert status("part", stranger) == 404
+
+    rotated_top = {
+        **TOP_FACE,
+        "points_mm": [[diagonal * (x - y), diagonal * (x + y)] for x, y in TOP_FACE["points_mm"]],
+    }
+    assert status("part", region=rotated_top) == 202
+    (rotated_job,) = run_all(db_session, storage)
+    assert rotated_job.status is JobStatus.succeeded, rotated_job.error
+    rotated_version = db_session.get(ProjectVersion, (rotated_job.result or {})["version_id"])
+    assert rotated_version is not None
+    rotated_record = rotated_version.provenance["scene_paint"]["part"]
+    assert rotated_record["strokes"][0]["region"] == {
+        "kind": "affine",
+        "region": rotated_top,
+        "object_to_world": rotated,
+    }
+    rotated_nodes = api_client.get(
+        f"/api/v1/models/{rotated_version.id}/scene", headers=actor.headers
+    ).json()["nodes"]
+    moved_rotated = [row[:] for row in rotated]
+    moved_rotated[0][3] = 100
+    moved_rotated[1][3] = 50
+    moved = api_client.post(
+        f"/api/v1/models/{rotated_version.id}/scene",
+        json={
+            "nodes": [
+                {**node, "transform": moved_rotated} if node["id"] == "part" else node
+                for node in rotated_nodes
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert moved.status_code == 201, moved.text
+    replay = reorder(
+        api_client,
+        actor,
+        moved.json()["version_id"],
+        ["Affine accent"],
+        scene_node_id="part",
+    )
+    assert replay.status_code == 202, replay.text
+    (replay_job,) = run_all(db_session, storage)
+    assert replay_job.status is JobStatus.succeeded, replay_job.error
+    replay_nodes = api_client.get(
+        f"/api/v1/models/{(replay_job.result or {})['version_id']}/scene", headers=actor.headers
+    ).json()["nodes"]
+    assert (
+        next(node for node in replay_nodes if node["id"] == "part")["world_transform"]
+        == moved_rotated
+    )
+
+    sheared_top = {
+        **TOP_FACE,
+        "points_mm": [[x + 0.25 * y, y] for x, y in TOP_FACE["points_mm"]],
+    }
+    assert status("sheared", region=sheared_top) == 202
+    (sheared_job,) = run_all(db_session, storage)
+    assert sheared_job.status is JobStatus.succeeded, sheared_job.error
+    sheared_version = db_session.get(ProjectVersion, (sheared_job.result or {})["version_id"])
+    assert sheared_version is not None
+    sheared_record = sheared_version.provenance["scene_paint"]["sheared"]
+    assert sheared_record["strokes"][0]["region"] == {
+        "kind": "affine",
+        "region": sheared_top,
+        "object_to_world": sheared,
+    }
 
 
 def test_named_layer_requires_a_nonblank_name_and_at_least_one_stroke(

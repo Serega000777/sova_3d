@@ -39,6 +39,29 @@ def test_stroke_opacity_is_bounded(opacity: float) -> None:
         paint.Stroke(colour="#ff0000", opacity=opacity)
 
 
+def test_affine_region_evaluates_the_world_brush_against_local_mesh_points() -> None:
+    diagonal = 2**-0.5
+    region = paint.AffineRegion(
+        region=paint.BoxRegion(min_mm=(6, 6, -1), max_mm=(9, 9, 1)),
+        object_to_world=(
+            (diagonal, -diagonal, 0, 0),
+            (diagonal, diagonal, 0, 0),
+            (0, 0, 1, 0),
+            (0, 0, 0, 1),
+        ),
+    )
+
+    np.testing.assert_array_equal(
+        paint.inside_region(np.asarray([[10, 0, 0], [0, 10, 0]], dtype=float), region),
+        [True, False],
+    )
+    with pytest.raises(ValidationError, match="cannot collapse"):
+        paint.AffineRegion(
+            region=paint.BoxRegion(min_mm=(0, 0, 0), max_mm=(1, 1, 1)),
+            object_to_world=((1, 0, 0, 0), (0, 0, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)),
+        )
+
+
 def test_catalogue_material_is_exported_as_real_pbr_group(tmp_path) -> None:
     source = tmp_path / "box.stl"
     output = tmp_path / "painted.glb"

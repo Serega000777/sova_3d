@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+from itertools import product
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
@@ -55,7 +56,41 @@ class LassoRegion(Strict):
     points_mm: list[tuple[float, float]] = Field(min_length=3)
 
 
-Region = Annotated[BoxRegion | LassoRegion, Field(discriminator="kind")]
+BaseRegion = Annotated[BoxRegion | LassoRegion, Field(discriminator="kind")]
+
+
+class AffineRegion(Strict):
+    """A world-space brush volume expressed against one immutable local mesh.
+
+    The API creates this only after resolving a trusted scene-node transform. Keeping the
+    original object-to-world matrix with the stroke makes the selected local surface stable
+    when the node is later moved, reparented or its layers are replayed.
+    """
+
+    kind: Literal["affine"] = "affine"
+    region: BaseRegion
+    object_to_world: tuple[
+        tuple[float, float, float, float],
+        tuple[float, float, float, float],
+        tuple[float, float, float, float],
+        tuple[float, float, float, float],
+    ]
+
+    @model_validator(mode="after")
+    def _invertible_affine(self) -> AffineRegion:
+        matrix = np.asarray(self.object_to_world, dtype=float)
+        if (
+            not np.isfinite(matrix).all()
+            or np.abs(matrix).max() > 1_000_000
+            or not np.allclose(matrix[3], [0.0, 0.0, 0.0, 1.0], atol=1e-9)
+        ):
+            raise ValueError("an affine paint region needs a finite affine matrix")
+        if abs(float(np.linalg.det(matrix[:3, :3]))) <= 1e-12:
+            raise ValueError("an affine paint region transform cannot collapse geometry")
+        return self
+
+
+Region = Annotated[BoxRegion | LassoRegion | AffineRegion, Field(discriminator="kind")]
 
 
 class MaterialInput(Strict):
@@ -190,6 +225,12 @@ def _inside_lasso(centres: np.ndarray, region: LassoRegion) -> np.ndarray:
     return inside & within_depth
 
 
+def _inside_affine(points: np.ndarray, region: AffineRegion) -> np.ndarray:
+    matrix = np.asarray(region.object_to_world, dtype=float)
+    world = points @ matrix[:3, :3].T + matrix[:3, 3]
+    return inside_region(world, region.region)
+
+
 # A stroke can be much smaller than the triangles under it (a box has two per face), so the
 # mesh is refined until a triangle is small enough for the outline to mean something. The
 # shape does not change — only how finely it is tessellated — and the printable model is a
@@ -204,11 +245,20 @@ def inside_region(points: np.ndarray, region: Region) -> np.ndarray:
     """Which of `points` (n × 3, mm) a region covers — shared with the engineering facts."""
     if isinstance(region, BoxRegion):
         return _inside_box(points, region)
+    if isinstance(region, AffineRegion):
+        return _inside_affine(points, region)
     return _inside_lasso(points, region)
 
 
 def _bounds(region: Region) -> tuple[np.ndarray, np.ndarray]:
     """The axis-aligned box a region can touch, in mm."""
+    if isinstance(region, AffineRegion):
+        world_low, world_high = _bounds(region.region)
+        corners = np.asarray(list(product(*zip(world_low, world_high, strict=True))), dtype=float)
+        matrix = np.asarray(region.object_to_world, dtype=float)
+        inverse = np.linalg.inv(matrix[:3, :3])
+        local = (corners - matrix[:3, 3]) @ inverse.T
+        return local.min(axis=0), local.max(axis=0)
     if isinstance(region, BoxRegion):
         return np.asarray(region.min_mm, dtype=float), np.asarray(region.max_mm, dtype=float)
     index = AXES.index(region.axis)
@@ -224,6 +274,13 @@ def _bounds(region: Region) -> tuple[np.ndarray, np.ndarray]:
 
 def _brush_size(region: Region) -> float:
     """How fine a stroke is: the smallest span you can see."""
+    if isinstance(region, AffineRegion):
+        largest_scale = float(
+            np.linalg.svd(
+                np.asarray(region.object_to_world, dtype=float)[:3, :3], compute_uv=False
+            )[0]
+        )
+        return _brush_size(region.region) / largest_scale
     if isinstance(region, BoxRegion):
         # The brush is what you see, not how thin the slab is: ignore the smallest span.
         spans = sorted(hi - lo for lo, hi in zip(region.min_mm, region.max_mm, strict=True))
@@ -333,10 +390,8 @@ def _paint_mesh_state(
     for index, stroke in enumerate(request.strokes):
         if stroke.region is None:
             selected = np.ones(faces, dtype=bool)
-        elif isinstance(stroke.region, BoxRegion):
-            selected = _inside_box(centres, stroke.region)
         else:
-            selected = _inside_lasso(centres, stroke.region)
+            selected = inside_region(centres, stroke.region)
         if not selected.any():
             unused.append(index)  # the user drew somewhere the model is not
             continue
