@@ -83,9 +83,9 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
   assert.deepEqual(paintLayerSummaries({
     paint: {
       strokes: [{ catalog_material_id: "interior.wood.oak-natural.v1", opacity: 0.85 }],
-      layers: [{ name: "Forged material opacity", stroke_start: 0, stroke_count: 1 }],
+      layers: [{ name: "Oak wash", stroke_start: 0, stroke_count: 1 }],
     },
-  }), []);
+  }), [{ name: "Oak wash", strokeCount: 1, colours: [], materialIds: ["interior.wood.oak-natural.v1"], opacities: [0.85] }]);
   assert.match(project, /Сохранённые слои покраски/);
   assert.match(project, /paintLayerSummaries\(active\?\.provenance\)/);
 });
@@ -109,7 +109,9 @@ test("brush opacity is explicit, source-bound, and visible in the live trail", (
   assert.match(project, /const PAINT_OPACITIES = \[0\.5, 0\.75, 0\.85, 1\]/);
   assert.match(project, /Непрозрачность кисти/);
   assert.match(project, /opacity: paintOpacity/);
-  assert.match(project, /paintOpacity=\{paintMaterialId \? 1 : paintOpacity\}/);
+  assert.match(project, /paintOpacity=\{paintOpacity\}/);
+  assert.match(project, /catalogMaterialId: paintMaterialId, opacity: paintOpacity/);
+  assert.match(project, /запекается в непрозрачную PBR-поверхность/);
   assert.match(viewer, /material\.opacity = mode === "paint" \? paintOpacity : 1/);
 });
 

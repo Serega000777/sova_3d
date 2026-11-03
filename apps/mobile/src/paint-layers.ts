@@ -53,10 +53,7 @@ export function paintLayerSummaries(provenance: Record<string, unknown> | null |
         ? opacity
         : null;
     });
-    if (
-      opacityValues.some((opacity) => opacity === null)
-      || layerStrokes.some((stroke, index) => record(stroke)?.catalog_material_id && opacityValues[index] !== 1)
-    ) return [];
+    if (opacityValues.some((opacity) => opacity === null)) return [];
     const opacities = [...new Set(opacityValues as number[])];
     return [{ name, strokeCount: count as number, colours, materialIds, opacities }];
   });

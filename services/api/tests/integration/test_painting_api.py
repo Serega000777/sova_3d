@@ -6,6 +6,7 @@ import io
 import zipfile
 from typing import Any
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from lxml import etree
@@ -154,7 +155,7 @@ def test_material_brush_resolves_the_catalogue_and_embeds_pbr_evidence(
         api_client,
         actor,
         version_id,
-        strokes=[{"catalog_material_id": material_id, "region": TOP_FACE}],
+        strokes=[{"catalog_material_id": material_id, "opacity": 0.85, "region": TOP_FACE}],
         layer_name="Concrete accent",
     )
     assert response.status_code == 202, response.text
@@ -166,7 +167,7 @@ def test_material_brush_resolves_the_catalogue_and_embeds_pbr_evidence(
     made = db_session.get(ProjectVersion, result["version_id"])
     assert made is not None
     assert made.provenance["paint"]["strokes"] == [
-        {"catalog_material_id": material_id, "opacity": 1.0, "region": TOP_FACE}
+        {"catalog_material_id": material_id, "opacity": 0.85, "region": TOP_FACE}
     ]
     preview_id = {link.role: link.asset_id for link in made.assets}[AssetRole.preview]
     preview = db_session.get(Asset, preview_id)
@@ -184,8 +185,11 @@ def test_material_brush_resolves_the_catalogue_and_embeds_pbr_evidence(
         and material.name == material_id
     )
     assert pbr.baseColorTexture is not None
-    assert pbr.metallicFactor == pytest.approx(0.0)
-    assert pbr.roughnessFactor == pytest.approx(0.92)
+    assert pbr.metallicRoughnessTexture is not None
+    assert pbr.alphaMode == "OPAQUE"
+    assert pbr.metallicFactor == pytest.approx(1.0)
+    assert pbr.roughnessFactor == pytest.approx(1.0)
+    assert np.all(np.asarray(pbr.baseColorTexture.convert("RGBA"))[..., 3] == 255)
 
     assert (
         paint(
@@ -193,15 +197,6 @@ def test_material_brush_resolves_the_catalogue_and_embeds_pbr_evidence(
             actor,
             version_id,
             strokes=[{"catalog_material_id": "unknown.material"}],
-        ).status_code
-        == 422
-    )
-    assert (
-        paint(
-            api_client,
-            actor,
-            version_id,
-            strokes=[{"catalog_material_id": material_id, "opacity": 0.85}],
         ).status_code
         == 422
     )

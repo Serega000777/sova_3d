@@ -113,3 +113,82 @@ def test_catalogue_texture_is_content_addressed_and_has_repeatable_uv(tmp_path) 
             texture_tile_size_mm=100.0,
             texture_data_b64=encoded,
         )
+
+
+def test_catalogue_material_opacity_bakes_opaque_base_and_pbr_atlases(tmp_path) -> None:
+    source = tmp_path / "box.stl"
+    output = tmp_path / "painted.glb"
+    source.write_bytes(trimesh.creation.box(extents=(10.0, 10.0, 10.0)).export(file_type="stl"))
+    material = paint.MaterialInput(
+        catalog_material_id="interior.metal.steel.v1",
+        base_color="#A9AFB5",
+        roughness=0.42,
+        metallic=1.0,
+    )
+
+    result = paint.paint_file(
+        source,
+        "stl",
+        paint.PaintRequest(
+            base_colour="#000000",
+            strokes=[paint.Stroke(material=material, opacity=0.5)],
+        ),
+        output,
+        "glb",
+    )
+
+    assert result.ok
+    loaded = trimesh.load(output, force="scene", process=False)
+    exported = next(
+        geometry.visual.material
+        for geometry in loaded.geometry.values()
+        if geometry.visual.material.name == material.catalog_material_id
+    )
+    assert exported.alphaMode == "OPAQUE"
+    assert exported.metallicFactor == pytest.approx(1.0)
+    assert exported.roughnessFactor == pytest.approx(1.0)
+    base = np.asarray(exported.baseColorTexture.convert("RGBA"))
+    pbr = np.asarray(exported.metallicRoughnessTexture.convert("RGBA"))
+    assert np.all(base[..., 3] == 255)
+    assert np.all(pbr[..., 3] == 255)
+    np.testing.assert_allclose(
+        np.unique(base[base[..., :3].any(axis=2), :3], axis=0),
+        [[84, 88, 90]],
+        atol=1,
+    )
+    np.testing.assert_allclose(
+        np.unique(pbr[pbr[..., 2] > 0, 1:3], axis=0),
+        [[181, 128]],
+        atol=1,
+    )
+
+
+def test_partial_surface_finish_fails_closed_over_an_existing_material() -> None:
+    material = paint.MaterialInput(
+        catalog_material_id="interior.metal.steel.v1",
+        base_color="#A9AFB5",
+        roughness=0.42,
+        metallic=1.0,
+    )
+    mesh = trimesh.creation.box(extents=(10.0, 10.0, 10.0))
+
+    with pytest.raises(ValueError, match="material cannot overlap another material"):
+        paint.paint_mesh(
+            mesh,
+            paint.PaintRequest(
+                strokes=[
+                    paint.Stroke(material=material),
+                    paint.Stroke(material=material, opacity=0.5),
+                ]
+            ),
+        )
+    with pytest.raises(ValueError, match="colour cannot overlap a catalogue material"):
+        paint.paint_mesh(
+            mesh,
+            paint.PaintRequest(
+                strokes=[
+                    paint.Stroke(material=material),
+                    paint.Stroke(colour="#ff0000", opacity=0.5),
+                ]
+            ),
+        )

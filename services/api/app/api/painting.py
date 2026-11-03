@@ -39,8 +39,6 @@ class Stroke(BaseModel):
     def one_surface(self) -> Stroke:
         if (self.colour is None) == (self.catalog_material_id is None):
             raise ValueError("a stroke needs exactly one colour or catalogue material")
-        if self.catalog_material_id is not None and self.opacity != 1.0:
-            raise ValueError("catalogue material strokes are opaque")
         return self
 
 

@@ -98,8 +98,6 @@ class Stroke(Strict):
     def _one_surface(self) -> Stroke:
         if (self.colour is None) == (self.material is None):
             raise ValueError("a stroke needs exactly one colour or catalogue material")
-        if self.material is not None and self.opacity != 1.0:
-            raise ValueError("catalogue material strokes are opaque")
         return self
 
 
@@ -253,7 +251,14 @@ def paint_mesh(mesh: trimesh.Trimesh, request: PaintRequest) -> PaintResult:
 
 def _paint_mesh_state(
     mesh: trimesh.Trimesh, request: PaintRequest
-) -> tuple[PaintResult, trimesh.Trimesh, np.ndarray, dict[str, MaterialInput]]:
+) -> tuple[
+    PaintResult,
+    trimesh.Trimesh,
+    np.ndarray,
+    dict[str, MaterialInput],
+    np.ndarray,
+    np.ndarray,
+]:
     """Colour the faces each stroke covers. The shape is untouched; only colour is added."""
     before = len(mesh.faces)
     if before == 0:
@@ -262,6 +267,8 @@ def _paint_mesh_state(
             mesh,
             np.empty(0, dtype=object),
             {},
+            np.empty(0, dtype=np.float64),
+            np.empty((0, 3), dtype=np.uint8),
         )
     mesh, subdivided = _refine_for(mesh, request)
     faces = len(mesh.faces)
@@ -270,6 +277,8 @@ def _paint_mesh_state(
     centres = mesh.triangles_center
     painted = np.zeros(faces, dtype=bool)
     material_ids = np.full(faces, "", dtype=object)
+    material_opacities = np.ones(faces, dtype=np.float64)
+    material_underlays = colours[:, :3].copy()
     materials: dict[str, MaterialInput] = {}
     unused: list[int] = []
 
@@ -284,21 +293,35 @@ def _paint_mesh_state(
             unused.append(index)  # the user drew somewhere the model is not
             continue
         if stroke.material is not None:
+            if stroke.opacity < 1.0 and np.any(material_ids[selected] != ""):
+                raise ValueError(
+                    "semi-transparent catalogue material cannot overlap another material"
+                )
             material_id = stroke.material.catalog_material_id
             existing = materials.get(material_id)
             if existing is not None and existing != stroke.material:
                 raise ValueError("one catalogue material id resolved to different snapshots")
             materials[material_id] = stroke.material
+            material_underlays[selected] = colours[selected, :3]
+            material_opacities[selected] = stroke.opacity
             material_ids[selected] = material_id
-            colours[selected, :3] = np.asarray(rgb(stroke.material.base_color), dtype=np.uint8)
+            source = np.asarray(rgb(stroke.material.base_color), dtype=float)
+            current = colours[selected, :3].astype(float)
+            colours[selected, :3] = np.rint(
+                current * (1.0 - stroke.opacity) + source * stroke.opacity
+            ).astype(np.uint8)
         else:
             assert stroke.colour is not None
+            if stroke.opacity < 1.0 and np.any(material_ids[selected] != ""):
+                raise ValueError("semi-transparent colour cannot overlap a catalogue material")
             source = np.asarray(rgb(stroke.colour), dtype=float)
             current = colours[selected, :3].astype(float)
             colours[selected, :3] = np.rint(
                 current * (1.0 - stroke.opacity) + source * stroke.opacity
             ).astype(np.uint8)
             material_ids[selected] = ""
+            material_opacities[selected] = 1.0
+            material_underlays[selected] = colours[selected, :3]
         painted |= selected
 
     mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, face_colors=colours)
@@ -317,6 +340,8 @@ def _paint_mesh_state(
         mesh,
         material_ids,
         materials,
+        material_opacities,
+        material_underlays,
     )
 
 
@@ -324,7 +349,7 @@ def paint_mesh_into(
     mesh: trimesh.Trimesh, request: PaintRequest
 ) -> tuple[PaintResult, trimesh.Trimesh]:
     """Colour the faces each stroke covers. The shape is untouched; only colour is added."""
-    result, painted, _, _ = _paint_mesh_state(mesh, request)
+    result, painted, _, _, _, _ = _paint_mesh_state(mesh, request)
     return result, painted
 
 
@@ -340,11 +365,138 @@ def _material_uv(mesh: trimesh.Trimesh, tile_size_mm: float) -> np.ndarray:
     return uv
 
 
+def _dilate_texture(image: Image.Image) -> Image.Image:
+    """Grow atlas texels into a small gutter while keeping the exported surface opaque."""
+
+    texels = np.asarray(image.convert("RGBA")).copy()
+    filled = texels[..., 3] > 0
+    for _ in range(4):
+        grown = filled.copy()
+        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            source = np.roll(filled, (dy, dx), axis=(0, 1))
+            take = source & ~grown
+            texels[take] = np.roll(texels, (dy, dx), axis=(0, 1))[take]
+            grown |= take
+        filled = grown
+    texels[..., 3] = 255
+    return Image.fromarray(texels, "RGBA")
+
+
+def _bake_material_composite(
+    mesh: trimesh.Trimesh,
+    underlays: np.ndarray,
+    opacities: np.ndarray,
+    material: MaterialInput,
+    *,
+    size: int = 512,
+) -> tuple[trimesh.Trimesh, Image.Image, Image.Image]:
+    """Bake one opaque base-colour and metallic/roughness atlas for material opacity.
+
+    Material opacity means surface-finish coverage over the preceding RGB paint, not transparent
+    geometry. The catalogue texture is sampled in its real millimetre tile size; every output
+    texel has alpha 255. The RGB underlay has the conservative non-metallic, fully rough PBR
+    baseline used by the existing colour-only preview.
+    """
+
+    shaded = mesh.unwrap()
+    visual = shaded.visual
+    uv = visual.uv if isinstance(visual, trimesh.visual.TextureVisuals) else None
+    if uv is None or len(shaded.faces) != len(underlays):
+        raise ValueError("catalogue material opacity atlas unwrap failed")
+
+    source_texture: np.ndarray | None = None
+    tile_size_mm = material.texture_tile_size_mm or 1.0
+    if material.texture_data_b64 is not None:
+        payload = base64.b64decode(material.texture_data_b64, validate=True)
+        source_texture = np.asarray(Image.open(io.BytesIO(payload)).convert("RGBA"), dtype=np.uint8)
+
+    base_atlas = np.zeros((size, size, 4), dtype=np.uint8)
+    pbr_atlas = np.zeros((size, size, 4), dtype=np.uint8)
+    corners = np.c_[uv[:, 0] * (size - 1), (1.0 - uv[:, 1]) * (size - 1)]
+    base_factor = np.asarray(rgb(material.base_color), dtype=np.float64) / 255.0
+
+    for face_index, face in enumerate(shaded.faces):
+        destination = corners[face]
+        minimum = np.maximum(np.floor(destination.min(axis=0)).astype(np.int64), 0)
+        maximum = np.minimum(np.ceil(destination.max(axis=0)).astype(np.int64), size - 1)
+        if np.any(maximum < minimum):
+            continue
+        xs, ys = np.meshgrid(
+            np.arange(minimum[0], maximum[0] + 1),
+            np.arange(minimum[1], maximum[1] + 1),
+        )
+        sample_x = xs.astype(np.float64) + 0.5
+        sample_y = ys.astype(np.float64) + 0.5
+        first, second, third = destination
+        denominator = (second[1] - third[1]) * (first[0] - third[0]) + (third[0] - second[0]) * (
+            first[1] - third[1]
+        )
+        if abs(float(denominator)) <= 1e-12:
+            continue
+        weight_first = (
+            (second[1] - third[1]) * (sample_x - third[0])
+            + (third[0] - second[0]) * (sample_y - third[1])
+        ) / denominator
+        weight_second = (
+            (third[1] - first[1]) * (sample_x - third[0])
+            + (first[0] - third[0]) * (sample_y - third[1])
+        ) / denominator
+        weight_third = 1.0 - weight_first - weight_second
+        inside = (weight_first >= -1e-9) & (weight_second >= -1e-9) & (weight_third >= -1e-9)
+        if not np.any(inside):
+            continue
+
+        if source_texture is None:
+            sampled = np.full((int(inside.sum()), 4), 255, dtype=np.uint8)
+        else:
+            triangle_mm = shaded.vertices[face]
+            normal = np.cross(triangle_mm[1] - triangle_mm[0], triangle_mm[2] - triangle_mm[0])
+            axis = int(np.argmax(np.abs(normal)))
+            plane = (1, 2) if axis == 0 else (0, 2) if axis == 1 else (0, 1)
+            projected = triangle_mm[:, plane] / tile_size_mm
+            tiled = (
+                weight_first[inside, None] * projected[0]
+                + weight_second[inside, None] * projected[1]
+                + weight_third[inside, None] * projected[2]
+            )
+            source_x = np.floor(np.mod(tiled[:, 0], 1.0) * source_texture.shape[1]).astype(np.int64)
+            source_y = np.floor((1.0 - np.mod(tiled[:, 1], 1.0)) * source_texture.shape[0]).astype(
+                np.int64
+            )
+            source_y %= source_texture.shape[0]
+            sampled = source_texture[source_y, source_x]
+
+        coverage = opacities[face_index] * (sampled[:, 3:4].astype(np.float64) / 255.0)
+        material_rgb = sampled[:, :3].astype(np.float64) * base_factor
+        underlay = underlays[face_index].astype(np.float64)
+        composed = np.rint(underlay * (1.0 - coverage) + material_rgb * coverage)
+        base_pixels = np.c_[np.clip(composed, 0, 255).astype(np.uint8), np.full(len(sampled), 255)]
+
+        roughness = np.rint((1.0 - coverage[:, 0] + material.roughness * coverage[:, 0]) * 255)
+        metallic = np.rint(material.metallic * coverage[:, 0] * 255)
+        pbr_pixels = np.c_[
+            np.full(len(sampled), 255),
+            np.clip(roughness, 0, 255).astype(np.uint8),
+            np.clip(metallic, 0, 255).astype(np.uint8),
+            np.full(len(sampled), 255),
+        ]
+        base_atlas[ys[inside], xs[inside]] = base_pixels
+        pbr_atlas[ys[inside], xs[inside]] = pbr_pixels
+
+    return (
+        shaded,
+        _dilate_texture(Image.fromarray(base_atlas, "RGBA")),
+        _dilate_texture(Image.fromarray(pbr_atlas, "RGBA")),
+    )
+
+
 def _painted_glb(
     mesh: trimesh.Trimesh,
     colours: np.ndarray,
     material_ids: np.ndarray,
     materials: dict[str, MaterialInput],
+    material_opacities: np.ndarray,
+    material_underlays: np.ndarray,
 ) -> bytes:
     """Export exact face groups with real PBR materials and repeatable box-projected maps."""
     scene = trimesh.Scene()
@@ -363,19 +515,38 @@ def _painted_glb(
             continue
         part = cast(trimesh.Trimesh, mesh.submesh([face_ids], append=True, repair=False))
         part.unmerge_vertices()
-        image = None
-        uv = None
-        if material.texture_data_b64 is not None:
-            payload = base64.b64decode(material.texture_data_b64, validate=True)
-            image = Image.open(io.BytesIO(payload)).convert("RGBA")
-            uv = _material_uv(part, material.texture_tile_size_mm or 1.0)
-        pbr = PBRMaterial(
-            name=material_id,
-            baseColorFactor=[*rgb(material.base_color), 255],
-            baseColorTexture=image,
-            metallicFactor=material.metallic,
-            roughnessFactor=material.roughness,
-        )
+        if np.any(material_opacities[face_ids] < 1.0):
+            part, image, pbr_image = _bake_material_composite(
+                part,
+                material_underlays[face_ids],
+                material_opacities[face_ids],
+                material,
+            )
+            uv = cast(trimesh.visual.TextureVisuals, part.visual).uv
+            pbr = PBRMaterial(
+                name=material_id,
+                baseColorFactor=[255, 255, 255, 255],
+                baseColorTexture=image,
+                metallicFactor=1.0,
+                roughnessFactor=1.0,
+                metallicRoughnessTexture=pbr_image,
+                alphaMode="OPAQUE",
+            )
+        else:
+            image = None
+            uv = None
+            if material.texture_data_b64 is not None:
+                payload = base64.b64decode(material.texture_data_b64, validate=True)
+                image = Image.open(io.BytesIO(payload)).convert("RGBA")
+                uv = _material_uv(part, material.texture_tile_size_mm or 1.0)
+            pbr = PBRMaterial(
+                name=material_id,
+                baseColorFactor=[*rgb(material.base_color), 255],
+                baseColorTexture=image,
+                metallicFactor=material.metallic,
+                roughnessFactor=material.roughness,
+                alphaMode="OPAQUE",
+            )
         part.visual = trimesh.visual.TextureVisuals(uv=uv, material=pbr)
         part.apply_scale(0.001)
         part.apply_transform(Z_UP_TO_Y_UP)
@@ -404,7 +575,9 @@ def paint_file(
         return PaintResult(ok=False, message="the file has no mesh to paint")
     mesh = to_platform_axes(mesh.copy(), source_format)
 
-    result, mesh, material_ids, materials = _paint_mesh_state(mesh, request)
+    result, mesh, material_ids, materials, material_opacities, material_underlays = (
+        _paint_mesh_state(mesh, request)
+    )
     if not result.ok:
         return result
 
@@ -413,7 +586,14 @@ def paint_file(
         if not isinstance(mesh.visual, trimesh.visual.ColorVisuals):
             return PaintResult(ok=False, message="painted mesh has no face colours")
         face_colours = np.asarray(mesh.visual.face_colors, dtype=np.uint8)
-        payload = _painted_glb(mesh, face_colours, material_ids, materials)
+        payload = _painted_glb(
+            mesh,
+            face_colours,
+            material_ids,
+            materials,
+            material_opacities,
+            material_underlays,
+        )
     elif target_format == "ply":
         payload = mesh.export(file_type="ply", encoding="binary")  # PLY keeps face colours
     elif target_format == "3mf":

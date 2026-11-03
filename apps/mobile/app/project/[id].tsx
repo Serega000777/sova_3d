@@ -6114,7 +6114,7 @@ export default function ProjectScreen() {
               if (next) setEditSheetOpen(true);
             }}
             paintColour={interiorMaterials.find((item) => item.id === paintMaterialId)?.base_color ?? colour}
-            paintOpacity={paintMaterialId ? 1 : paintOpacity}
+            paintOpacity={paintOpacity}
             brushMm={brush}
             markers={[
               ...liveMarkers,
@@ -6151,12 +6151,12 @@ export default function ProjectScreen() {
                       ? [
                           ...all,
                           paintMaterialId
-                            ? { catalogMaterialId: paintMaterialId, opacity: 1, region: next }
+                            ? { catalogMaterialId: paintMaterialId, opacity: paintOpacity, region: next }
                             : { colour, opacity: paintOpacity, region: next },
                         ]
                       : [
                           paintMaterialId
-                            ? { catalogMaterialId: paintMaterialId, opacity: 1, region: next }
+                            ? { catalogMaterialId: paintMaterialId, opacity: paintOpacity, region: next }
                             : { colour, opacity: paintOpacity, region: next },
                         ],
                   );
@@ -7207,11 +7207,10 @@ export default function ProjectScreen() {
                 <Pressable
                   key={opacity}
                   accessibilityLabel={`${ru ? "Непрозрачность" : "Opacity"} ${Math.round(opacity * 100)}%`}
-                  accessibilityState={{ selected: !paintMaterialId && paintOpacity === opacity, disabled: Boolean(paintMaterialId) }}
-                  disabled={Boolean(paintMaterialId)}
+                  accessibilityState={{ selected: paintOpacity === opacity }}
                   style={[
                     styles.chip,
-                    !paintMaterialId && paintOpacity === opacity && {
+                    paintOpacity === opacity && {
                       borderColor: colors.accent,
                       backgroundColor: colors.accentWash,
                     },
@@ -7225,8 +7224,8 @@ export default function ProjectScreen() {
             {paintMaterialId ? (
               <Text style={styles.muted}>
                 {ru
-                  ? "PBR-материал наносится непрозрачно; проценты остаются для цветной кисти."
-                  : "PBR material strokes are opaque; percentages remain available for the colour brush."}
+                  ? "Процент запекается в непрозрачную PBR-поверхность поверх цветной основы; это не прозрачность геометрии. Частичное покрытие поверх другого PBR-материала отклоняется."
+                  : "The percentage is baked into an opaque PBR surface over the colour base; it does not make geometry transparent. Partial coverage over another PBR material is rejected."}
               </Text>
             ) : null}
           </View>
