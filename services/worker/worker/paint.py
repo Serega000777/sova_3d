@@ -258,6 +258,8 @@ def _paint_mesh_state(
     dict[str, MaterialInput],
     np.ndarray,
     np.ndarray,
+    np.ndarray,
+    np.ndarray,
 ]:
     """Colour the faces each stroke covers. The shape is untouched; only colour is added."""
     before = len(mesh.faces)
@@ -269,6 +271,8 @@ def _paint_mesh_state(
             {},
             np.empty(0, dtype=np.float64),
             np.empty((0, 3), dtype=np.uint8),
+            np.empty(0, dtype=np.float64),
+            np.empty(0, dtype=np.float64),
         )
     mesh, subdivided = _refine_for(mesh, request)
     faces = len(mesh.faces)
@@ -279,6 +283,11 @@ def _paint_mesh_state(
     material_ids = np.full(faces, "", dtype=object)
     material_opacities = np.ones(faces, dtype=np.float64)
     material_underlays = colours[:, :3].copy()
+    material_underlay_roughness = np.ones(faces, dtype=np.float64)
+    material_underlay_metallic = np.zeros(faces, dtype=np.float64)
+    current_roughness = np.ones(faces, dtype=np.float64)
+    current_metallic = np.zeros(faces, dtype=np.float64)
+    current_textured = np.zeros(faces, dtype=bool)
     materials: dict[str, MaterialInput] = {}
     unused: list[int] = []
 
@@ -293,9 +302,9 @@ def _paint_mesh_state(
             unused.append(index)  # the user drew somewhere the model is not
             continue
         if stroke.material is not None:
-            if stroke.opacity < 1.0 and np.any(material_ids[selected] != ""):
+            if stroke.opacity < 1.0 and np.any(current_textured[selected]):
                 raise ValueError(
-                    "semi-transparent catalogue material cannot overlap another material"
+                    "semi-transparent catalogue material cannot overlap a textured material"
                 )
             material_id = stroke.material.catalog_material_id
             existing = materials.get(material_id)
@@ -303,6 +312,8 @@ def _paint_mesh_state(
                 raise ValueError("one catalogue material id resolved to different snapshots")
             materials[material_id] = stroke.material
             material_underlays[selected] = colours[selected, :3]
+            material_underlay_roughness[selected] = current_roughness[selected]
+            material_underlay_metallic[selected] = current_metallic[selected]
             material_opacities[selected] = stroke.opacity
             material_ids[selected] = material_id
             source = np.asarray(rgb(stroke.material.base_color), dtype=float)
@@ -310,6 +321,15 @@ def _paint_mesh_state(
             colours[selected, :3] = np.rint(
                 current * (1.0 - stroke.opacity) + source * stroke.opacity
             ).astype(np.uint8)
+            current_roughness[selected] = (
+                current_roughness[selected] * (1.0 - stroke.opacity)
+                + stroke.material.roughness * stroke.opacity
+            )
+            current_metallic[selected] = (
+                current_metallic[selected] * (1.0 - stroke.opacity)
+                + stroke.material.metallic * stroke.opacity
+            )
+            current_textured[selected] = stroke.material.texture_data_b64 is not None
         else:
             assert stroke.colour is not None
             if stroke.opacity < 1.0 and np.any(material_ids[selected] != ""):
@@ -322,6 +342,11 @@ def _paint_mesh_state(
             material_ids[selected] = ""
             material_opacities[selected] = 1.0
             material_underlays[selected] = colours[selected, :3]
+            material_underlay_roughness[selected] = 1.0
+            material_underlay_metallic[selected] = 0.0
+            current_roughness[selected] = 1.0
+            current_metallic[selected] = 0.0
+            current_textured[selected] = False
         painted |= selected
 
     mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, face_colors=colours)
@@ -342,6 +367,8 @@ def _paint_mesh_state(
         materials,
         material_opacities,
         material_underlays,
+        material_underlay_roughness,
+        material_underlay_metallic,
     )
 
 
@@ -349,7 +376,7 @@ def paint_mesh_into(
     mesh: trimesh.Trimesh, request: PaintRequest
 ) -> tuple[PaintResult, trimesh.Trimesh]:
     """Colour the faces each stroke covers. The shape is untouched; only colour is added."""
-    result, painted, _, _, _, _ = _paint_mesh_state(mesh, request)
+    result, painted, _, _, _, _, _, _ = _paint_mesh_state(mesh, request)
     return result, painted
 
 
@@ -385,6 +412,8 @@ def _dilate_texture(image: Image.Image) -> Image.Image:
 def _bake_material_composite(
     mesh: trimesh.Trimesh,
     underlays: np.ndarray,
+    underlay_roughness: np.ndarray,
+    underlay_metallic: np.ndarray,
     opacities: np.ndarray,
     material: MaterialInput,
     *,
@@ -392,10 +421,11 @@ def _bake_material_composite(
 ) -> tuple[trimesh.Trimesh, Image.Image, Image.Image]:
     """Bake one opaque base-colour and metallic/roughness atlas for material opacity.
 
-    Material opacity means surface-finish coverage over the preceding RGB paint, not transparent
-    geometry. The catalogue texture is sampled in its real millimetre tile size; every output
-    texel has alpha 255. The RGB underlay has the conservative non-metallic, fully rough PBR
-    baseline used by the existing colour-only preview.
+    Material opacity means surface-finish coverage over the preceding opaque surface, not
+    transparent geometry. The catalogue texture is sampled in its real millimetre tile size;
+    every output texel has alpha 255. Untyped RGB paint contributes the conservative
+    non-metallic, fully rough baseline, while a preceding untextured catalogue material carries
+    its exact roughness and metallic values into the blend.
     """
 
     shaded = mesh.unwrap()
@@ -472,8 +502,20 @@ def _bake_material_composite(
         composed = np.rint(underlay * (1.0 - coverage) + material_rgb * coverage)
         base_pixels = np.c_[np.clip(composed, 0, 255).astype(np.uint8), np.full(len(sampled), 255)]
 
-        roughness = np.rint((1.0 - coverage[:, 0] + material.roughness * coverage[:, 0]) * 255)
-        metallic = np.rint(material.metallic * coverage[:, 0] * 255)
+        roughness = np.rint(
+            (
+                underlay_roughness[face_index] * (1.0 - coverage[:, 0])
+                + material.roughness * coverage[:, 0]
+            )
+            * 255
+        )
+        metallic = np.rint(
+            (
+                underlay_metallic[face_index] * (1.0 - coverage[:, 0])
+                + material.metallic * coverage[:, 0]
+            )
+            * 255
+        )
         pbr_pixels = np.c_[
             np.full(len(sampled), 255),
             np.clip(roughness, 0, 255).astype(np.uint8),
@@ -497,6 +539,8 @@ def _painted_glb(
     materials: dict[str, MaterialInput],
     material_opacities: np.ndarray,
     material_underlays: np.ndarray,
+    material_underlay_roughness: np.ndarray,
+    material_underlay_metallic: np.ndarray,
 ) -> bytes:
     """Export exact face groups with real PBR materials and repeatable box-projected maps."""
     scene = trimesh.Scene()
@@ -519,6 +563,8 @@ def _painted_glb(
             part, image, pbr_image = _bake_material_composite(
                 part,
                 material_underlays[face_ids],
+                material_underlay_roughness[face_ids],
+                material_underlay_metallic[face_ids],
                 material_opacities[face_ids],
                 material,
             )
@@ -575,9 +621,16 @@ def paint_file(
         return PaintResult(ok=False, message="the file has no mesh to paint")
     mesh = to_platform_axes(mesh.copy(), source_format)
 
-    result, mesh, material_ids, materials, material_opacities, material_underlays = (
-        _paint_mesh_state(mesh, request)
-    )
+    (
+        result,
+        mesh,
+        material_ids,
+        materials,
+        material_opacities,
+        material_underlays,
+        material_underlay_roughness,
+        material_underlay_metallic,
+    ) = _paint_mesh_state(mesh, request)
     if not result.ok:
         return result
 
@@ -593,6 +646,8 @@ def paint_file(
             materials,
             material_opacities,
             material_underlays,
+            material_underlay_roughness,
+            material_underlay_metallic,
         )
     elif target_format == "ply":
         payload = mesh.export(file_type="ply", encoding="binary")  # PLY keeps face colours
