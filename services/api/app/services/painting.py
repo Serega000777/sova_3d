@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import base64
 import uuid
+from collections.abc import Sequence
+from itertools import product
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.errors import ValidationFailedError
-from app.geometry.region import BoxRegion, LassoRegion, Region
+from app.geometry.region import Axis, BoxRegion, LassoRegion, Region
 from app.interior_materials import material_by_id, texture_bytes
 from app.models.core import WorkspaceRole
 from app.models.execution import Job
@@ -127,10 +129,9 @@ def scene_source(
 ) -> tuple[Asset, dict[str, Any]]:
     """Resolve one visible direct object and its trusted bare paint source.
 
-    Current paint regions are axis-aligned boxes/lassos. A world rotation or shear would turn
-    those into oriented regions the worker cannot represent honestly, so this bounded path
-    accepts translation plus positive axis-aligned scale and converts every new region into
-    node-local millimetres.
+    Current paint regions are axis-aligned boxes/lassos. Only a proper signed axis permutation
+    (90-degree rotations, optional scale and translation) keeps that representation exact in
+    object-local millimetres. Arbitrary rotation, reflection and shear fail closed.
     """
 
     target = scenes.direct_object(
@@ -143,17 +144,7 @@ def scene_source(
         raise ValidationFailedError(
             "a hidden scene object cannot be painted", {"scene_node_id": scene_node_id}
         )
-    matrix = target["world_transform"]
-    if any(
-        abs(float(matrix[row][column])) > 1e-7
-        for row in range(3)
-        for column in range(3)
-        if row != column
-    ) or any(float(matrix[axis][axis]) <= 0 for axis in range(3)):
-        raise ValidationFailedError(
-            "scene painting requires positive axis-aligned scale without rotation or shear",
-            {"scene_node_id": scene_node_id},
-        )
+    _axis_mapping(target["world_transform"], scene_node_id=scene_node_id)
 
     current_asset_id = uuid.UUID(str(target["resolved_asset_id"]))
     source_asset_id = current_asset_id
@@ -183,6 +174,40 @@ def scene_source(
     return source, target
 
 
+def _axis_mapping(
+    world_transform: list[list[float]], *, scene_node_id: str
+) -> tuple[list[int], list[float]]:
+    """Map each world axis to exactly one local axis, preserving handedness."""
+
+    mapping: list[int] = []
+    coefficients: list[float] = []
+    used: set[int] = set()
+    for row in range(3):
+        nonzero = [column for column in range(3) if abs(float(world_transform[row][column])) > 1e-7]
+        if len(nonzero) != 1 or nonzero[0] in used:
+            raise ValidationFailedError(
+                "scene painting requires a signed axis permutation "
+                "without arbitrary rotation or shear",
+                {"scene_node_id": scene_node_id},
+            )
+        column = nonzero[0]
+        mapping.append(column)
+        coefficients.append(float(world_transform[row][column]))
+        used.add(column)
+    linear = [row[:3] for row in world_transform[:3]]
+    determinant = (
+        linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])
+        - linear[0][1] * (linear[1][0] * linear[2][2] - linear[1][2] * linear[2][0])
+        + linear[0][2] * (linear[1][0] * linear[2][1] - linear[1][1] * linear[2][0])
+    )
+    if determinant <= 1e-12:
+        raise ValidationFailedError(
+            "scene painting requires a handedness-preserving transform",
+            {"scene_node_id": scene_node_id},
+        )
+    return mapping, coefficients
+
+
 def _region_in_object_space(
     region_payload: object, world_transform: list[list[float]], *, scene_node_id: str
 ) -> dict[str, Any]:
@@ -193,33 +218,50 @@ def _region_in_object_space(
             "paint region is malformed", {"scene_node_id": scene_node_id}
         ) from exc
     translation = [float(world_transform[index][3]) for index in range(3)]
-    scale = [float(world_transform[index][index]) for index in range(3)]
+    mapping, coefficients = _axis_mapping(world_transform, scene_node_id=scene_node_id)
+
+    def local_point(world: Sequence[float]) -> list[float]:
+        local = [0.0, 0.0, 0.0]
+        for world_axis in range(3):
+            local[mapping[world_axis]] = (
+                float(world[world_axis]) - translation[world_axis]
+            ) / coefficients[world_axis]
+        return local
+
     if isinstance(region, BoxRegion):
+        corners = [
+            local_point(corner)
+            for corner in product(*zip(region.min_mm, region.max_mm, strict=True))
+        ]
         return BoxRegion(
             min_mm=(
-                (region.min_mm[0] - translation[0]) / scale[0],
-                (region.min_mm[1] - translation[1]) / scale[1],
-                (region.min_mm[2] - translation[2]) / scale[2],
+                min(corner[0] for corner in corners),
+                min(corner[1] for corner in corners),
+                min(corner[2] for corner in corners),
             ),
             max_mm=(
-                (region.max_mm[0] - translation[0]) / scale[0],
-                (region.max_mm[1] - translation[1]) / scale[1],
-                (region.max_mm[2] - translation[2]) / scale[2],
+                max(corner[0] for corner in corners),
+                max(corner[1] for corner in corners),
+                max(corner[2] for corner in corners),
             ),
         ).model_dump(mode="json")
-    axis_index = "xyz".index(region.axis)
-    plane = [index for index in range(3) if index != axis_index]
+    world_axis = "xyz".index(region.axis)
+    local_axis = mapping[world_axis]
+    world_plane = [index for index in range(3) if index != world_axis]
+    local_plane = [index for index in range(3) if index != local_axis]
+    axes: list[Axis] = ["x", "y", "z"]
+    local_points: list[tuple[float, float]] = []
+    for point in region.points_mm:
+        world = [0.0, 0.0, 0.0]
+        world[world_axis] = region.offset_mm
+        world[world_plane[0]], world[world_plane[1]] = point
+        local = local_point(world)
+        local_points.append((local[local_plane[0]], local[local_plane[1]]))
     return LassoRegion(
-        axis=region.axis,
-        offset_mm=(region.offset_mm - translation[axis_index]) / scale[axis_index],
-        depth_mm=region.depth_mm / scale[axis_index],
-        points_mm=[
-            (
-                (point[0] - translation[plane[0]]) / scale[plane[0]],
-                (point[1] - translation[plane[1]]) / scale[plane[1]],
-            )
-            for point in region.points_mm
-        ],
+        axis=axes[local_axis],
+        offset_mm=(region.offset_mm - translation[world_axis]) / coefficients[world_axis],
+        depth_mm=region.depth_mm / abs(coefficients[world_axis]),
+        points_mm=local_points,
     ).model_dump(mode="json")
 
 

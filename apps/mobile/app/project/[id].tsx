@@ -1327,14 +1327,22 @@ export default function ProjectScreen() {
       || !selectedSceneNode.effective_visible
     ) return false;
     const matrix = selectedSceneNode.world_transform;
-    return matrix.length === 4 && [0, 1, 2].every((row) =>
-      matrix[row]?.length === 4
-      && Number.isFinite(matrix[row]?.[row])
-      && (matrix[row]?.[row] ?? 0) > 0
-      && [0, 1, 2].every((column) =>
-        row === column || Math.abs(matrix[row]?.[column] ?? Number.NaN) <= 1e-7
-      )
-    );
+    if (matrix.length !== 4 || matrix.some((row) => row.length !== 4)) return false;
+    const used = new Set<number>();
+    for (let row = 0; row < 3; row += 1) {
+      const nonzero = [0, 1, 2].filter((column) =>
+        Math.abs(matrix[row]?.[column] ?? Number.NaN) > 1e-7
+      );
+      if (nonzero.length !== 1 || used.has(nonzero[0]!)) return false;
+      used.add(nonzero[0]!);
+    }
+    const [a, b, c] = matrix[0]!;
+    const [d, e, f] = matrix[1]!;
+    const [g, h, i] = matrix[2]!;
+    const determinant = a! * (e! * i! - f! * h!)
+      - b! * (d! * i! - f! * g!)
+      + c! * (d! * h! - e! * g!);
+    return Number.isFinite(determinant) && determinant > 1e-12;
   }, [hasExplicitScene, selectedSceneNode]);
 
   useEffect(() => {
@@ -2437,8 +2445,8 @@ export default function ProjectScreen() {
     ) {
       setError(
         ru
-          ? "Выберите видимый прямой объект сцены без поворота, отражения или сдвига осей и нанесите штрихи заново. Экземпляр сначала сделайте уникальным."
-          : "Select a visible direct scene object without rotation, reflection, or shear and redraw the strokes. Make an instance unique first.",
+          ? "Выберите видимый прямой объект без произвольного поворота, отражения или сдвига осей и нанесите штрихи заново. Повороты на 90° поддерживаются; экземпляр сначала сделайте уникальным."
+          : "Select a visible direct object without arbitrary-angle rotation, reflection, or shear and redraw the strokes. 90-degree rotations are supported; make an instance unique first.",
       );
       return;
     }
@@ -6086,8 +6094,8 @@ export default function ProjectScreen() {
             if (hasExplicitScene && (!selectedSceneNodeId || !selectedSceneNodePaintable)) {
               setError(
                 ru
-                  ? "Для покраски выберите видимый прямой объект сцены без поворота, отражения или сдвига осей. Экземпляр сначала сделайте уникальным."
-                  : "To paint, select a visible direct scene object without rotation, reflection, or shear. Make an instance unique first.",
+                  ? "Для покраски выберите видимый прямой объект без произвольного поворота, отражения или сдвига осей. Повороты на 90° поддерживаются; экземпляр сначала сделайте уникальным."
+                  : "To paint, select a visible direct object without arbitrary-angle rotation, reflection, or shear. 90-degree rotations are supported; make an instance unique first.",
               );
               return;
             }
@@ -6208,8 +6216,8 @@ export default function ProjectScreen() {
                   if (hasExplicitScene && (!draftSceneNodeId || !selectedSceneNodePaintable)) {
                     setError(
                       ru
-                        ? "Этот узел нельзя покрасить: нужен видимый прямой объект без поворота, отражения или сдвига осей."
-                        : "This node cannot be painted; select a visible direct object without rotation, reflection, or shear.",
+                        ? "Этот узел нельзя покрасить: нужен видимый прямой объект без произвольного поворота, отражения или сдвига осей."
+                        : "This node cannot be painted; select a visible direct object without arbitrary-angle rotation, reflection, or shear.",
                     );
                     return;
                   }
