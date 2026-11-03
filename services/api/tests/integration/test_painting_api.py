@@ -132,7 +132,7 @@ def test_scene_paint_targets_one_translated_scaled_object_and_preserves_siblings
         "nodes"
     ][0]["resolved_asset_id"]
     identity = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-    scaled = [[0, -0.5, 0, 10], [2, 0, 0, 0], [0, 0, 1.5, 0], [0, 0, 0, 1]]
+    scaled = [[0, 0.5, 0, 10], [2, 0, 0, 0], [0, 0, 1.5, 0], [0, 0, 0, 1]]
     assembled = api_client.post(
         f"/api/v1/models/{source_id}/scene",
         json={
@@ -186,10 +186,10 @@ def test_scene_paint_targets_one_translated_scaled_object_and_preserves_siblings
         **TOP_FACE,
         "offset_mm": TOP_FACE["offset_mm"] * 1.5,
         "depth_mm": TOP_FACE["depth_mm"] * 1.5,
-        "points_mm": [[10 - y * 0.5, x * 2] for x, y in TOP_FACE["points_mm"]],
+        "points_mm": [[10 + y * 0.5, x * 2] for x, y in TOP_FACE["points_mm"]],
     }
     local_box = {"kind": "box", "min_mm": [0, 0, 8], "max_mm": [30, 20, 11]}
-    world_box = {"kind": "box", "min_mm": [0, 0, 12], "max_mm": [10, 60, 16.5]}
+    world_box = {"kind": "box", "min_mm": [10, 0, 12], "max_mm": [20, 60, 16.5]}
     assert (
         paint(
             api_client,
@@ -304,7 +304,7 @@ def test_scene_paint_targets_one_translated_scaled_object_and_preserves_siblings
     assert replaced_row.provenance["scene_edit"]["dropped_paint_node_ids"] == ["part"]
 
 
-def test_scene_paint_fails_closed_for_non_direct_hidden_rotated_reflected_or_sheared_targets(
+def test_scene_paint_fails_closed_for_non_direct_hidden_arbitrary_rotated_or_sheared_targets(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
@@ -322,7 +322,6 @@ def test_scene_paint_fails_closed_for_non_direct_hidden_rotated_reflected_or_she
         [0, 0, 1, 0],
         [0, 0, 0, 1],
     ]
-    reflected = [[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
     sheared = [[1, 0.25, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
     scene = api_client.post(
         f"/api/v1/models/{source_id}/scene",
@@ -348,13 +347,6 @@ def test_scene_paint_fails_closed_for_non_direct_hidden_rotated_reflected_or_she
                     "name": "Hidden",
                     "kind": "object",
                     "visible": False,
-                    "asset_id": asset_id,
-                },
-                {
-                    "id": "reflected",
-                    "name": "Reflected",
-                    "kind": "object",
-                    "transform": reflected,
                     "asset_id": asset_id,
                 },
                 {
@@ -384,7 +376,6 @@ def test_scene_paint_fails_closed_for_non_direct_hidden_rotated_reflected_or_she
     assert status("copy") == 422
     assert status("hidden") == 422
     assert status("part") == 422
-    assert status("reflected") == 422
     assert status("sheared") == 422
     viewer = make_actor(db_session, workspace=actor.workspace, role=WorkspaceRole.viewer)
     assert status("part", viewer) == 403

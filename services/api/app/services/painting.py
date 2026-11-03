@@ -130,8 +130,8 @@ def scene_source(
     """Resolve one visible direct object and its trusted bare paint source.
 
     Current paint regions are axis-aligned boxes/lassos. Only a proper signed axis permutation
-    (90-degree rotations, optional scale and translation) keeps that representation exact in
-    object-local millimetres. Arbitrary rotation, reflection and shear fail closed.
+    (90-degree rotations or reflections, optional scale and translation) keeps that
+    representation exact in object-local millimetres. Arbitrary rotation and shear fail closed.
     """
 
     target = scenes.direct_object(
@@ -177,7 +177,7 @@ def scene_source(
 def _axis_mapping(
     world_transform: list[list[float]], *, scene_node_id: str
 ) -> tuple[list[int], list[float]]:
-    """Map each world axis to exactly one local axis, preserving handedness."""
+    """Map each world axis to exactly one local axis, including exact reflections."""
 
     mapping: list[int] = []
     coefficients: list[float] = []
@@ -200,9 +200,9 @@ def _axis_mapping(
         - linear[0][1] * (linear[1][0] * linear[2][2] - linear[1][2] * linear[2][0])
         + linear[0][2] * (linear[1][0] * linear[2][1] - linear[1][1] * linear[2][0])
     )
-    if determinant <= 1e-12:
+    if abs(determinant) <= 1e-12:
         raise ValidationFailedError(
-            "scene painting requires a handedness-preserving transform",
+            "scene painting requires a non-collapsed signed axis permutation",
             {"scene_node_id": scene_node_id},
         )
     return mapping, coefficients

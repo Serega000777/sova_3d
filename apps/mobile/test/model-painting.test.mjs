@@ -130,7 +130,7 @@ test("multi-object painting is bound to one selected direct scene node", () => {
   assert.match(project, /selectedSceneNodePaintable/);
   assert.match(project, /const nonzero = \[0, 1, 2\]\.filter/);
   assert.match(project, /nonzero\.length !== 1 \|\| used\.has\(nonzero\[0\]!\)/);
-  assert.match(project, /Number\.isFinite\(determinant\) && determinant > 1e-12/);
+  assert.match(project, /Number\.isFinite\(determinant\) && Math\.abs\(determinant\) > 1e-12/);
   assert.match(project, /paintLayerSummaries\(\s*active\?\.provenance,\s*hasExplicitScene \? selectedSceneNodeId : null/);
   assert.match(project, /reorderPaintLayers\([\s\S]*?hasExplicitScene \? selectedSceneNodeId : null/);
   assert.match(project, /if \(hasExplicitScene && \(!selectedSceneNodeId \|\| !selectedSceneNodePaintable\)\) return/);

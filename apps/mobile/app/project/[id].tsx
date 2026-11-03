@@ -1342,7 +1342,7 @@ export default function ProjectScreen() {
     const determinant = a! * (e! * i! - f! * h!)
       - b! * (d! * i! - f! * g!)
       + c! * (d! * h! - e! * g!);
-    return Number.isFinite(determinant) && determinant > 1e-12;
+    return Number.isFinite(determinant) && Math.abs(determinant) > 1e-12;
   }, [hasExplicitScene, selectedSceneNode]);
 
   useEffect(() => {
@@ -2445,8 +2445,8 @@ export default function ProjectScreen() {
     ) {
       setError(
         ru
-          ? "Выберите видимый прямой объект без произвольного поворота, отражения или сдвига осей и нанесите штрихи заново. Повороты на 90° поддерживаются; экземпляр сначала сделайте уникальным."
-          : "Select a visible direct object without arbitrary-angle rotation, reflection, or shear and redraw the strokes. 90-degree rotations are supported; make an instance unique first.",
+          ? "Выберите видимый прямой объект без произвольного поворота или сдвига осей и нанесите штрихи заново. Повороты на 90° и отражения поддерживаются; экземпляр сначала сделайте уникальным."
+          : "Select a visible direct object without arbitrary-angle rotation or shear and redraw the strokes. 90-degree rotations and reflections are supported; make an instance unique first.",
       );
       return;
     }
@@ -6094,8 +6094,8 @@ export default function ProjectScreen() {
             if (hasExplicitScene && (!selectedSceneNodeId || !selectedSceneNodePaintable)) {
               setError(
                 ru
-                  ? "Для покраски выберите видимый прямой объект без произвольного поворота, отражения или сдвига осей. Повороты на 90° поддерживаются; экземпляр сначала сделайте уникальным."
-                  : "To paint, select a visible direct object without arbitrary-angle rotation, reflection, or shear. 90-degree rotations are supported; make an instance unique first.",
+                  ? "Для покраски выберите видимый прямой объект без произвольного поворота или сдвига осей. Повороты на 90° и отражения поддерживаются; экземпляр сначала сделайте уникальным."
+                  : "To paint, select a visible direct object without arbitrary-angle rotation or shear. 90-degree rotations and reflections are supported; make an instance unique first.",
               );
               return;
             }
@@ -6216,8 +6216,8 @@ export default function ProjectScreen() {
                   if (hasExplicitScene && (!draftSceneNodeId || !selectedSceneNodePaintable)) {
                     setError(
                       ru
-                        ? "Этот узел нельзя покрасить: нужен видимый прямой объект без произвольного поворота, отражения или сдвига осей."
-                        : "This node cannot be painted; select a visible direct object without arbitrary-angle rotation, reflection, or shear.",
+                        ? "Этот узел нельзя покрасить: нужен видимый прямой объект без произвольного поворота или сдвига осей."
+                        : "This node cannot be painted; select a visible direct object without arbitrary-angle rotation or shear.",
                     );
                     return;
                   }
