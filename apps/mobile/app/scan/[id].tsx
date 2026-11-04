@@ -55,6 +55,7 @@ interface Report {
 type PreviewMode = "texture" | "mesh" | "empty";
 
 interface RoomPlanStats {
+  floor_count?: number;
   floor_height_mm?: number;
   floor_plan?: unknown;
   room_shell?: {
@@ -316,6 +317,7 @@ export default function ScanResult() {
     objects?: number;
   } | undefined;
   const shellSpec = captureStats?.room_plan?.room_shell;
+  const floorCount = captureStats?.room_plan?.floor_count ?? 1;
   const measuredPlan = parseFloorPlan(captureStats?.room_plan?.floor_plan);
   const measuredHeightMm = captureStats?.room_plan?.floor_height_mm ?? shellSpec?.wall_height_mm;
   const roomMeasurements = measuredPlan && measuredHeightMm
@@ -726,6 +728,7 @@ export default function ScanResult() {
             {[
               { glyph: "▥", value: wallCount ?? "—", label: "Стены" },
               { glyph: "▯", value: openingCount ?? "—", label: "Проёмы" },
+              { glyph: "≡", value: floorCount, label: "Этажи" },
               { glyph: "◇", value: itemCount ?? "—", label: "Предметы" },
               { glyph: "⌗", value: floorAreaM2 === null ? "—" : floorAreaM2.toFixed(1), label: "Площадь, м²" },
             ].map((stat) => (
@@ -746,6 +749,12 @@ export default function ScanResult() {
             <Text style={styles.muted}>
               По измерениям RoomPlan · {(roomMeasurements.width_mm / 1000).toFixed(2)} × {(roomMeasurements.depth_mm / 1000).toFixed(2)} × {(roomMeasurements.ceiling_height_mm / 1000).toFixed(2)} м
             </Text>
+            {floorCount > 1 && (
+              <Text style={styles.muted}>
+                Здесь показан нижний этаж. После сохранения все {floorCount} измеренных этажа
+                доступны как отдельные выровненные планы; multi-floor empty shell пока не строится.
+              </Text>
+            )}
           </View>
           <View style={resultStyles.measurementGrid}>
             <View style={resultStyles.measurementCard}>

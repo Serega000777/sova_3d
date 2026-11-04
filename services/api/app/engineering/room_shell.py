@@ -191,6 +191,8 @@ def room_shell_structure_spec(
     """Build one exact shell spec per validated room in the common ARKit frame."""
     if tuple(room.room_id for room in capture.rooms) != conversion.room_ids:
         raise ValueError("RoomPlan structure shell room lineage is inconsistent")
+    if len(conversion.levels) != 1:
+        raise ValueError("RoomPlan structure exact shell currently supports one floor level")
     rooms: list[RoomShellSpec] = []
     for index, room in enumerate(capture.rooms):
         room_conversion = floor_plan_from_room_plan(

@@ -18,6 +18,7 @@ from app.jobs import runner
 from app.models import Asset, ProjectVersion, ScanFrame, ScanSession
 from app.models.core import Units
 from app.models.execution import JobStatus
+from app.models.scanning import ScanStatus
 from app.models.versioning import AssetKind
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
@@ -110,8 +111,25 @@ def run_all(db: Session, storage: S3Storage) -> list[Any]:
     return done
 
 
-def room_plan_v2(room_id: str, x0: float) -> dict[str, Any]:
-    identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+def room_plan_v2(room_id: str, x0: float, floor_elevation_m: float = 0) -> dict[str, Any]:
+    transform = [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        floor_elevation_m + 1.35,
+        0,
+        1,
+    ]
     x1 = x0 + 4
     walls = [
         ("south", [x0, 0], [x1, 0], 4),
@@ -122,14 +140,14 @@ def room_plan_v2(room_id: str, x0: float) -> dict[str, Any]:
     return {
         "schema_version": 2,
         "room_id": room_id,
-        "floor_elevation_m": 0,
+        "floor_elevation_m": floor_elevation_m,
         "walls": [
             {
                 "identifier": f"{room_id}-{identifier}",
                 "a_m": a,
                 "b_m": b,
                 "height_m": 2.7,
-                "transform_m": identity,
+                "transform_m": transform,
                 "dimensions_m": [width, 2.7, 0.12],
             }
             for identifier, a, b, width in walls
@@ -298,6 +316,70 @@ def test_roomplan_structure_keeps_two_rooms_in_one_shared_metric_plan(
     assert room_plan["room_count"] == 2
     assert room_plan["room_shell"]["schema_version"] == 3
     assert len(room_plan["room_shell"]["rooms"]) == 2
+
+
+def test_roomplan_structure_persists_two_aligned_floor_plans_on_accept(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    project_id = api_client.post(
+        "/api/v1/projects",
+        json={"workspace_id": str(actor.workspace.id), "name": "Measured home"},
+        headers=actor.headers,
+    ).json()["id"]
+    scan = start_scan(
+        api_client,
+        actor,
+        project_id=project_id,
+        mode="scanner",
+        label="Home · two floors",
+        capabilities={"capture_source": "apple_roomplan_structure", "subject": "home"},
+    )
+    response = api_client.put(
+        f"/api/v1/scans/{scan['id']}/room-plan-structure",
+        json={
+            "structure_id": "apple-structure-two-floors",
+            "coordinate_space": "shared_arkit_world",
+            "rooms": [room_plan_v2("ground", 0, 0), room_plan_v2("upper", 0, 3)],
+        },
+        headers=actor.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert [level["elevation_mm"] for level in response.json()["floor_plans"]] == [0, 3_000]
+
+    model = Asset(
+        workspace_id=actor.workspace.id,
+        kind=AssetKind.derived,
+        sha256="f" * 64,
+        storage_key=f"{actor.workspace.id}/derived/two-floor-home.stl",
+        mime="model/stl",
+        format="stl",
+        byte_size=1,
+        units=Units.mm,
+    )
+    db_session.add(model)
+    db_session.flush()
+    stored = db_session.get(ScanSession, uuid.UUID(scan["id"]))
+    assert stored is not None
+    assert stored.capture_stats["room_plan"]["floor_count"] == 2
+    assert stored.capture_stats["room_plan"]["room_shell"] is None
+    stored.mesh_asset_id = model.id
+    stored.status = ScanStatus.ready
+    db_session.flush()
+
+    accepted = api_client.post(f"/api/v1/scans/{scan['id']}/accept", json={}, headers=actor.headers)
+    assert accepted.status_code == 200, accepted.text
+    version_id = accepted.json()["result_version_id"]
+    floors = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert floors.status_code == 200, floors.text
+    result = floors.json()
+    assert result["version_id"] == version_id
+    assert [level["elevation_mm"] for level in result["levels"]] == [0, 3_000]
+    assert [len(level["plan"]["rooms"]) for level in result["levels"]] == [1, 1]
+    assert (
+        result["levels"][0]["plan"]["rooms"][0]["outline"]
+        == result["levels"][1]["plan"]["rooms"][0]["outline"]
+    )
 
 
 def test_roomplan_structure_requires_server_declared_capture_source(

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const screen = readFileSync(new URL("../app/scan/index.tsx", import.meta.url), "utf8");
+const resultScreen = readFileSync(new URL("../app/scan/[id].tsx", import.meta.url), "utf8");
 const native = readFileSync(
   new URL("../modules/expo-room-plan/ios/ExpoRoomPlanView.swift", import.meta.url),
   "utf8",
@@ -44,6 +45,17 @@ test("reference 78 keeps one ARKit frame and uploads Apple's merged structure", 
   assert.match(screen, /setScanRoomPlanStructure\(scan\.id, roomPlanStructure\)/);
   assert.match(screen, /capture_source: "apple_roomplan_structure"/);
   assert.match(client, /\/room-plan-structure/);
+});
+
+test("multi-floor RoomPlan review exposes the measured level count without a flat shell claim", () => {
+  assert.match(resultScreen, /floor_count\?: number/);
+  assert.match(
+    resultScreen,
+    /const floorCount = captureStats\?\.room_plan\?\.floor_count \?\? 1/,
+  );
+  assert.match(resultScreen, /label: "Этажи"/);
+  assert.match(resultScreen, /Здесь показан нижний этаж/);
+  assert.match(resultScreen, /multi-floor empty shell пока не строится/);
 });
 
 test("a missing or subset native merge falls back to honest separate rooms", () => {

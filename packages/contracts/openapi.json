@@ -32644,6 +32644,13 @@
           "room_count": {
             "type": "integer",
             "title": "Room Count"
+          },
+          "floor_plans": {
+            "items": {
+              "$ref": "#/components/schemas/BuildingFloorLevel"
+            },
+            "type": "array",
+            "title": "Floor Plans"
           }
         },
         "type": "object",
@@ -32653,7 +32660,8 @@
           "warnings",
           "structure_id",
           "room_ids",
-          "room_count"
+          "room_count",
+          "floor_plans"
         ],
         "title": "RoomPlanStructureCaptureResult"
       },
@@ -32820,7 +32828,10 @@
             "anyOf": [
               {
                 "type": "string",
-                "const": "apple_roomplan_v2"
+                "enum": [
+                  "apple_roomplan_v2",
+                  "apple_roomplan_structure"
+                ]
               },
               {
                 "type": "null"

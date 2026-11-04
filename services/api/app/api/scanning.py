@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
-from app.engineering.floor_plan import FloorPlan
+from app.engineering.floor_plan import BuildingFloorLevel, FloorPlan
 from app.engineering.room_plan import RoomPlanCapture, RoomPlanStructureCapture
 from app.models.execution import JobStatus
 from app.models.scanning import FrameKind, ScanMode, ScanStatus
@@ -73,6 +73,7 @@ class RoomPlanStructureCaptureResult(RoomPlanCaptureResult):
     structure_id: str
     room_ids: list[str]
     room_count: int
+    floor_plans: list[BuildingFloorLevel]
 
 
 class MaskPoint(BaseModel):
@@ -236,7 +237,7 @@ class RoomShellOut(BaseModel):
     scan_id: uuid.UUID
     available: bool
     asset_id: uuid.UUID | None = None
-    source: Literal["apple_roomplan_v2"] | None = None
+    source: Literal["apple_roomplan_v2", "apple_roomplan_structure"] | None = None
     reason: str | None = None
 
 
@@ -277,11 +278,15 @@ def get_room_shell(scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> Ro
             available=False,
             reason="room_shell_unavailable",
         )
+    report = (session.report or {}).get("room_shell")
+    source = report.get("source") if isinstance(report, dict) else None
+    if source not in {"apple_roomplan_v2", "apple_roomplan_structure"}:
+        source = "apple_roomplan_v2"
     return RoomShellOut(
         scan_id=session.id,
         available=True,
         asset_id=session.room_shell_asset_id,
-        source="apple_roomplan_v2",
+        source=cast(Literal["apple_roomplan_v2", "apple_roomplan_structure"], source),
     )
 
 
@@ -365,6 +370,7 @@ def set_room_plan_structure(
         room_ids=list(converted.room_ids),
         room_count=len(converted.room_ids),
         floor_plan=converted.plan,
+        floor_plans=list(converted.levels),
         floor_height_mm=converted.floor_height_mm,
         warnings=list(converted.warnings),
     )

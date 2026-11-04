@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
-from app.engineering.floor_plan import FloorPlan
+from app.engineering.floor_plan import BuildingFloorLevel, BuildingFloorPlans, FloorPlan
 from app.engineering.room_plan import (
     RoomPlanCapture,
     RoomPlanConversion,
@@ -421,7 +421,9 @@ def set_room_plan_structure(
             plan_id=f"scan-{session.id}-roomplan-structure",
             name=session.label or "RoomPlan structure",
         )
-        shell = room_shell_structure_spec(capture, converted)
+        shell = (
+            room_shell_structure_spec(capture, converted) if len(converted.levels) == 1 else None
+        )
     except ValueError as exc:
         raise ValidationFailedError(str(exc)) from exc
     session.capture_stats = {
@@ -433,12 +435,17 @@ def set_room_plan_structure(
             "coordinate_space": capture.coordinate_space,
             "room_ids": list(converted.room_ids),
             "room_count": len(converted.room_ids),
+            "floor_count": len(converted.levels),
             "floor_height_mm": converted.floor_height_mm,
             "warnings": list(converted.warnings),
             "floor_plan": converted.plan.model_dump(mode="json"),
-            # Exact per-room loops share one artifact, without inventing one exterior
-            # watertight building perimeter or removing measured interior walls.
-            "room_shell": shell.to_dict(),
+            "floor_plans": {
+                "floor_height_mm": converted.floor_height_mm,
+                "levels": [level.model_dump(mode="json") for level in converted.levels],
+            },
+            # Exact per-room loops share one artifact on the proved single-floor path.
+            # Multi-floor capture retains the measured plans but does not flatten shells to Z=0.
+            "room_shell": shell.to_dict() if shell is not None else None,
         },
     }
     db.flush()
@@ -877,6 +884,8 @@ def accept(
     if isinstance(broken_part, dict):
         provenance["broken_part_capture"] = dict(broken_part)
     room_plan = (session.capture_stats or {}).get("room_plan")
+    building_levels: tuple[BuildingFloorLevel, ...] | None = None
+    building_floor_height: float | None = None
     if isinstance(room_plan, dict) and isinstance(room_plan.get("floor_plan"), dict):
         try:
             plan = FloorPlan.model_validate(room_plan["floor_plan"])
@@ -885,8 +894,28 @@ def accept(
         if plan is not None:
             provenance["floor_plan"] = plan.model_dump(mode="json")
             provenance["room_plan"] = {
-                key: value for key, value in room_plan.items() if key != "floor_plan"
+                key: value
+                for key, value in room_plan.items()
+                if key not in {"floor_plan", "floor_plans"}
             }
+            raw_floor_plans = room_plan.get("floor_plans")
+            if isinstance(raw_floor_plans, dict):
+                raw_levels = raw_floor_plans.get("levels")
+                raw_height = raw_floor_plans.get("floor_height_mm")
+                if isinstance(raw_levels, list) and isinstance(raw_height, int | float):
+                    try:
+                        candidate = BuildingFloorPlans.model_validate(
+                            {
+                                "version_id": str(session.id),
+                                "floor_height_mm": raw_height,
+                                "levels": raw_levels,
+                            }
+                        )
+                        building_levels = tuple(candidate.levels)
+                        building_floor_height = candidate.floor_height_mm
+                    except ValueError:
+                        building_levels = None
+                        building_floor_height = None
 
     version = projects.create_version_internal(
         db,
@@ -902,9 +931,21 @@ def accept(
                 else {}
             ),
         },
-        finalize=True,
+        finalize=building_levels is None,
         created_by=user_id,
     )
+    if building_levels is not None and building_floor_height is not None:
+        building = BuildingFloorPlans(
+            version_id=str(version.id),
+            floor_height_mm=building_floor_height,
+            levels=list(building_levels),
+        )
+        version.provenance = {
+            **(version.provenance or {}),
+            "floor_plans": building.model_dump(mode="json"),
+        }
+        db.flush()
+        projects.finalize_version(db, version)
     session.project_id = project.id
     session.result_version_id = version.id
     session.status = ScanStatus.accepted

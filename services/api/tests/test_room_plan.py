@@ -51,7 +51,11 @@ def capture(**updates: object) -> RoomPlanCapture:
     return RoomPlanCapture.model_validate(payload)
 
 
-def structure_room(room_id: str, x0: float, x1: float) -> RoomPlanCapture:
+def structure_room(
+    room_id: str, x0: float, x1: float, floor_elevation_m: float = 0
+) -> RoomPlanCapture:
+    transform = [*IDENTITY]
+    transform[13] = floor_elevation_m + 1.35
     walls = [
         ("south", (x0, 0), (x1, 0), x1 - x0),
         ("east", (x1, 0), (x1, 3), 3),
@@ -62,14 +66,14 @@ def structure_room(room_id: str, x0: float, x1: float) -> RoomPlanCapture:
         {
             "schema_version": 2,
             "room_id": room_id,
-            "floor_elevation_m": 0,
+            "floor_elevation_m": floor_elevation_m,
             "walls": [
                 {
                     "identifier": f"{room_id}-{identifier}",
                     "a_m": a,
                     "b_m": b,
                     "height_m": 2.7,
-                    "transform_m": IDENTITY,
+                    "transform_m": transform,
                     "dimensions_m": [width, 2.7, 0.12],
                 }
                 for identifier, a, b, width in walls
@@ -202,14 +206,16 @@ def test_roomplan_structure_rejects_overlapping_rooms() -> None:
         floor_plan_from_room_plan_structure(structure, plan_id="home-plan", name="Home")
 
 
-def test_roomplan_structure_rejects_a_second_floor_in_the_single_level_plan() -> None:
-    upper = structure_room("upper", 4, 7).model_copy(update={"floor_elevation_m": 3.0})
+def test_roomplan_structure_projects_a_second_floor_in_the_shared_frame() -> None:
+    structure = RoomPlanStructureCapture.model_validate(
+        {
+            "structure_id": "home-1",
+            "coordinate_space": "shared_arkit_world",
+            "rooms": [structure_room("ground", 0, 4), structure_room("upper", 0, 4, 3)],
+        }
+    )
 
-    with pytest.raises(ValueError, match="one floor elevation"):
-        RoomPlanStructureCapture.model_validate(
-            {
-                "structure_id": "home-1",
-                "coordinate_space": "shared_arkit_world",
-                "rooms": [structure_room("ground", 0, 4), upper],
-            }
-        )
+    converted = floor_plan_from_room_plan_structure(structure, plan_id="home-plan", name="Home")
+
+    assert [level.elevation_mm for level in converted.levels] == [0, 3_000]
+    assert converted.levels[0].plan.rooms[0].outline == converted.levels[1].plan.rooms[0].outline

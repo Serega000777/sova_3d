@@ -14,7 +14,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.engineering.floor_plan import FloorPlan, PlanOpening, PlanRoom, PlanWall
+from app.engineering.floor_plan import (
+    BuildingFloorLevel,
+    FloorPlan,
+    PlanOpening,
+    PlanRoom,
+    PlanWall,
+)
 
 PointM = tuple[float, float]
 PointMM = tuple[float, float]
@@ -25,6 +31,10 @@ MAX_WALL_LENGTH_M = 100.0
 MAX_ROOM_PERIMETER_M = 500.0
 SNAP_TOLERANCE_MM = 750.0
 DEFAULT_WALL_THICKNESS_MM = 120.0
+MAX_STRUCTURE_FLOORS = 3
+SAME_FLOOR_TOLERANCE_M = 0.25
+MIN_FLOOR_GAP_M = 1.5
+MAX_FLOOR_GAP_M = 6.0
 
 
 class RoomPlanWallSurface(BaseModel):
@@ -103,6 +113,36 @@ class RoomPlanCapture(BaseModel):
         return self
 
 
+def _floor_elevation(room: RoomPlanCapture) -> float:
+    if room.floor_elevation_m is None:
+        raise ValueError("RoomPlan structure requires each room's floor elevation")
+    return float(room.floor_elevation_m)
+
+
+def _structure_floor_groups(rooms: list[RoomPlanCapture]) -> list[list[int]]:
+    """Cluster measured floor elevations while keeping scan drift inside one level."""
+    ordered = sorted((_floor_elevation(room), index) for index, room in enumerate(rooms))
+    groups: list[list[int]] = []
+    elevations: list[list[float]] = []
+    for elevation, index in ordered:
+        if not groups or elevation - min(elevations[-1]) > SAME_FLOOR_TOLERANCE_M:
+            groups.append([index])
+            elevations.append([elevation])
+        else:
+            groups[-1].append(index)
+            elevations[-1].append(elevation)
+    if len(groups) > MAX_STRUCTURE_FLOORS:
+        raise ValueError("RoomPlan structure supports at most three measured floor levels")
+    floor_elevations = [float(median(values)) for values in elevations]
+    for lower, upper in zip(floor_elevations, floor_elevations[1:], strict=False):
+        gap = upper - lower
+        if not MIN_FLOOR_GAP_M <= gap <= MAX_FLOOR_GAP_M:
+            raise ValueError("RoomPlan structure floor levels must be separated by 1.5 to 6 metres")
+    if floor_elevations and floor_elevations[-1] - floor_elevations[0] > 12:
+        raise ValueError("RoomPlan structure floor elevations exceed the 12 metre limit")
+    return groups
+
+
 class RoomPlanStructureCapture(BaseModel):
     """Several RoomPlan rooms that Apple merged in one continuous ARKit world frame."""
 
@@ -123,11 +163,19 @@ class RoomPlanStructureCapture(BaseModel):
         floor_elevations = [room.floor_elevation_m for room in self.rooms]
         if any(elevation is None or not math.isfinite(elevation) for elevation in floor_elevations):
             raise ValueError("RoomPlan structure requires each room's floor elevation")
-        measured_elevations = [
-            float(elevation) for elevation in floor_elevations if elevation is not None
-        ]
-        if max(measured_elevations) - min(measured_elevations) > 0.25:
-            raise ValueError("RoomPlan structure currently supports one floor elevation")
+        for room in self.rooms:
+            measured_floor = float(
+                median(
+                    float(wall.transform_m[13]) - float(wall.dimensions_m[1]) / 2
+                    for wall in room.walls
+                    if wall.transform_m is not None and wall.dimensions_m is not None
+                )
+            )
+            if abs(_floor_elevation(room) - measured_floor) > 0.1:
+                raise ValueError(
+                    "RoomPlan structure floor elevation disagrees with measured wall transforms"
+                )
+        _structure_floor_groups(self.rooms)
         if sum(len(room.walls) + len(room.openings) for room in self.rooms) > 1_024:
             raise ValueError("RoomPlan structure exceeds the 1024 surface limit")
         return self
@@ -146,6 +194,7 @@ class RoomPlanConversion:
 @dataclass(frozen=True, slots=True)
 class RoomPlanStructureConversion:
     plan: FloorPlan
+    levels: tuple[BuildingFloorLevel, ...]
     floor_height_mm: float
     warnings: tuple[str, ...]
     room_ids: tuple[str, ...]
@@ -421,11 +470,7 @@ def _outlines_overlap(left: list[PointMM], right: list[PointMM]) -> bool:
 def floor_plan_from_room_plan_structure(
     capture: RoomPlanStructureCapture, *, plan_id: str, name: str
 ) -> RoomPlanStructureConversion:
-    """Preserve Apple's shared world frame while combining several validated rooms.
-
-    This first structure boundary is deliberately single-level: RoomPlan can describe
-    multiple stories, but the platform's editable ``FloorPlan`` currently has one elevation.
-    """
+    """Preserve Apple's shared world frame in one aligned plan per measured floor."""
     converted = [
         floor_plan_from_room_plan(
             room,
@@ -438,53 +483,84 @@ def floor_plan_from_room_plan_structure(
         min(room.source_origin_mm[0] for room in converted),
         min(room.source_origin_mm[1] for room in converted),
     )
-    walls: list[PlanWall] = []
-    openings: list[PlanOpening] = []
-    rooms: list[PlanRoom] = []
+    floor_groups = _structure_floor_groups(capture.rooms)
     warnings: list[str] = []
-    outlines: list[list[PointMM]] = []
-    for index, room in enumerate(converted):
-        offset = (
-            room.source_origin_mm[0] - global_origin[0],
-            room.source_origin_mm[1] - global_origin[1],
-        )
-        wall_offset = len(walls)
-        walls.extend(
-            PlanWall(
-                a=_translated(wall.a, offset),
-                b=_translated(wall.b, offset),
-                thickness_mm=wall.thickness_mm,
-                height_mm=wall.height_mm,
-                material_id=wall.material_id,
+    floor_elevations = [
+        float(median(_floor_elevation(capture.rooms[index]) for index in group))
+        for group in floor_groups
+    ]
+    base_elevation = floor_elevations[0]
+    levels: list[BuildingFloorLevel] = []
+    all_points: list[PointMM] = []
+    for floor_index, room_indices in enumerate(floor_groups):
+        walls: list[PlanWall] = []
+        openings: list[PlanOpening] = []
+        rooms: list[PlanRoom] = []
+        outlines: list[list[PointMM]] = []
+        for room_index in room_indices:
+            room = converted[room_index]
+            offset = (
+                room.source_origin_mm[0] - global_origin[0],
+                room.source_origin_mm[1] - global_origin[1],
             )
-            for wall in room.plan.walls
+            wall_offset = len(walls)
+            walls.extend(
+                PlanWall(
+                    a=_translated(wall.a, offset),
+                    b=_translated(wall.b, offset),
+                    thickness_mm=wall.thickness_mm,
+                    height_mm=wall.height_mm,
+                    material_id=wall.material_id,
+                )
+                for wall in room.plan.walls
+            )
+            openings.extend(
+                opening.model_copy(update={"wall": opening.wall + wall_offset})
+                for opening in room.plan.openings
+            )
+            outline = [_translated(point, offset) for point in room.plan.rooms[0].outline]
+            if any(_outlines_overlap(outline, existing) for existing in outlines):
+                raise ValueError(
+                    "RoomPlan structure rooms overlap on one floor in the shared world frame"
+                )
+            outlines.append(outline)
+            all_points.extend(outline)
+            rooms.append(PlanRoom(name=f"Комната {room_index + 1}", outline=outline))
+            warnings.extend(
+                f"room {capture.rooms[room_index].room_id}: {warning}" for warning in room.warnings
+            )
+        level_plan = FloorPlan(
+            id=plan_id if len(floor_groups) == 1 else f"{plan_id}-floor-{floor_index + 1}",
+            name=(name if len(floor_groups) == 1 else f"{name} · {floor_index + 1} этаж"),
+            walls=walls,
+            openings=openings,
+            rooms=rooms,
         )
-        openings.extend(
-            opening.model_copy(update={"wall": opening.wall + wall_offset})
-            for opening in room.plan.openings
-        )
-        outline = [_translated(point, offset) for point in room.plan.rooms[0].outline]
-        if any(_outlines_overlap(outline, existing) for existing in outlines):
-            raise ValueError("RoomPlan structure rooms overlap in the shared world frame")
-        outlines.append(outline)
-        rooms.append(PlanRoom(name=f"Комната {index + 1}", outline=outline))
-        warnings.extend(
-            f"room {capture.rooms[index].room_id}: {warning}" for warning in room.warnings
+        levels.append(
+            BuildingFloorLevel(
+                index=floor_index,
+                name=f"{floor_index + 1} этаж",
+                elevation_mm=(floor_elevations[floor_index] - base_elevation) * 1_000,
+                plan=level_plan,
+            )
         )
 
-    points = [point for outline in outlines for point in outline]
     if (
-        max(point[0] for point in points) - min(point[0] for point in points) > 500_000
-        or max(point[1] for point in points) - min(point[1] for point in points) > 500_000
+        max(point[0] for point in all_points) - min(point[0] for point in all_points) > 500_000
+        or max(point[1] for point in all_points) - min(point[1] for point in all_points) > 500_000
     ):
         raise ValueError("RoomPlan structure exceeds the 500 metre shared-frame limit")
 
     heights = [room.floor_height_mm for room in converted]
     if max(heights) - min(heights) > 500:
         raise ValueError("RoomPlan structure room heights disagree by more than 500 mm")
+    floor_height_mm = float(median(heights))
+    if len(levels) > 1 and not 2_200 <= floor_height_mm <= 6_000:
+        raise ValueError("Multi-floor RoomPlan structure height must be between 2.2 and 6 metres")
     return RoomPlanStructureConversion(
-        plan=FloorPlan(id=plan_id, name=name, walls=walls, openings=openings, rooms=rooms),
-        floor_height_mm=float(median(heights)),
+        plan=levels[0].plan,
+        levels=tuple(levels),
+        floor_height_mm=floor_height_mm,
         warnings=tuple(warnings),
         room_ids=tuple(room.room_id for room in capture.rooms),
         source_origin_mm=global_origin,

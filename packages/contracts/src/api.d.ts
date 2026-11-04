@@ -9724,6 +9724,8 @@ export interface components {
             room_ids: string[];
             /** Room Count */
             room_count: number;
+            /** Floor Plans */
+            floor_plans: components["schemas"]["BuildingFloorLevel"][];
         };
         /** RoomPlanWallSurface */
         RoomPlanWallSurface: {
@@ -9782,7 +9784,7 @@ export interface components {
             /** Asset Id */
             asset_id?: string | null;
             /** Source */
-            source?: "apple_roomplan_v2" | null;
+            source?: ("apple_roomplan_v2" | "apple_roomplan_structure") | null;
             /** Reason */
             reason?: string | null;
         };

@@ -60,23 +60,26 @@ def payload(schema_version: int = 2) -> dict[str, object]:
     }
 
 
-def structure_room(room_id: str, x_offset: float) -> RoomPlanCapture:
+def structure_room(room_id: str, x_offset: float, floor_elevation_m: float = 0) -> RoomPlanCapture:
     value = deepcopy(payload())
     value["room_id"] = room_id
-    value["floor_elevation_m"] = 0
+    value["floor_elevation_m"] = floor_elevation_m
     wall_ids: dict[str, str] = {}
     for wall in value["walls"]:  # type: ignore[union-attr]
+        wall["transform_m"] = list(wall["transform_m"])
         old_id = wall["identifier"]
         wall["identifier"] = f"{room_id}-{old_id}"
         wall_ids[old_id] = wall["identifier"]
         wall["a_m"][0] += x_offset
         wall["b_m"][0] += x_offset
         wall["transform_m"][12] += x_offset
+        wall["transform_m"][13] += floor_elevation_m
     for opening in value["openings"]:  # type: ignore[union-attr]
         opening["identifier"] = f"{room_id}-{opening['identifier']}"
         opening["parent_wall_id"] = wall_ids[opening["parent_wall_id"]]
         opening["center_m"][0] += x_offset
         opening["transform_m"][12] += x_offset
+        opening["transform_m"][13] += floor_elevation_m
     return RoomPlanCapture.model_validate(value)
 
 
@@ -150,6 +153,56 @@ def test_structure_builds_one_bounded_plan_from_two_exact_room_loops() -> None:
     assert len({operation.id for operation in plan.operations}) == len(plan.operations)
     assert plan.expected_outputs == ["room_0_floor"]
     assert any(operation.id == "join_room_1_shell" for operation in plan.operations)
+
+
+def test_structure_projects_aligned_rooms_to_two_measured_floor_levels() -> None:
+    capture = RoomPlanStructureCapture(
+        structure_id="home",
+        coordinate_space="shared_arkit_world",
+        rooms=[structure_room("ground", 0, 0), structure_room("upper", 0, 3)],
+    )
+
+    converted = floor_plan_from_room_plan_structure(capture, plan_id="home", name="Home")
+
+    assert converted.plan == converted.levels[0].plan
+    assert [level.index for level in converted.levels] == [0, 1]
+    assert [level.elevation_mm for level in converted.levels] == [0, 3_000]
+    assert [len(level.plan.rooms) for level in converted.levels] == [1, 1]
+    assert converted.levels[0].plan.rooms[0].outline == converted.levels[1].plan.rooms[0].outline
+    with pytest.raises(ValueError, match="one floor level"):
+        room_shell_structure_spec(capture, converted)
+
+
+def test_structure_rejects_ambiguous_or_more_than_three_floor_levels() -> None:
+    with pytest.raises(ValueError, match="1.5 to 6 metres"):
+        RoomPlanStructureCapture(
+            structure_id="ambiguous",
+            coordinate_space="shared_arkit_world",
+            rooms=[structure_room("ground", 0, 0), structure_room("step", 0, 1)],
+        )
+    with pytest.raises(ValueError, match="at most three"):
+        RoomPlanStructureCapture(
+            structure_id="too-many",
+            coordinate_space="shared_arkit_world",
+            rooms=[
+                structure_room("floor-1", 0, 0),
+                structure_room("floor-2", 0, 3),
+                structure_room("floor-3", 0, 6),
+                structure_room("floor-4", 0, 9),
+            ],
+        )
+
+
+def test_structure_rejects_a_forged_floor_elevation() -> None:
+    forged = structure_room("upper", 0, 3).model_dump(mode="json")
+    forged["floor_elevation_m"] = 6
+
+    with pytest.raises(ValueError, match="disagrees with measured wall transforms"):
+        RoomPlanStructureCapture(
+            structure_id="forged-floor",
+            coordinate_space="shared_arkit_world",
+            rooms=[structure_room("ground", 0, 0), RoomPlanCapture.model_validate(forged)],
+        )
 
 
 def test_structure_shell_accepts_the_operation_budget_max_and_rejects_the_next_room() -> None:

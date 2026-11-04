@@ -37,6 +37,7 @@ from tests.integration.conftest import Actor, make_actor
 
 def room_plan_v2(room_id: str, x0: float) -> dict[str, Any]:
     identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    identity[13] = 1.35
     x1 = x0 + 4
     walls = [
         ("south", [x0, 0], [x1, 0], 4),
