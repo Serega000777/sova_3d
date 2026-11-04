@@ -44,6 +44,7 @@ const T = {
       "Phone, email, Yandex ID and VK ID are currently in demo mode; providers are connected on the server.",
     workspaces: "Workspaces",
     current: "current",
+    switchWorkspace: "Switch",
     printers: "Printers and materials",
     printersNote: "Printer profiles, hole calibration and materials for print checks.",
     openPrinters: "Open printers",
@@ -90,6 +91,7 @@ const T = {
       "Телефон, почта, Яндекс ID и VK ID: сейчас демо-режим, операторы подключаются на сервере.",
     workspaces: "Рабочие пространства",
     current: "текущее",
+    switchWorkspace: "Выбрать",
     printers: "Принтеры и материалы",
     printersNote: "Профили принтеров, калибровка отверстий, материалы для проверки печати.",
     openPrinters: "Открыть принтеры",
@@ -229,6 +231,12 @@ export default function SettingsPage() {
     }
   }
 
+  function selectWorkspace(workspaceId: string) {
+    if (!session || workspaceId === session.workspaceId) return;
+    signIn({ ...session, workspaceId });
+    router.replace("/");
+  }
+
   const t = T[locale];
   const marketPricing = pricing?.markets.find((market) => (
     locale === "ru" ? market.market === "ru" : market.market === "international"
@@ -361,9 +369,21 @@ export default function SettingsPage() {
         <strong>{t.workspaces}</strong>
         <ul className="list">
           {me?.workspaces.map((workspace) => (
-            <li key={workspace.id}>
-              <strong>{workspace.name}</strong> <span className="muted">· {workspace.role}</span>
-              {workspace.id === session.workspaceId && <span className="chip"> {t.current}</span>}
+            <li key={workspace.id} className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+              <span>
+                <strong>{workspace.name}</strong> <span className="muted">· {workspace.role}</span>
+                {workspace.id === session.workspaceId && <span className="chip"> {t.current}</span>}
+              </span>
+              {workspace.id !== session.workspaceId && (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => selectWorkspace(workspace.id)}
+                  aria-label={`${t.switchWorkspace}: ${workspace.name}`}
+                >
+                  {t.switchWorkspace}
+                </button>
+              )}
             </li>
           ))}
         </ul>
