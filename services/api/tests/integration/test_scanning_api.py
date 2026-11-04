@@ -296,7 +296,8 @@ def test_roomplan_structure_keeps_two_rooms_in_one_shared_metric_plan(
     assert room_plan["source"] == "apple_roomplan_structure"
     assert room_plan["coordinate_space"] == "shared_arkit_world"
     assert room_plan["room_count"] == 2
-    assert room_plan["room_shell"] is None
+    assert room_plan["room_shell"]["schema_version"] == 3
+    assert len(room_plan["room_shell"]["rooms"]) == 2
 
 
 def test_roomplan_structure_requires_server_declared_capture_source(

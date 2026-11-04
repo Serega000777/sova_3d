@@ -33,7 +33,12 @@ from worker.decimate import QUALITY_WEIGHTS, decimated
 from worker.importers.common import as_single_mesh
 
 from app.config import load_settings
-from app.engineering.room_shell import RoomShellSpec, build_room_shell_plan
+from app.engineering.room_shell import (
+    RoomShellSpec,
+    RoomShellStructureSpec,
+    build_room_shell_plan,
+    build_room_shell_structure_plan,
+)
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
 from app.jobs.runner import JobContext, JobFailureError, register
@@ -409,8 +414,14 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
     shell_payload = room_plan.get("room_shell") if isinstance(room_plan, dict) else None
     if isinstance(shell_payload, dict):
         try:
-            shell_spec = RoomShellSpec.from_dict(shell_payload)
-            shell_plan = build_room_shell_plan(shell_spec)
+            if shell_payload.get("schema_version") == 3:
+                structure_shell = RoomShellStructureSpec.from_dict(shell_payload)
+                shell_plan = build_room_shell_structure_plan(structure_shell)
+                shell_source = "apple_roomplan_structure"
+            else:
+                room_shell = RoomShellSpec.from_dict(shell_payload)
+                shell_plan = build_room_shell_plan(room_shell)
+                shell_source = "apple_roomplan_v2"
             shell_result = run_plan(shell_plan)
             shell_asset = store_derived_asset(
                 ctx,
@@ -420,7 +431,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                 metadata={
                     "scan_session_id": str(session.id),
                     "operation": "roomplan_empty_shell",
-                    "source": "apple_roomplan_v2",
+                    "source": shell_source,
                     "kernel": shell_result.kernel,
                 },
                 created_by=ctx.job.created_by,
@@ -430,7 +441,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             shell_report = {
                 "available": True,
                 "asset_id": str(shell_asset.id),
-                "source": "apple_roomplan_v2",
+                "source": shell_source,
             }
         except (ValueError, JobFailureError) as exc:
             # The captured source remains usable; an optional derived shell must never replace it.

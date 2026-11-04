@@ -6,7 +6,13 @@ import math
 from dataclasses import asdict, dataclass
 from typing import cast
 
-from app.engineering.room_plan import RoomPlanCapture, RoomPlanConversion
+from app.engineering.room_plan import (
+    RoomPlanCapture,
+    RoomPlanConversion,
+    RoomPlanStructureCapture,
+    RoomPlanStructureConversion,
+    floor_plan_from_room_plan,
+)
 from app.geometry.operations import OperationPlan
 
 FLOOR_THICKNESS_MM = 20.0
@@ -69,6 +75,30 @@ class RoomShellSpec:
             wall_heights_mm=tuple(float(item) for item in heights),
             wall_material_ids=tuple(materials),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class RoomShellStructureSpec:
+    """Several exact room loops kept in one bounded shell artifact.
+
+    The rooms share Apple's world frame, but this does not invent one exterior perimeter:
+    shared walls may remain interior and disconnected loops remain separate solids.
+    """
+
+    rooms: tuple[RoomShellSpec, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": 3,
+            "rooms": [room.to_dict() for room in self.rooms],
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, object]) -> RoomShellStructureSpec:
+        raw_rooms = cast(list[dict[str, object]], value["rooms"])
+        if not 2 <= len(raw_rooms) <= 64:
+            raise ValueError("RoomPlan structure shell requires between 2 and 64 room loops")
+        return cls(tuple(RoomShellSpec.from_dict(room) for room in raw_rooms))
 
 
 def room_shell_spec(
@@ -155,6 +185,26 @@ def room_shell_spec(
     )
 
 
+def room_shell_structure_spec(
+    capture: RoomPlanStructureCapture, conversion: RoomPlanStructureConversion
+) -> RoomShellStructureSpec:
+    """Build one exact shell spec per validated room in the common ARKit frame."""
+    if tuple(room.room_id for room in capture.rooms) != conversion.room_ids:
+        raise ValueError("RoomPlan structure shell room lineage is inconsistent")
+    rooms: list[RoomShellSpec] = []
+    for index, room in enumerate(capture.rooms):
+        room_conversion = floor_plan_from_room_plan(
+            room,
+            plan_id=f"structure-shell-room-{index + 1}",
+            name=f"Комната {index + 1}",
+        )
+        spec = room_shell_spec(room, room_conversion)
+        if spec is None:
+            raise ValueError("RoomPlan structure shell requires complete v2 room geometry")
+        rooms.append(spec)
+    return RoomShellStructureSpec(tuple(rooms))
+
+
 def build_room_shell_plan(spec: RoomShellSpec) -> OperationPlan:
     wall_count = len(spec.outline_mm)
     for values, label in (
@@ -180,9 +230,7 @@ def build_room_shell_plan(spec: RoomShellSpec) -> OperationPlan:
         length = math.hypot(b[0] - a[0], b[1] - a[1])
         angle = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
         thickness = (
-            spec.wall_thicknesses_mm[index]
-            if spec.wall_thicknesses_mm
-            else WALL_THICKNESS_MM
+            spec.wall_thicknesses_mm[index] if spec.wall_thicknesses_mm else WALL_THICKNESS_MM
         )
         height = spec.wall_heights_mm[index] if spec.wall_heights_mm else spec.wall_height_mm
         if not 20 <= thickness <= 2_000:
@@ -290,5 +338,63 @@ def build_room_shell_plan(spec: RoomShellSpec) -> OperationPlan:
                 "Confirm every opening remains inside its parent wall.",
             ],
             "expected_outputs": ["floor"],
+        }
+    )
+
+
+def build_room_shell_structure_plan(spec: RoomShellStructureSpec) -> OperationPlan:
+    """Combine exact per-room shell plans without inventing an exterior building loop."""
+    if not 2 <= len(spec.rooms) <= 64:
+        raise ValueError("RoomPlan structure shell requires between 2 and 64 room loops")
+    operations: list[dict[str, object]] = []
+    combined_root: str | None = None
+    for room_index, room in enumerate(spec.rooms):
+        room_plan = build_room_shell_plan(room).model_dump(mode="json")
+        room_operations = cast(list[dict[str, object]], room_plan["operations"])
+        identifiers = {
+            str(operation["id"]): f"room_{room_index}_{operation['id']}"
+            for operation in room_operations
+        }
+        for operation in room_operations:
+            prefixed = dict(operation)
+            prefixed["id"] = identifiers[str(operation["id"])]
+            for field in ("target", "tool"):
+                value = prefixed.get(field)
+                if isinstance(value, str) and value in identifiers:
+                    prefixed[field] = identifiers[value]
+            operations.append(prefixed)
+        room_root = identifiers[str(cast(list[str], room_plan["expected_outputs"])[0])]
+        if combined_root is None:
+            combined_root = room_root
+        else:
+            operations.append(
+                {
+                    "id": f"join_room_{room_index}_shell",
+                    "type": "boolean",
+                    "schema_version": 1,
+                    "op": "fuse",
+                    "target": combined_root,
+                    "tool": room_root,
+                }
+            )
+    if combined_root is None:
+        raise ValueError("RoomPlan structure shell has no room loops")
+    if len(operations) > MAX_SHELL_OPERATIONS:
+        raise ValueError("RoomPlan structure shell exceeds the exact-kernel operation limit")
+    return OperationPlan.model_validate(
+        {
+            "schema_version": 1,
+            "goal": "Build exact empty-room shells from validated RoomPlan structure loops",
+            "assumptions": [
+                "All dimensions are millimetres in one shared ARKit world frame.",
+                "Each room loop remains authoritative; no exterior building perimeter is inferred.",
+                "Shared walls may remain interior; disconnected loops may remain separate solids.",
+            ],
+            "operations": operations,
+            "validation_steps": [
+                "Confirm one exact floor and measured wall set per room loop.",
+                "Confirm every opening remains inside its original parent wall.",
+            ],
+            "expected_outputs": [combined_root],
         }
     )

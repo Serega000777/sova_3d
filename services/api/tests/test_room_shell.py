@@ -1,7 +1,20 @@
+from copy import deepcopy
+
 import pytest
 
-from app.engineering.room_plan import RoomPlanCapture, floor_plan_from_room_plan
-from app.engineering.room_shell import build_room_shell_plan, room_shell_spec
+from app.engineering.room_plan import (
+    RoomPlanCapture,
+    RoomPlanStructureCapture,
+    floor_plan_from_room_plan,
+    floor_plan_from_room_plan_structure,
+)
+from app.engineering.room_shell import (
+    RoomShellStructureSpec,
+    build_room_shell_plan,
+    build_room_shell_structure_plan,
+    room_shell_spec,
+    room_shell_structure_spec,
+)
 
 
 def payload(schema_version: int = 2) -> dict[str, object]:
@@ -45,6 +58,26 @@ def payload(schema_version: int = 2) -> dict[str, object]:
             }
         ],
     }
+
+
+def structure_room(room_id: str, x_offset: float) -> RoomPlanCapture:
+    value = deepcopy(payload())
+    value["room_id"] = room_id
+    value["floor_elevation_m"] = 0
+    wall_ids: dict[str, str] = {}
+    for wall in value["walls"]:  # type: ignore[union-attr]
+        old_id = wall["identifier"]
+        wall["identifier"] = f"{room_id}-{old_id}"
+        wall_ids[old_id] = wall["identifier"]
+        wall["a_m"][0] += x_offset
+        wall["b_m"][0] += x_offset
+        wall["transform_m"][12] += x_offset
+    for opening in value["openings"]:  # type: ignore[union-attr]
+        opening["identifier"] = f"{room_id}-{opening['identifier']}"
+        opening["parent_wall_id"] = wall_ids[opening["parent_wall_id"]]
+        opening["center_m"][0] += x_offset
+        opening["transform_m"][12] += x_offset
+    return RoomPlanCapture.model_validate(value)
 
 
 def test_v2_roomplan_builds_bounded_exact_shell_plan() -> None:
@@ -98,3 +131,39 @@ def test_v2_rejects_a_collapsed_transform_basis() -> None:
     invalid["walls"][0]["transform_m"][0] = 0  # type: ignore[index]
     with pytest.raises(ValueError, match="orthonormal"):
         RoomPlanCapture.model_validate(invalid)
+
+
+def test_structure_builds_one_bounded_plan_from_two_exact_room_loops() -> None:
+    capture = RoomPlanStructureCapture(
+        structure_id="home",
+        coordinate_space="shared_arkit_world",
+        rooms=[structure_room("kitchen", 0), structure_room("hall", 4)],
+    )
+    converted = floor_plan_from_room_plan_structure(capture, plan_id="home", name="Home")
+
+    spec = room_shell_structure_spec(capture, converted)
+    restored = RoomShellStructureSpec.from_dict(spec.to_dict())
+    plan = build_room_shell_structure_plan(restored)
+
+    assert len(restored.rooms) == 2
+    assert len(plan.operations) == 43
+    assert len({operation.id for operation in plan.operations}) == len(plan.operations)
+    assert plan.expected_outputs == ["room_0_floor"]
+    assert any(operation.id == "join_room_1_shell" for operation in plan.operations)
+
+
+def test_structure_shell_accepts_the_operation_budget_max_and_rejects_the_next_room() -> None:
+    room = room_shell_spec(
+        structure_room("room", 0),
+        floor_plan_from_room_plan(structure_room("room", 0), plan_id="room", name="Room"),
+    )
+    assert room is not None
+    bounded = RoomShellStructureSpec(tuple(room for _ in range(11)))
+    oversized = RoomShellStructureSpec(tuple(room for _ in range(12)))
+
+    plan = build_room_shell_structure_plan(bounded)
+
+    assert len(plan.operations) == 241
+
+    with pytest.raises(ValueError, match="operation limit"):
+        build_room_shell_structure_plan(oversized)

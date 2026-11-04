@@ -26,7 +26,7 @@ from app.engineering.room_plan import (
     floor_plan_from_room_plan,
     floor_plan_from_room_plan_structure,
 )
-from app.engineering.room_shell import room_shell_spec
+from app.engineering.room_shell import room_shell_spec, room_shell_structure_spec
 from app.models.core import WorkspaceRole
 from app.models.execution import Job, JobStatus
 from app.models.scanning import FrameKind, ScanFrame, ScanMode, ScanSession, ScanStatus
@@ -421,6 +421,7 @@ def set_room_plan_structure(
             plan_id=f"scan-{session.id}-roomplan-structure",
             name=session.label or "RoomPlan structure",
         )
+        shell = room_shell_structure_spec(capture, converted)
     except ValueError as exc:
         raise ValidationFailedError(str(exc)) from exc
     session.capture_stats = {
@@ -435,9 +436,9 @@ def set_room_plan_structure(
             "floor_height_mm": converted.floor_height_mm,
             "warnings": list(converted.warnings),
             "floor_plan": converted.plan.model_dump(mode="json"),
-            # The existing exact shell builder accepts one loop only. Keep the merged
-            # Apple mesh, but do not mislabel per-room shells as one watertight building.
-            "room_shell": None,
+            # Exact per-room loops share one artifact, without inventing one exterior
+            # watertight building perimeter or removing measured interior walls.
+            "room_shell": shell.to_dict(),
         },
     }
     db.flush()
