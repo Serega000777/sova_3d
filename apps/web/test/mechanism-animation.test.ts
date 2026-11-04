@@ -8,6 +8,7 @@ import {
   mechanismPlaybackValue,
   sceneMechanism,
   slidingLidTransform,
+  verifiedAssemblyGuideProgress,
 } from "../src/lib/mechanism.ts";
 
 test("joint playback follows only its bounded persisted range", () => {
@@ -246,12 +247,62 @@ test("assembly guide fails closed for missing, conflicting or substituted part i
   ), null);
 });
 
-test("Studio renders a version-scoped assembly guide without claiming photos or completion", () => {
+test("shared guide progress stays bound to the exact version, kind and known steps", () => {
+  const guide = mechanismAssemblyGuide({
+    build_hinged_lid: {
+      ...HINGE,
+      parts: { base: "hinge_base_a", lid: "hinge_lid_a", pin: "hinge_pin_a" },
+    },
+  }, new Set(["hinge_base_a", "hinge_lid_a", "hinge_pin_a"]), assemblyBom(
+    "hinge_base_a", "hinge_lid_a", "hinge_pin_a",
+  ));
+  assert.ok(guide);
+  const verified = verifiedAssemblyGuideProgress({
+    version_id: "version-69",
+    guide_kind: "hinged_lid",
+    completed_step_ids: ["inspect-parts", "insert-pin"],
+    revision: 3,
+  }, "version-69", guide);
+  assert.deepEqual([...verified.completed], ["inspect-parts", "insert-pin"]);
+  assert.equal(verified.revision, 3);
+  assert.equal(verifiedAssemblyGuideProgress({
+    version_id: "substituted",
+    guide_kind: "hinged_lid",
+    completed_step_ids: [],
+    revision: 0,
+  }, "version-69", guide), null);
+  assert.equal(verifiedAssemblyGuideProgress({
+    version_id: "version-69",
+    guide_kind: "sliding_lid",
+    completed_step_ids: [],
+    revision: 0,
+  }, "version-69", guide), null);
+  assert.equal(verifiedAssemblyGuideProgress({
+    version_id: "version-69",
+    guide_kind: "hinged_lid",
+    completed_step_ids: ["inspect-parts", "inspect-parts"],
+    revision: 1,
+  }, "version-69", guide), null);
+  assert.equal(verifiedAssemblyGuideProgress({
+    version_id: "version-69",
+    guide_kind: "hinged_lid",
+    completed_step_ids: ["unknown"],
+    revision: 1,
+  }, "version-69", guide), null);
+});
+
+test("Studio renders and synchronizes the exact version-scoped assembly guide", () => {
   const source = readFileSync(new URL("../src/app/projects/[id]/page.tsx", import.meta.url), "utf8");
   assert.match(source, /mechanismAssemblyGuide/);
   assert.match(source, /Инструкция по сборке этой версии/);
   assert.match(source, /Детали сцены/);
   assert.match(source, /\.inspectAssembly\(activeVersionId\)/);
   assert.match(source, /Ведомость деталей инструкции/);
-  assert.match(source, /Фотографии, крепёж вне сцены и отметки выполнения не добавлены/);
+  assert.match(source, /getAssemblyGuideProgress\(versionId\)/);
+  assert.match(source, /putAssemblyGuideProgress\(versionId/);
+  assert.match(source, /expected_revision: revision/);
+  assert.match(source, /reason instanceof ApiError && reason\.status === 409/);
+  assert.match(source, /editable=\{canEditProject\}/);
+  assert.match(source, /синхронизируются для этой версии между участниками workspace/);
+  assert.match(source, /Фотографии и крепёж вне сцены не добавлены/);
 });

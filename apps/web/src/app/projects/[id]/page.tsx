@@ -28,6 +28,7 @@ import type {
   Me,
   MeshModifierStack,
   OperationStack,
+  PhysicalAiClient,
   PrinterProfile,
   PrinterModel,
   Project,
@@ -116,6 +117,7 @@ import {
   mechanismPlaybackValue,
   sceneMechanism,
   slidingLidTransform,
+  verifiedAssemblyGuideProgress,
   type SceneMechanism,
 } from "@/lib/mechanism";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
@@ -241,11 +243,100 @@ function MechanismPlayback({
 
 function MechanismAssemblyGuideCard({
   guide,
+  versionId,
+  client,
+  editable,
   ru,
 }: {
   guide: NonNullable<ReturnType<typeof mechanismAssemblyGuide>>;
+  versionId: string;
+  client: PhysicalAiClient | null;
+  editable: boolean;
   ru: boolean;
 }) {
+  const stepKey = guide.steps.map((step) => step.id).join("\u0000");
+  const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [revision, setRevision] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const requestRevision = useRef(0);
+
+  useEffect(() => {
+    const request = ++requestRevision.current;
+    let cancelled = false;
+    setCompleted(new Set());
+    setRevision(0);
+    setLoaded(false);
+    setSaving(false);
+    setSyncError(null);
+    if (!client || !versionId) return () => { cancelled = true; };
+    void client.getAssemblyGuideProgress(versionId)
+      .then((progress) => {
+        if (cancelled || requestRevision.current !== request) return;
+        const verified = verifiedAssemblyGuideProgress(progress, versionId, guide);
+        if (!verified) throw new Error("Invalid assembly guide progress response");
+        setCompleted(verified.completed);
+        setRevision(verified.revision);
+        setLoaded(true);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled && requestRevision.current === request) {
+          setSyncError(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+    return () => {
+      cancelled = true;
+      requestRevision.current += 1;
+    };
+  }, [client, guide.kind, stepKey, versionId]);
+
+  const save = async (next: Set<string>) => {
+    if (!client || !editable || !loaded || saving) return;
+    const request = ++requestRevision.current;
+    setSaving(true);
+    setSyncError(null);
+    try {
+      const progress = await client.putAssemblyGuideProgress(versionId, {
+        guide_kind: guide.kind,
+        completed_step_ids: guide.steps.flatMap((step) => next.has(step.id) ? [step.id] : []),
+        expected_revision: revision,
+      });
+      const verified = verifiedAssemblyGuideProgress(progress, versionId, guide);
+      if (!verified) throw new Error("Invalid assembly guide progress response");
+      if (requestRevision.current !== request) return;
+      setCompleted(verified.completed);
+      setRevision(verified.revision);
+    } catch (reason) {
+      if (requestRevision.current !== request) return;
+      if (reason instanceof ApiError && reason.status === 409) {
+        try {
+          const latest = verifiedAssemblyGuideProgress(
+            await client.getAssemblyGuideProgress(versionId),
+            versionId,
+            guide,
+          );
+          if (!latest || requestRevision.current !== request) {
+            throw new Error("Invalid assembly guide progress response");
+          }
+          setCompleted(latest.completed);
+          setRevision(latest.revision);
+          setSyncError(ru
+            ? "Отметки изменились в другом окне — показана свежая версия."
+            : "The checklist changed in another window; the latest version is shown.");
+        } catch (reloadReason) {
+          if (requestRevision.current === request) {
+            setSyncError(reloadReason instanceof Error ? reloadReason.message : String(reloadReason));
+          }
+        }
+      } else {
+        setSyncError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      if (requestRevision.current === request) setSaving(false);
+    }
+  };
+
   return (
     <section className="stack" aria-label={ru ? "Инструкция по сборке" : "Assembly guide"}>
       <strong>{ru ? "Инструкция по сборке этой версии" : "Assembly guide for this version"}</strong>
@@ -261,20 +352,59 @@ function MechanismAssemblyGuideCard({
         ))}
       </div>
       <ol className="stack" style={{ margin: 0, paddingInlineStart: 24, gap: 10 }}>
-        {guide.steps.map((step) => (
-          <li key={step.id}>
-            <strong>{ru ? step.titleRu : step.titleEn}</strong>
-            <div>{ru ? step.detailRu : step.detailEn}</div>
-            <span className="muted">
-              {ru ? "Детали сцены" : "Scene parts"}: {step.nodeIds.join(", ")}
-            </span>
-          </li>
-        ))}
+        {guide.steps.map((step) => {
+          const checked = completed.has(step.id);
+          return (
+            <li key={step.id}>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!editable || saving || !loaded}
+                  onChange={() => {
+                    const next = new Set(completed);
+                    if (checked) next.delete(step.id);
+                    else next.add(step.id);
+                    void save(next);
+                  }}
+                />
+                <span>
+                  <strong>{ru ? step.titleRu : step.titleEn}</strong>
+                  <div>{ru ? step.detailRu : step.detailEn}</div>
+                  <span className="muted">
+                    {ru ? "Детали сцены" : "Scene parts"}: {step.nodeIds.join(", ")}
+                  </span>
+                </span>
+              </label>
+            </li>
+          );
+        })}
       </ol>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <span>
+          {ru ? "Выполнено" : "Completed"}: {completed.size}/{guide.steps.length}
+          {saving ? (ru ? " · синхронизация…" : " · syncing…") : ""}
+        </span>
+        {completed.size > 0 && (
+          <button
+            className="btn"
+            type="button"
+            disabled={!editable || saving || !loaded}
+            onClick={() => void save(new Set())}
+          >
+            {ru ? "Сбросить" : "Reset"}
+          </button>
+        )}
+      </div>
+      {syncError && <span className="error">{syncError}</span>}
       <span className="muted">
         {ru
-          ? "Шаги показаны только после сверки деталей механизма с ведомостью выбранной неизменяемой версии. Фотографии, крепёж вне сцены и отметки выполнения не добавлены."
-          : "Steps appear only after matching the mechanism parts to the selected immutable version's bill of materials. Photos, out-of-scene fasteners and completion tracking are not included."}
+          ? editable
+            ? "Отметки синхронизируются для этой версии между участниками workspace, но не подтверждают физическую сборку. Фотографии и крепёж вне сцены не добавлены."
+            : "Отметки синхронизируются для этой версии; у вас доступ только для чтения. Они не подтверждают физическую сборку."
+          : editable
+            ? "Checks sync for this version across workspace members, but do not prove physical assembly. Photos and out-of-scene fasteners are not included."
+            : "Checks sync for this version; your access is read-only. They do not prove physical assembly."}
       </span>
     </section>
   );
@@ -5532,7 +5662,13 @@ export default function ProjectPage() {
                   </div>
                 )}
                 {mechanismAssembly && (
-                  <MechanismAssemblyGuideCard guide={mechanismAssembly} ru={ru} />
+                  <MechanismAssemblyGuideCard
+                    guide={mechanismAssembly}
+                    versionId={activeVersion?.id ?? ""}
+                    client={client}
+                    editable={canEditProject}
+                    ru={ru}
+                  />
                 )}
                 {mechanismConflict && (
                   <span className="muted">{ru
