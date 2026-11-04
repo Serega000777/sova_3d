@@ -389,11 +389,9 @@ export default function SettingsPage() {
             </li>
           ))}
         </ul>
-        {me?.workspaces.some((workspace) => workspace.id === session.workspaceId && workspace.kind === "team") && (
-          <Link className="btn" href="/team" style={{ alignSelf: "flex-start" }}>
-            {t.openTeam}
-          </Link>
-        )}
+        <Link className="btn" href="/team" style={{ alignSelf: "flex-start" }}>
+          {t.openTeam}
+        </Link>
       </div>
 
       <div className="card stack">

@@ -3,6 +3,7 @@
 import {
   type Me,
   type WorkspaceMember,
+  type WorkspaceMemberRole,
   type WorkspaceTask,
   type WorkspaceVersionActivityItem,
   relativeTime,
@@ -22,7 +23,7 @@ function formatAssetBytes(bytes: number, language: "ru" | "en"): string {
 }
 
 export default function TeamWorkspacePage() {
-  const { session, ready, client } = useSession();
+  const { session, ready, client, signIn } = useSession();
   const language: "ru" | "en" =
     typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
       ? "ru"
@@ -36,6 +37,9 @@ export default function TeamWorkspacePage() {
   const [activity, setActivity] = useState<WorkspaceVersionActivityItem[]>([]);
   const [activityError, setActivityError] = useState<string | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberRole, setMemberRole] = useState<WorkspaceMemberRole>("viewer");
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +120,71 @@ export default function TeamWorkspacePage() {
     }
   }
 
+  async function createWorkspace(event: React.FormEvent) {
+    event.preventDefault();
+    if (!client || !session || !workspaceName.trim() || busy) return;
+    setBusy("create-workspace");
+    setError(null);
+    try {
+      const created = await client.createTeamWorkspace({ name: workspaceName.trim() });
+      setWorkspaceName("");
+      signIn({ ...session, workspaceId: created.id });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function addMember(event: React.FormEvent) {
+    event.preventDefault();
+    if (!client || !session || workspace?.role !== "owner" || !memberEmail.trim() || busy) return;
+    setBusy("add-member");
+    setError(null);
+    try {
+      await client.addWorkspaceMember(session.workspaceId, {
+        email: memberEmail.trim(),
+        role: memberRole,
+      });
+      setMemberEmail("");
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function changeRole(member: WorkspaceMember, role: WorkspaceMemberRole) {
+    if (!client || !session || workspace?.role !== "owner" || member.role === "owner" || busy) return;
+    setBusy(member.user_id);
+    setError(null);
+    try {
+      await client.updateWorkspaceMember(session.workspaceId, member.user_id, role);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeMember(member: WorkspaceMember) {
+    if (!client || !session || workspace?.role !== "owner" || member.role === "owner" || busy) return;
+    const label = member.display_name ?? member.email ?? member.user_id;
+    if (!window.confirm(ru ? `Удалить доступ для ${label}?` : `Remove access for ${label}?`)) return;
+    setBusy(member.user_id);
+    setError(null);
+    try {
+      await client.removeWorkspaceMember(session.workspaceId, member.user_id);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function toggleTask(task: WorkspaceTask) {
     if (!client || !session || busy || workspace?.role === "viewer") return;
     setBusy(task.id);
@@ -153,11 +222,25 @@ export default function TeamWorkspacePage() {
           <strong>{ru ? "Сейчас выбрано личное пространство" : "A personal workspace is selected"}</strong>
           <span className="muted">
             {ru
-              ? "Выберите team workspace в настройках, чтобы увидеть участников, задачи и активность версий."
-              : "Select a team workspace in Settings to see members, tasks, and version activity."}
+              ? "Выберите существующее team workspace в настройках или создайте новое здесь."
+              : "Select an existing team workspace in Settings or create one here."}
           </span>
+          <form className="row" style={{ flexWrap: "wrap" }} onSubmit={createWorkspace}>
+            <input
+              className="input"
+              value={workspaceName}
+              maxLength={200}
+              placeholder={ru ? "Название команды" : "Team name"}
+              aria-label={ru ? "Название новой команды" : "New team name"}
+              onChange={(event) => setWorkspaceName(event.target.value)}
+              style={{ flex: 1, minWidth: 220 }}
+            />
+            <button className="btn primary" type="submit" disabled={Boolean(busy) || !workspaceName.trim()}>
+              {ru ? "Создать команду" : "Create team"}
+            </button>
+          </form>
           <Link className="btn primary" href="/settings" style={{ alignSelf: "flex-start" }}>
-            {ru ? "Открыть настройки" : "Open Settings"}
+            {ru ? "Выбрать существующую" : "Select existing"}
           </Link>
         </div>
       </div>
@@ -247,19 +330,67 @@ export default function TeamWorkspacePage() {
       </section>
 
       <section className="card stack">
-        <strong>{ru ? "Участники" : "Members"}</strong>
+        <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+          <strong>{ru ? "Участники" : "Members"}</strong>
+          {workspace.role !== "owner" && <span className="chip">{ru ? "управляет владелец" : "owner managed"}</span>}
+        </div>
+        {workspace.role === "owner" && (
+          <form className="row" style={{ flexWrap: "wrap", alignItems: "end" }} onSubmit={addMember}>
+            <label className="stack" style={{ flex: 1, minWidth: 220 }}>
+              <span className="muted">{ru ? "Почта зарегистрированного пользователя" : "Registered user email"}</span>
+              <input
+                className="input"
+                type="email"
+                value={memberEmail}
+                maxLength={320}
+                required
+                onChange={(event) => setMemberEmail(event.target.value)}
+              />
+            </label>
+            <label className="stack">
+              <span className="muted">{ru ? "Роль" : "Role"}</span>
+              <select className="input" value={memberRole} onChange={(event) => setMemberRole(event.target.value as WorkspaceMemberRole)}>
+                <option value="admin">admin</option>
+                <option value="editor">editor</option>
+                <option value="viewer">viewer</option>
+              </select>
+            </label>
+            <button className="btn primary" type="submit" disabled={Boolean(busy) || !memberEmail.trim()}>
+              {ru ? "Добавить" : "Add"}
+            </button>
+          </form>
+        )}
         <ul className="list">
           {members.map((member) => (
             <li key={member.user_id} className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
               <span>{member.display_name ?? member.email ?? member.user_id}</span>
-              <span className="chip">{member.role}</span>
+              {workspace.role === "owner" && member.role !== "owner" ? (
+                <span className="row">
+                  <select
+                    className="input"
+                    value={member.role}
+                    aria-label={`${ru ? "Роль" : "Role"}: ${member.display_name ?? member.email ?? member.user_id}`}
+                    disabled={Boolean(busy)}
+                    onChange={(event) => void changeRole(member, event.target.value as WorkspaceMemberRole)}
+                  >
+                    <option value="admin">admin</option>
+                    <option value="editor">editor</option>
+                    <option value="viewer">viewer</option>
+                  </select>
+                  <button className="btn" type="button" disabled={Boolean(busy)} onClick={() => void removeMember(member)}>
+                    {ru ? "Удалить" : "Remove"}
+                  </button>
+                </span>
+              ) : (
+                <span className="chip">{member.role}</span>
+              )}
             </li>
           ))}
         </ul>
         <span className="muted">
           {ru
-            ? "Изменение ролей и состава команды пока остаётся в мобильном менеджере; web-панель этого инкремента не расширяет права доступа."
-            : "Role and membership changes remain in the mobile manager; this web increment does not expand access rights."}
+            ? "Добавить можно только уже зарегистрированного пользователя. Владелец неизменяем; приглашения по почте не отправляются."
+            : "Only an already registered user can be added. The owner is immutable; no email invitation is sent."}
         </span>
       </section>
     </div>

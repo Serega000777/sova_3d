@@ -27,7 +27,21 @@ test("team task writes preserve server CAS and role boundaries", () => {
   assert.match(page, /disabled=\{!tasksManageable \|\| Boolean\(busy\)\}/);
 });
 
-test("settings links to the dashboard only for the selected team workspace", () => {
-  assert.match(settings, /workspace\.id === session\.workspaceId && workspace\.kind === "team"/);
+test("settings always links to the team dashboard so personal users can create a team", () => {
   assert.match(settings, /href="\/team"/);
+});
+
+test("personal workspace can create a server team and switches scope only after success", () => {
+  assert.match(page, /client\.createTeamWorkspace\(\{ name: workspaceName\.trim\(\) \}\)/);
+  assert.match(page, /signIn\(\{ \.\.\.session, workspaceId: created\.id \}\)/);
+  assert.match(page, /workspace\?\.kind !== "team"/);
+});
+
+test("only an owner receives member mutations and the immutable owner has no controls", () => {
+  assert.match(page, /workspace\?\.role !== "owner"/);
+  assert.match(page, /client\.addWorkspaceMember\(session\.workspaceId/);
+  assert.match(page, /client\.updateWorkspaceMember\(session\.workspaceId, member\.user_id, role\)/);
+  assert.match(page, /client\.removeWorkspaceMember\(session\.workspaceId, member\.user_id\)/);
+  assert.match(page, /workspace\.role === "owner" && member\.role !== "owner"/);
+  assert.match(page, /window\.confirm/);
 });
