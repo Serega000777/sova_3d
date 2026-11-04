@@ -1,4 +1,4 @@
-import type { FurnitureItem, Vec3 } from "@physical-ai/contracts";
+import type { BuildingFloorPlans, FurnitureItem, Vec3 } from "@physical-ai/contracts";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
@@ -15,6 +15,9 @@ export function FurniturePlacementSheet({
   point,
   rotation,
   floorPlanId,
+  floorElevationMm,
+  floorLevels,
+  selectedFloorIndex,
   clearance,
   busy,
   onClose,
@@ -22,6 +25,7 @@ export function FurniturePlacementSheet({
   onPointChange,
   onRotationChange,
   onClearanceChange,
+  onFloorChange,
   onPickPoint,
   onDragInPlan,
   onApply,
@@ -33,6 +37,9 @@ export function FurniturePlacementSheet({
   point: Vec3;
   rotation: number;
   floorPlanId: string | null;
+  floorElevationMm: number | null;
+  floorLevels: BuildingFloorPlans["levels"];
+  selectedFloorIndex: number;
   clearance: number;
   busy: boolean;
   onClose: () => void;
@@ -40,6 +47,7 @@ export function FurniturePlacementSheet({
   onPointChange: (point: Vec3) => void;
   onRotationChange: (degrees: number) => void;
   onClearanceChange: (millimetres: number) => void;
+  onFloorChange: (floorIndex: number) => void;
   onPickPoint: () => void;
   onDragInPlan: () => void;
   onApply: () => void;
@@ -50,8 +58,10 @@ export function FurniturePlacementSheet({
   useEffect(() => setDraft(point.map((value) => value.toFixed(1)) as [string, string, string]), [point]);
 
   useEffect(() => {
-    if (floorPlanId && point[2] !== 0) onPointChange([point[0], point[1], 0]);
-  }, [floorPlanId, onPointChange, point]);
+    if (floorPlanId && floorElevationMm !== null && point[2] !== floorElevationMm) {
+      onPointChange([point[0], point[1], floorElevationMm]);
+    }
+  }, [floorElevationMm, floorPlanId, onPointChange, point]);
 
   const updateAxis = (axis: 0 | 1 | 2, value: string) => {
     const next = [...draft] as [string, string, string];
@@ -99,6 +109,29 @@ export function FurniturePlacementSheet({
                 ? "У выбранной версии нет связанного плана; доступна только свободная 3D-позиция."
                 : "The selected version has no linked plan; only unrestricted 3D placement is available."}
           </Text>
+          {floorPlanId && floorLevels.length > 1 ? (
+            <View style={styles.row}>
+              {floorLevels.map((level) => (
+                <Pressable
+                  key={level.index}
+                  style={[
+                    styles.chip,
+                    selectedFloorIndex === level.index && { borderColor: colors.accent },
+                  ]}
+                  onPress={() => onFloorChange(level.index)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      selectedFloorIndex === level.index && { color: colors.accent },
+                    ]}
+                  >
+                    {level.name} · {level.elevation_mm.toFixed(0)} mm
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           {floorPlanId ? (
             <View style={styles.row}>
               {[0, 150, 300].map((value) => (
@@ -149,8 +182,8 @@ export function FurniturePlacementSheet({
         {floorPlanId ? (
           <Text style={styles.muted}>
             {ru
-              ? "Z зафиксирован на 0 мм: проверяемая расстановка относится к полу текущего одноуровневого плана."
-              : "Z is fixed at 0 mm: validated placement belongs to the current single-level plan floor."}
+              ? `Z зафиксирован на измеренной высоте выбранного этажа: ${(floorElevationMm ?? 0).toFixed(0)} мм.`
+              : `Z is fixed at the selected floor's measured elevation: ${(floorElevationMm ?? 0).toFixed(0)} mm.`}
           </Text>
         ) : null}
         <View style={styles.row}>

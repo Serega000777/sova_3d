@@ -1,4 +1,10 @@
-import type { FloorPlan, PlanRoom, PlanWall, Point } from "@physical-ai/contracts";
+import type {
+  BuildingFloorPlans,
+  FloorPlan,
+  PlanRoom,
+  PlanWall,
+  Point,
+} from "@physical-ai/contracts";
 
 export type PlanEntityKind = "room" | "wall" | "node";
 
@@ -6,6 +12,10 @@ export interface PlanEntitySelection {
   kind: PlanEntityKind;
   index: number;
 }
+
+export type ValidBuildingFloorPlans = Omit<BuildingFloorPlans, "levels"> & {
+  levels: Array<BuildingFloorPlans["levels"][number] & { plan: FloorPlan }>;
+};
 
 export function planNodes(plan: FloorPlan): Point[] {
   const nodes: Point[] = [];
@@ -148,4 +158,32 @@ export function isValidFloorPlan(value: unknown): value is FloorPlan {
         Number.isFinite(opening.width_mm),
     )
   );
+}
+
+export function isValidBuildingFloorPlans(value: unknown): value is ValidBuildingFloorPlans {
+  if (!value || typeof value !== "object") return false;
+  const building = value as Partial<BuildingFloorPlans>;
+  if (
+    typeof building.version_id !== "string" ||
+    !Number.isFinite(building.floor_height_mm) ||
+    !Array.isArray(building.levels) ||
+    building.levels.length < 1 ||
+    building.levels.length > 3
+  ) return false;
+  const indices = new Set<number>();
+  return building.levels.every((level) => {
+    if (
+      !Number.isInteger(level?.index) ||
+      level.index < 0 ||
+      level.index > 2 ||
+      indices.has(level.index) ||
+      typeof level.name !== "string" ||
+      !Number.isFinite(level.elevation_mm) ||
+      level.elevation_mm < 0 ||
+      level.elevation_mm > 12_000 ||
+      !isValidFloorPlan(level.plan)
+    ) return false;
+    indices.add(level.index);
+    return true;
+  });
 }

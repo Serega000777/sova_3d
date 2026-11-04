@@ -45,6 +45,7 @@ class FloorPlanLayout:
     plan: FloorPlan
     floor_index: int
     floor_count: int
+    floor_elevation_mm: float
 
 
 def _cross(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> float:
@@ -323,7 +324,6 @@ def auto_layout_project_floor_plan(
     door_width_mm: float,
     room_requirements: list[RoomRequirement] | None = None,
     floor_index: int = 0,
-    auto_furnish: bool = False,
 ) -> FloorPlanLayout:
     """Create a child version with deterministic rooms and doors on one exact floor."""
     record = get_project_floor_plan(db, user_id=user_id, project_id=project_id)
@@ -337,10 +337,6 @@ def auto_layout_project_floor_plan(
     floor_count = len(building.levels) if building is not None else 1
     if floor_index < 0 or floor_index >= floor_count:
         raise ValidationFailedError("the requested floor does not exist")
-    if auto_furnish and floor_count > 1:
-        raise ValidationFailedError(
-            "automatic furniture placement is not yet floor-elevation-aware"
-        )
     source_plan = building.levels[floor_index].plan if building is not None else record.plan
     if building is None and floor_index != 0:
         raise ValidationFailedError("the requested floor does not exist")
@@ -350,6 +346,9 @@ def auto_layout_project_floor_plan(
             raise ValidationFailedError(
                 "the stored multi-floor plan has inconsistent floor indices"
             )
+        floor_elevation_mm = selected_level.elevation_mm
+    else:
+        floor_elevation_mm = 0.0
     require_workspace_role(db, user_id, record.project.workspace_id, WorkspaceRole.editor)
     db.execute(sa.select(Project.id).where(Project.id == project_id).with_for_update())
     db.refresh(record.project)
@@ -476,4 +475,5 @@ def auto_layout_project_floor_plan(
         plan=plan,
         floor_index=floor_index,
         floor_count=floor_count,
+        floor_elevation_mm=floor_elevation_mm,
     )

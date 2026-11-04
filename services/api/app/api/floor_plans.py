@@ -83,7 +83,6 @@ def auto_layout_floor_plan(
         door_width_mm=body.door_width_mm,
         room_requirements=body.room_requirements,
         floor_index=body.floor_index,
-        auto_furnish=body.auto_furnish,
     )
     furniture_job_id: uuid.UUID | None = None
     if body.auto_furnish:
@@ -92,7 +91,10 @@ def auto_layout_floor_plan(
         placements = furniture_service.plan_auto_furniture(
             result.plan,
             existing=furniture_service.scene_footprints(
-                db, version=result.version, workspace_id=project.workspace_id
+                db,
+                version=result.version,
+                workspace_id=project.workspace_id,
+                floor_elevation_mm=result.floor_elevation_mm,
             ),
         )
         job = jobs.enqueue(
@@ -104,6 +106,7 @@ def auto_layout_floor_plan(
             input={
                 "version_id": str(result.version.id),
                 "floor_plan_id": result.plan.id,
+                "floor_elevation_mm": result.floor_elevation_mm,
                 "floor_plan": result.plan.model_dump(mode="json"),
                 "placements": [asdict(item) for item in placements],
             },

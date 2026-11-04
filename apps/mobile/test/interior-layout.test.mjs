@@ -7,9 +7,11 @@ const sheet = readFileSync(new URL("../src/FurniturePlacementSheet.tsx", import.
 const annotator = readFileSync(new URL("../src/PlanAnnotator.tsx", import.meta.url), "utf8");
 
 test("reference 79 binds mobile furniture placement to the exact active floor plan", () => {
+  assert.match(project, /getProjectFloorPlans/);
   assert.match(project, /floor_plan_id: activeFloorPlan\.id/);
   assert.match(project, /clearance_mm: furnitureClearance/);
   assert.match(project, /floorPlanId=\{activeFloorPlan\?\.id \?\? null\}/);
+  assert.match(project, /floorElevationMm=\{activeFloorPlan \? activeFloorElevationMm : null\}/);
   assert.match(project, /useState\(150\)/);
 });
 
@@ -31,9 +33,12 @@ test("reference 79 supports direct metric drag-to-place on the linked 2D plan", 
   assert.match(annotator, /depthMm/);
 });
 
-test("validated floor-plan placement cannot float above its floor", () => {
-  assert.match(project, /z_mm: activeFloorPlan \? 0 : furniturePoint\[2\]/);
+test("validated floor-plan placement uses the selected measured floor elevation", () => {
+  assert.match(project, /z_mm: activeFloorPlan \? activeFloorElevationMm : furniturePoint\[2\]/);
+  assert.match(project, /onFloorChange=\{setSelectedFloorIndex\}/);
   assert.match(sheet, /editable=\{!floorPlanId \|\| axis !== 2\}/);
-  assert.match(sheet, /Z зафиксирован на 0 мм/);
-  assert.match(sheet, /onPointChange\(\[point\[0\], point\[1\], 0\]\)/);
+  assert.match(sheet, /измеренной высоте выбранного этажа/);
+  assert.match(sheet, /onPointChange\(\[point\[0\], point\[1\], floorElevationMm\]\)/);
+  assert.match(sheet, /level\.elevation_mm\.toFixed\(0\)/);
+  assert.match(project, /world_transform\[2\]\?\.\[3\].*activeFloorElevationMm/s);
 });

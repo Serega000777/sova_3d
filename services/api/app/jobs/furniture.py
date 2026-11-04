@@ -21,6 +21,12 @@ from app.services import furniture as furniture_service
 from app.services import scenes
 
 
+def _floor_elevation(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("the furniture job floor elevation is invalid")
+    return float(value)
+
+
 @register("place_furniture")
 def handle_place_furniture(ctx: JobContext) -> dict[str, Any]:
     version_id = uuid.UUID(str(ctx.job.input["version_id"]))
@@ -57,6 +63,12 @@ def handle_place_furniture(ctx: JobContext) -> dict[str, Any]:
             plan = furniture_service.placement_plan(
                 ctx.job.input.get("floor_plan"), expected_id=floor_plan_id
             )
+            canonical = furniture_service.placement_level(version, expected_id=floor_plan_id)
+            if canonical.plan.model_dump(mode="json") != plan.model_dump(mode="json"):
+                raise ValueError("the furniture job plan does not match its immutable version")
+            floor_elevation_mm = _floor_elevation(ctx.job.input.get("floor_elevation_mm"))
+            if not math.isclose(floor_elevation_mm, canonical.elevation_mm, abs_tol=1e-6):
+                raise ValueError("the furniture job floor elevation is not canonical")
             furniture_service.validate_plan_placement(
                 ctx.db,
                 project=project,
@@ -70,11 +82,15 @@ def handle_place_furniture(ctx: JobContext) -> dict[str, Any]:
                 depth_mm=depth,
                 rotation_deg=float(ctx.job.input.get("rotation_deg", 0)),
                 clearance_mm=float(clearance),
+                z_mm=float(ctx.job.input.get("z_mm", 0)),
+                floor_elevation_mm=floor_elevation_mm,
             )
         except APIError as exc:
             raise JobFailureError(
                 "furniture_placement_conflict", exc.message, details=exc.details
             ) from exc
+        except (TypeError, ValueError) as exc:
+            raise JobFailureError("invalid_furniture", str(exc)) from exc
     asset = store_derived_asset(
         ctx,
         workspace_id=ctx.job.workspace_id,
@@ -155,15 +171,19 @@ def handle_auto_furnish_floor_plan(ctx: JobContext) -> dict[str, Any]:
         plan = furniture_service.placement_plan(
             ctx.job.input.get("floor_plan"), expected_id=floor_plan_id
         )
-        canonical = furniture_service.placement_plan(
-            (version.provenance or {}).get("floor_plan"), expected_id=floor_plan_id
-        )
-        if canonical.model_dump(mode="json") != plan.model_dump(mode="json"):
+        canonical = furniture_service.placement_level(version, expected_id=floor_plan_id)
+        if canonical.plan.model_dump(mode="json") != plan.model_dump(mode="json"):
             raise ValueError("the furniture job plan does not match its immutable version")
+        floor_elevation_mm = _floor_elevation(ctx.job.input.get("floor_elevation_mm"))
+        if not math.isclose(floor_elevation_mm, canonical.elevation_mm, abs_tol=1e-6):
+            raise ValueError("the furniture job floor elevation is not canonical")
         placements = furniture_service.plan_auto_furniture(
             plan,
             existing=furniture_service.scene_footprints(
-                ctx.db, version=version, workspace_id=project.workspace_id
+                ctx.db,
+                version=version,
+                workspace_id=project.workspace_id,
+                floor_elevation_mm=floor_elevation_mm,
             ),
         )
     except APIError as exc:
@@ -234,7 +254,7 @@ def handle_auto_furnish_floor_plan(ctx: JobContext) -> dict[str, Any]:
                 "transform": [
                     [cosine, -sine, 0, placement.x_mm],
                     [sine, cosine, 0, placement.y_mm],
-                    [0, 0, 1, 0],
+                    [0, 0, 1, floor_elevation_mm],
                     [0, 0, 0, 1],
                 ],
                 "asset_id": str(asset.id),
@@ -259,6 +279,7 @@ def handle_auto_furnish_floor_plan(ctx: JobContext) -> dict[str, Any]:
         "version_id": str(made.id),
         "source_version_id": str(version.id),
         "floor_plan_id": floor_plan_id,
+        "floor_elevation_mm": floor_elevation_mm,
         "placed": len(placements),
         "asset_ids": made_asset_ids,
     }

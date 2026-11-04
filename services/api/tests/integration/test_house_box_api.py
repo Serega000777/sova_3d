@@ -206,7 +206,7 @@ def test_multifloor_stair_creates_aligned_plans_and_floor_scene_groups(
     elevated_furniture = api_client.post(
         f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
         json={
-            "base_version_id": version_id,
+            "base_version_id": laid_out["version_id"],
             "floor_index": 1,
             "room_count": 2,
             "auto_furnish": True,
@@ -227,8 +227,20 @@ def test_multifloor_stair_creates_aligned_plans_and_floor_scene_groups(
         },
         headers=actor.headers,
     )
-    assert elevated_furniture.status_code == 422, elevated_furniture.text
-    assert "furniture placement is not yet floor-elevation-aware" in elevated_furniture.text
+    assert elevated_furniture.status_code == 201, elevated_furniture.text
+    furnished_layout = elevated_furniture.json()
+    assert furnished_layout["furniture_job_id"]
+    (furniture_job,) = run_all(db_session, storage)
+    assert furniture_job.status is JobStatus.succeeded, furniture_job.error
+    assert (furniture_job.result or {})["floor_elevation_mm"] == 3_000
+    furnished_scene = api_client.get(
+        f"/api/v1/models/{(furniture_job.result or {})['version_id']}/scene",
+        headers=actor.headers,
+    )
+    assert furnished_scene.status_code == 200, furnished_scene.text
+    furniture_nodes = [node for node in furnished_scene.json()["nodes"] if node.get("footprint_mm")]
+    assert furniture_nodes
+    assert all(node["world_transform"][2][3] == 3_000 for node in furniture_nodes)
 
     logged = (
         db_session.query(Operation)

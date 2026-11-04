@@ -11,11 +11,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
-from app.engineering.floor_plan import floor_plan_from_house_box
+from app.engineering.floor_plan import BuildingFloorPlans, floor_plan_from_house_box
 from app.engineering.house_box import HouseBoxRequest
 from app.jobs import runner
 from app.models import Asset, ProjectVersion
-from app.models.execution import JobStatus
+from app.models.execution import Job, JobStatus
 from app.models.versioning import AssetRole
 from app.services import projects
 from app.storage import S3Storage
@@ -149,6 +149,37 @@ def _version_with_plan(
     )
 
 
+def _version_with_multifloor_plan(
+    db: Session, storage: S3Storage, actor: Actor, cleanup_keys: list[str]
+) -> ProjectVersion:
+    project, source, asset = seed_version(db, storage, actor, box_stl())
+    cleanup_keys.append(asset.storage_key)
+    request = HouseBoxRequest(length_mm=4_000, width_mm=5_000, floor_height_mm=3_000, floors=2)
+    lower = floor_plan_from_house_box(request, plan_id="floor-1", name="Lower")
+    upper = floor_plan_from_house_box(request, plan_id="floor-2", name="Upper")
+    floors = BuildingFloorPlans.model_validate(
+        {
+            "version_id": str(source.id),
+            "floor_height_mm": 3_000,
+            "levels": [
+                {"index": 0, "name": "1 этаж", "elevation_mm": 0, "plan": lower},
+                {"index": 1, "name": "2 этаж", "elevation_mm": 3_000, "plan": upper},
+            ],
+        }
+    )
+    return projects.create_version(
+        db,
+        user_id=actor.user.id,
+        project_id=project.id,
+        parent_version_id=source.id,
+        provenance={
+            "floor_plan": lower.model_dump(mode="json"),
+            "floor_plans": floors.model_dump(mode="json"),
+        },
+        assets={AssetRole.model: asset.id},
+    )
+
+
 def test_plan_drag_placement_enforces_clearance_and_rechecks_in_job(
     api_client: TestClient,
     actor: Actor,
@@ -247,7 +278,117 @@ def test_plan_drag_input_pair_and_stale_plan_fail_closed(
     assert missing_pair.status_code == 422
     assert stale_plan.status_code == 409
     assert above_floor.status_code == 422
-    assert above_floor.json()["error"]["details"] == {"z_mm": 250.0}
+    assert above_floor.json()["error"]["details"] == {
+        "z_mm": 250.0,
+        "floor_elevation_mm": 0.0,
+    }
+
+
+def test_plan_drag_places_same_xy_on_two_measured_floor_elevations(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    source = _version_with_multifloor_plan(db_session, storage, actor, cleanup_keys)
+    upper_url = f"/api/v1/models/{source.id}/furniture"
+    wrong_elevation = api_client.post(
+        upper_url,
+        json={
+            "kind": "chair",
+            "x_mm": 2_000,
+            "y_mm": 2_500,
+            "z_mm": 0,
+            "floor_plan_id": "floor-2",
+            "clearance_mm": 150,
+        },
+        headers=actor.headers,
+    )
+    assert wrong_elevation.status_code == 422, wrong_elevation.text
+    assert wrong_elevation.json()["error"]["details"] == {
+        "z_mm": 0.0,
+        "floor_elevation_mm": 3_000.0,
+    }
+
+    upper = api_client.post(
+        upper_url,
+        json={
+            "kind": "chair",
+            "x_mm": 2_000,
+            "y_mm": 2_500,
+            "z_mm": 3_000,
+            "floor_plan_id": "floor-2",
+            "clearance_mm": 150,
+        },
+        headers=actor.headers,
+    )
+    assert upper.status_code == 202, upper.text
+    (upper_job,) = run_all(db_session, storage)
+    assert upper_job.status is JobStatus.succeeded, upper_job.error
+    upper_version = db_session.get(
+        ProjectVersion, uuid.UUID((upper_job.result or {})["version_id"])
+    )
+    assert upper_version is not None
+    upper_scene = api_client.get(
+        f"/api/v1/models/{upper_version.id}/scene", headers=actor.headers
+    ).json()
+    upper_node = next(node for node in upper_scene["nodes"] if node.get("footprint_mm"))
+    assert upper_node["world_transform"][2][3] == 3_000
+    upper_asset = db_session.get(Asset, uuid.UUID((upper_job.result or {})["asset_id"]))
+    assert upper_asset is not None
+    cleanup_keys.append(upper_asset.storage_key)
+
+    lower = api_client.post(
+        f"/api/v1/models/{upper_version.id}/furniture",
+        json={
+            "kind": "chair",
+            "x_mm": 2_000,
+            "y_mm": 2_500,
+            "z_mm": 0,
+            "floor_plan_id": "floor-1",
+            "clearance_mm": 150,
+        },
+        headers=actor.headers,
+    )
+    assert lower.status_code == 202, lower.text
+    (lower_job,) = run_all(db_session, storage)
+    assert lower_job.status is JobStatus.succeeded, lower_job.error
+    lower_asset = db_session.get(Asset, uuid.UUID((lower_job.result or {})["asset_id"]))
+    assert lower_asset is not None
+    cleanup_keys.append(lower_asset.storage_key)
+
+
+def test_plan_drag_job_rejects_a_forged_internal_floor_elevation(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    source = _version_with_multifloor_plan(db_session, storage, actor, cleanup_keys)
+    accepted = api_client.post(
+        f"/api/v1/models/{source.id}/furniture",
+        json={
+            "kind": "chair",
+            "x_mm": 2_000,
+            "y_mm": 2_500,
+            "z_mm": 3_000,
+            "floor_plan_id": "floor-2",
+            "clearance_mm": 150,
+        },
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    job = db_session.get(Job, uuid.UUID(accepted.json()["job_id"]))
+    assert job is not None
+    job.input = {**job.input, "floor_elevation_mm": 0}
+    db_session.flush()
+
+    (finished,) = run_all(db_session, storage)
+    assert finished.status is JobStatus.failed
+    assert (finished.error or {})["code"] == "invalid_furniture"
+    assert "floor elevation is not canonical" in (finished.error or {})["message"]
 
 
 def test_plan_drag_job_rejects_a_concurrent_head_change(

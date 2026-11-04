@@ -7,10 +7,11 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, ValidationFailedError
-from app.engineering.floor_plan import FloorPlan
+from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan
 from app.engineering.furniture_placement import FurnitureFootprint, placement_conflict
 from app.furniture_catalog import BY_KIND
 from app.models.core import Project
@@ -21,7 +22,11 @@ AUTO_FURNISH_JOB = "auto_furnish_floor_plan"
 
 
 def scene_footprints(
-    db: Session, *, version: ProjectVersion, workspace_id: uuid.UUID
+    db: Session,
+    *,
+    version: ProjectVersion,
+    workspace_id: uuid.UUID,
+    floor_elevation_mm: float | None = None,
 ) -> list[FurnitureFootprint]:
     result: list[FurnitureFootprint] = []
     for node in scenes.resolve_scene(db, version=version, workspace_id=workspace_id):
@@ -34,6 +39,10 @@ def scene_footprints(
         ):
             continue
         matrix = node["world_transform"]
+        if floor_elevation_mm is not None and not math.isclose(
+            float(matrix[2][3]), floor_elevation_mm, abs_tol=1e-6
+        ):
+            continue
         axis_x = (float(matrix[0][0]), float(matrix[1][0]))
         axis_y = (float(matrix[0][1]), float(matrix[1][1]))
         scale_x = math.hypot(*axis_x)
@@ -68,6 +77,43 @@ class PlannedFurniture:
     depth_mm: float
     height_mm: float
     clearance_mm: float
+
+
+@dataclass(frozen=True, slots=True)
+class PlacementLevel:
+    plan: FloorPlan
+    elevation_mm: float
+
+
+def placement_level(version: ProjectVersion, *, expected_id: str) -> PlacementLevel:
+    """Resolve one exact plan and its measured elevation from immutable provenance."""
+    provenance = version.provenance or {}
+    raw_floors = provenance.get("floor_plans")
+    if raw_floors is not None and not isinstance(raw_floors, dict):
+        raise ValidationFailedError("the stored multi-floor plan is invalid")
+    if isinstance(raw_floors, dict):
+        try:
+            building = BuildingFloorPlans.model_validate(raw_floors)
+        except ValidationError as exc:
+            raise ValidationFailedError("the stored multi-floor plan is invalid") from exc
+        matches = [level for level in building.levels if level.plan.id == expected_id]
+        if len(matches) != 1:
+            raise ConflictError(
+                "the floor plan changed; reload before placing furniture",
+                {"floor_plan_ids": [level.plan.id for level in building.levels]},
+            )
+        return PlacementLevel(matches[0].plan, matches[0].elevation_mm)
+    raw_plan = provenance.get("floor_plan")
+    try:
+        plan = FloorPlan.model_validate(raw_plan)
+    except (TypeError, ValidationError) as exc:
+        raise ValidationFailedError("the version has no valid floor plan") from exc
+    if plan.id != expected_id:
+        raise ConflictError(
+            "the floor plan changed; reload before placing furniture",
+            {"floor_plan_id": plan.id},
+        )
+    return PlacementLevel(plan, 0.0)
 
 
 _ROOM_FURNITURE = {
@@ -190,6 +236,8 @@ def validate_plan_placement(
     depth_mm: float,
     rotation_deg: float,
     clearance_mm: float,
+    z_mm: float,
+    floor_elevation_mm: float,
 ) -> None:
     """Reject stale, outside-room and colliding 2D drag placements before geometry work."""
     if project.head_version_id != version.id:
@@ -202,6 +250,11 @@ def validate_plan_placement(
             "the floor plan changed; reload before placing furniture",
             {"floor_plan_id": plan.id},
         )
+    if not math.isclose(z_mm, floor_elevation_mm, abs_tol=1e-6):
+        raise ValidationFailedError(
+            "floor-plan furniture must use the selected floor elevation",
+            {"z_mm": z_mm, "floor_elevation_mm": floor_elevation_mm},
+        )
     candidate = FurnitureFootprint(
         id=f"new:{kind}",
         at=(x_mm, y_mm),
@@ -213,7 +266,12 @@ def validate_plan_placement(
         plan,
         candidate,
         clearance_mm=clearance_mm,
-        furniture=scene_footprints(db, version=version, workspace_id=project.workspace_id),
+        furniture=scene_footprints(
+            db,
+            version=version,
+            workspace_id=project.workspace_id,
+            floor_elevation_mm=floor_elevation_mm,
+        ),
     )
     if conflict is None:
         return

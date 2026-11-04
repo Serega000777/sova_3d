@@ -202,6 +202,8 @@ import { SiteCameraOverlay } from "@/src/SiteCameraOverlay";
 import { SurfaceDetailSheet } from "@/src/SurfaceDetailSheet";
 import {
   type PlanEntitySelection,
+  type ValidBuildingFloorPlans,
+  isValidBuildingFloorPlans,
   isValidFloorPlan,
   planEntityAtPoint,
 } from "@/src/plan-link";
@@ -459,7 +461,8 @@ export default function ProjectScreen() {
   const [referencePointMode, setReferencePointMode] = useState<"calibrate" | "measure">("calibrate");
   const [referenceMeasurementPoints, setReferenceMeasurementPoints] = useState<[number, number][]>([]);
   const [referenceMeasurementLabel, setReferenceMeasurementLabel] = useState("");
-  const [currentFloorPlan, setCurrentFloorPlan] = useState<FloorPlan | null>(null);
+  const [currentFloorPlans, setCurrentFloorPlans] = useState<ValidBuildingFloorPlans | null>(null);
+  const [selectedFloorIndex, setSelectedFloorIndex] = useState(0);
   const [floorPlanStatus, setFloorPlanStatus] = useState<"loading" | "ready" | "absent" | "error">("loading");
   const [floorPlanMessage, setFloorPlanMessage] = useState<string | null>(null);
   const [linkedSelection, setLinkedSelection] = useState(true);
@@ -681,21 +684,26 @@ export default function ProjectScreen() {
     setFloorPlanStatus("loading");
     setFloorPlanMessage(null);
     void client
-      .getProjectFloorPlan(id)
-      .then((plan) => {
+      .getProjectFloorPlans(id)
+      .then((building) => {
         if (cancelled) return;
-        if (!isValidFloorPlan(plan)) {
-          setCurrentFloorPlan(null);
+        if (!isValidBuildingFloorPlans(building)) {
+          setCurrentFloorPlans(null);
           setFloorPlanStatus("error");
           setFloorPlanMessage("2D-план проекта имеет неподдерживаемую геометрию; связь не создана.");
           return;
         }
-        setCurrentFloorPlan(plan);
+        setCurrentFloorPlans(building);
+        setSelectedFloorIndex((current) =>
+          building.levels.some((level) => level.index === current)
+            ? current
+            : building.levels[0].index,
+        );
         setFloorPlanStatus("ready");
       })
       .catch((err) => {
         if (cancelled) return;
-        setCurrentFloorPlan(null);
+        setCurrentFloorPlans(null);
         if (err instanceof ApiError && err.status === 404) {
           setFloorPlanStatus("absent");
           setFloorPlanMessage("У проекта нет плана: 2D показывает ортографический вид модели без выдуманной связи.");
@@ -946,11 +954,19 @@ export default function ProjectScreen() {
     };
   }, [client, activeId]);
   const embeddedFloorPlan = (active?.provenance as { floor_plan?: unknown } | undefined)?.floor_plan;
-  const activeFloorPlan = isValidFloorPlan(embeddedFloorPlan)
-    ? embeddedFloorPlan
+  const embeddedFloorPlans = (active?.provenance as { floor_plans?: unknown } | undefined)?.floor_plans;
+  const activeBuildingFloorPlans = isValidBuildingFloorPlans(embeddedFloorPlans)
+    ? embeddedFloorPlans
     : activeId && activeId === project?.head_version?.id
-      ? currentFloorPlan
+      ? currentFloorPlans
       : null;
+  const activeFloorLevel = activeBuildingFloorPlans?.levels.find(
+    (level) => level.index === selectedFloorIndex,
+  ) ?? activeBuildingFloorPlans?.levels[0] ?? null;
+  const activeFloorPlan = activeFloorLevel?.plan ?? (isValidFloorPlan(embeddedFloorPlan)
+    ? embeddedFloorPlan
+    : null);
+  const activeFloorElevationMm = activeFloorLevel?.elevation_mm ?? 0;
   const planFallbackNotice = activeFloorPlan
     ? null
     : activeId && activeId !== project?.head_version?.id
@@ -1309,10 +1325,15 @@ export default function ProjectScreen() {
     () =>
       sceneGraph
         ? sceneGraph.nodes
+            .filter(
+              (node) =>
+                Math.abs((node.world_transform[2]?.[3] ?? Number.NaN) - activeFloorElevationMm)
+                <= 1e-6,
+            )
             .map(planFootprintFromNode)
             .filter((item): item is PlanFootprint => item !== null)
         : [],
-    [sceneGraph],
+    [activeFloorElevationMm, sceneGraph],
   );
   const assemblyGuide = useMemo(() => {
     if (!active || !sceneGraph) return null;
@@ -1520,7 +1541,7 @@ export default function ProjectScreen() {
         kind: furnitureKind,
         x_mm: furniturePoint[0],
         y_mm: furniturePoint[1],
-        z_mm: activeFloorPlan ? 0 : furniturePoint[2],
+        z_mm: activeFloorPlan ? activeFloorElevationMm : furniturePoint[2],
         rotation_deg: furnitureRotation,
         ...(activeFloorPlan
           ? { floor_plan_id: activeFloorPlan.id, clearance_mm: furnitureClearance }
@@ -6924,6 +6945,9 @@ export default function ProjectScreen() {
         point={furniturePoint}
         rotation={furnitureRotation}
         floorPlanId={activeFloorPlan?.id ?? null}
+        floorElevationMm={activeFloorPlan ? activeFloorElevationMm : null}
+        floorLevels={activeBuildingFloorPlans?.levels ?? []}
+        selectedFloorIndex={activeFloorLevel?.index ?? 0}
         clearance={furnitureClearance}
         busy={Boolean(busy)}
         onClose={() => setFurnitureOpen(false)}
@@ -6931,6 +6955,7 @@ export default function ProjectScreen() {
         onPointChange={setFurniturePoint}
         onRotationChange={(degrees) => setFurnitureRotation(((degrees % 360) + 360) % 360)}
         onClearanceChange={setFurnitureClearance}
+        onFloorChange={setSelectedFloorIndex}
         onPickPoint={() => {
           setFurnitureOpen(false);
           setFurniturePicking(true);

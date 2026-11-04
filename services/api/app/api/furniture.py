@@ -13,8 +13,8 @@ from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.furniture_catalog import BY_KIND, CATALOG
 from app.models.core import WorkspaceRole
-from app.services import floor_plans, jobs, projects
 from app.services import furniture as furniture_service
+from app.services import jobs, projects
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["furniture"])
@@ -85,21 +85,16 @@ def place_furniture(
     }
     if (body.floor_plan_id is None) != (body.clearance_mm is None):
         raise ValidationFailedError("floor_plan_id and clearance_mm must be provided together")
-    if body.floor_plan_id is not None and body.z_mm != 0:
-        raise ValidationFailedError(
-            "floor-plan furniture placement currently requires z_mm=0",
-            {"z_mm": body.z_mm},
-        )
     job_plan: dict[str, object] | None = None
+    floor_elevation_mm: float | None = None
     if body.clearance_mm is not None and body.floor_plan_id is not None:
-        record = floor_plans.get_project_floor_plan(
-            db, user_id=principal.user_id, project_id=project.id
-        )
+        level = furniture_service.placement_level(version, expected_id=body.floor_plan_id)
+        floor_elevation_mm = level.elevation_mm
         furniture_service.validate_plan_placement(
             db,
             project=project,
             version=version,
-            plan=record.plan,
+            plan=level.plan,
             floor_plan_id=body.floor_plan_id,
             kind=body.kind,
             x_mm=body.x_mm,
@@ -108,8 +103,10 @@ def place_furniture(
             depth_mm=dimensions["depth_mm"],
             rotation_deg=body.rotation_deg,
             clearance_mm=body.clearance_mm,
+            z_mm=body.z_mm,
+            floor_elevation_mm=level.elevation_mm,
         )
-        job_plan = record.plan.model_dump(mode="json")
+        job_plan = level.plan.model_dump(mode="json")
     job = jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -127,6 +124,7 @@ def place_furniture(
             "floor_plan_id": body.floor_plan_id,
             "clearance_mm": body.clearance_mm,
             "floor_plan": job_plan,
+            "floor_elevation_mm": floor_elevation_mm,
         },
         created_by=principal.user_id,
         idempotency_key=idempotency_key,
