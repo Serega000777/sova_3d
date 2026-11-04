@@ -22,13 +22,17 @@ test("store branding uses dedicated square icon, adaptive foreground, and splash
     foregroundImage: "./assets/brand/adaptive-icon.png",
     backgroundColor: "#0b0c0e",
   });
-  assert.deepEqual(config.splash, {
+  const splashPlugin = config.plugins.find(
+    (plugin) => Array.isArray(plugin) && plugin[0] === "expo-splash-screen",
+  );
+  assert.deepEqual(splashPlugin, ["expo-splash-screen", {
     image: "./assets/brand/splash-icon.png",
+    imageWidth: 256,
     resizeMode: "contain",
     backgroundColor: "#0b0c0e",
-  });
+  }]);
 
   assert.deepEqual(await pngSize(config.icon), { width: 1024, height: 1024 });
   assert.deepEqual(await pngSize(config.android.adaptiveIcon.foregroundImage), { width: 1024, height: 1024 });
-  assert.deepEqual(await pngSize(config.splash.image), { width: 512, height: 512 });
+  assert.deepEqual(await pngSize(splashPlugin[1].image), { width: 512, height: 512 });
 });

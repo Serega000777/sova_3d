@@ -23,11 +23,6 @@
         "backgroundColor": "#0b0c0e"
       }
     },
-    "splash": {
-      "image": "./assets/brand/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0b0c0e"
-    },
     "web": {
       "bundler": "metro",
       "output": "single"
@@ -35,7 +30,16 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/brand/splash-icon.png",
+          "imageWidth": 256,
+          "resizeMode": "contain",
+          "backgroundColor": "#0b0c0e"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false
