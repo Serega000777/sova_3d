@@ -142,7 +142,11 @@ import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
 import { FitTestSheet } from "@/src/FitTestSheet";
 import { FastenerSheet } from "@/src/FastenerSheet";
-import { verifiedExchangeConversion } from "@/src/format-conversion";
+import {
+  verifiedExchangeConversion,
+  verifiedExchangeDownload,
+  type VerifiedExchangeDownload,
+} from "@/src/format-conversion";
 import {
   AssemblyInspectionSheet,
   type ExplodedPreview,
@@ -423,6 +427,12 @@ export default function ProjectScreen() {
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
   const [quadRemeshResult, setQuadRemeshResult] = useState<QuadRemeshResult | null>(null);
   const [turntableVideo, setTurntableVideo] = useState<VerifiedTurntableVideo | null>(null);
+  const [exchangePreview, setExchangePreview] = useState<{
+    versionId: string;
+    download: VerifiedExchangeDownload & { format: "stl" | "glb" };
+    boundsMm: [number, number, number] | null;
+    status: "pass" | "warn";
+  } | null>(null);
   const [animationPrompt, setAnimationPrompt] = useState("");
   const [animationProposal, setAnimationProposal] = useState<BoundAnimationCommandProposal | null>(null);
   const [modelPassportOpen, setModelPassportOpen] = useState(false);
@@ -570,6 +580,7 @@ export default function ProjectScreen() {
   const [organicEstimateError, setOrganicEstimateError] = useState<string | null>(null);
   const organicEstimateRevision = useRef(0);
   const manufacturingEstimateRevision = useRef(0);
+  const exchangeExportRevision = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!client || !id) return;
@@ -942,8 +953,10 @@ export default function ProjectScreen() {
     (active?.provenance as { site_plan?: { schema_version?: unknown } } | undefined)?.site_plan,
   );
   useEffect(() => {
+    exchangeExportRevision.current += 1;
     setGameReadyResult(null);
     setQuadRemeshResult(null);
+    setExchangePreview(null);
     setPaintReport(null);
     setStrokes([]);
     setPaintSourceVersionId(null);
@@ -4240,13 +4253,37 @@ export default function ProjectScreen() {
     }
   }
 
+  async function openExchangeConversion(preview: NonNullable<typeof exchangePreview>) {
+    if (!client || activeIdRef.current !== preview.versionId) return;
+    setError(null);
+    try {
+      const refreshed = verifiedExchangeDownload(
+        preview.download,
+        await client.download(preview.download.assetId),
+      );
+      if (!refreshed || activeIdRef.current !== preview.versionId) {
+        throw new Error(
+          ru
+            ? "Ссылка скачивания больше не совпадает с проверенным файлом."
+            : "The download no longer matches the verified file.",
+        );
+      }
+      await Linking.openURL(refreshed.url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function exportModel(
     format: "stl" | "3mf" | "glb" | "obj" | "ply" | "dae" | "fbx" | "usdz" | "x3d" | "wrl",
   ) {
     if (!client || !active) return;
+    const versionId = active.id;
+    const requestRevision = ++exchangeExportRevision.current;
     setError(null);
+    setExchangePreview(null);
     try {
-      const accepted = await client.exportModel(active.id, {
+      const accepted = await client.exportModel(versionId, {
         format,
         printable: format === "stl" || format === "3mf",
       });
@@ -4257,7 +4294,7 @@ export default function ProjectScreen() {
       }
       const result = verifiedExchangeConversion(
         job,
-        active.id,
+        versionId,
         format,
         format === "stl" || format === "3mf",
       );
@@ -4268,12 +4305,37 @@ export default function ProjectScreen() {
             : "The export completed without a consistent file and conversion report.",
         );
       }
-      const download = await client.download(result.assetId);
-      await Linking.openURL(download.url);
+      const download = verifiedExchangeDownload(result, await client.download(result.assetId));
+      if (!download) {
+        throw new Error(
+          ru
+            ? "Ссылка скачивания не совпадает с проверенным файлом конвертации."
+            : "The download does not match the verified conversion file.",
+        );
+      }
+      if (
+        activeIdRef.current !== versionId
+        || exchangeExportRevision.current !== requestRevision
+      ) return;
       const bounds = result.report.output.bboxSizeMm;
       const verified = bounds
         ? `${bounds.map((value) => Number(value.toFixed(2))).join(" × ")} ${ru ? "мм" : "mm"}`
         : ru ? "габариты не применимы" : "dimensions not applicable";
+      if (format === "stl" || format === "glb") {
+        setExchangePreview({
+          versionId,
+          download: { ...download, format },
+          boundsMm: bounds,
+          status: result.report.status === "pass" ? "pass" : "warn",
+        });
+        setNotice(
+          ru
+            ? `${format.toUpperCase()} проверен сервером и готов к визуальному сравнению перед открытием.`
+            : `${format.toUpperCase()} was verified and is ready for visual comparison before opening.`,
+        );
+        return;
+      }
+      await Linking.openURL(download.url);
       setNotice(format === "usdz"
         ? (ru
             ? `USDZ проверен (${result.report.status}, ${verified}) и передан системному просмотру. AR Quick Look доступен на совместимом iPhone/iPad.`
@@ -4525,6 +4587,7 @@ export default function ProjectScreen() {
   const scaleCheckStatus = modelCheckStatus(["bbox_size", "units_explicit"]);
   const currentVersion = project?.head_version ?? versions[0] ?? null;
   const currentTurntableVideo = turntableVideo?.versionId === active?.id ? turntableVideo : null;
+  const currentExchangePreview = exchangePreview?.versionId === active?.id ? exchangePreview : null;
   const organicSizeMm = Number(organicSize.replace(",", "."));
   const organicInputValid = Boolean(
     organicPrompt.trim() && organicSizeMm >= 5 && organicSizeMm <= 1000,
@@ -6138,6 +6201,45 @@ export default function ProjectScreen() {
           в миллиметрах; ручная смена масштаба и осей при экспорте пока недоступна.
         </Text>
       </View>
+      {currentExchangePreview ? (
+        <View
+          style={[styles.card, { gap: 10, borderColor: colors.green }]}
+          accessibilityLabel={ru ? "Проверенный предпросмотр конвертации" : "Verified conversion preview"}
+        >
+          <Text style={styles.heading}>
+            {ru ? "Результат конвертации" : "Converted result"} · {currentExchangePreview.download.format.toUpperCase()}
+          </Text>
+          <Text style={styles.sectionSubtitle}>
+            {ru
+              ? "Исходная immutable-версия остаётся в основном viewport; ниже загружен именно проверенный output asset. Сравните геометрию перед открытием файла."
+              : "The immutable source remains in the main viewport; the viewer below loads the exact verified output asset. Compare the geometry before opening the file."}
+          </Text>
+          <ModelViewer
+            url={currentExchangePreview.download.url}
+            format={currentExchangePreview.download.format}
+            bodyId={`exchange-preview-${currentExchangePreview.download.assetId}`}
+            selected={false}
+            onSelect={() => undefined}
+            height={isTablet ? 360 : 260}
+            showGrid
+          />
+          <Text style={styles.mono}>
+            {currentExchangePreview.status.toUpperCase()} · {currentExchangePreview.download.byteSize.toLocaleString(ru ? "ru-RU" : "en-US")} {ru ? "байт" : "bytes"}
+            {currentExchangePreview.boundsMm
+              ? ` · ${currentExchangePreview.boundsMm.map((value) => Number(value.toFixed(2))).join(" × ")} ${ru ? "мм" : "mm"}`
+              : ""}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={ru ? "Открыть проверенный файл" : "Open verified file"}
+            disabled={Boolean(busy)}
+            onPress={() => void openExchangeConversion(currentExchangePreview)}
+            style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]}
+          >
+            <Text style={styles.buttonText}>{ru ? "Открыть / поделиться" : "Open / share"}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <View
         style={[styles.card, { gap: 10, borderColor: colors.accent }]}
         accessibilityLabel={ru ? "Видео обзора модели" : "Model turntable video"}

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { verifiedExchangeConversion } from "../src/format-conversion.ts";
+import {
+  verifiedExchangeConversion,
+  verifiedExchangeDownload,
+} from "../src/format-conversion.ts";
 
 const source = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
 
@@ -92,4 +95,71 @@ test("reference 89 downloads only an exact version-bound conversion report", () 
   assert.equal(verifiedExchangeConversion(job({ result: { ...job().result, report: report({ status: "fail" }) } }), "version-89", "obj", false), null);
   assert.match(source, /verifiedExchangeConversion\(/);
   assert.match(source, /проверен сервером/);
+});
+
+test("reference 89 previews only the exact verified STL or GLB download", () => {
+  const conversion = verifiedExchangeConversion(
+    job({ result: { ...job().result, format: "obj", report: report() } }),
+    "version-89",
+    "obj",
+    false,
+  );
+  assert.ok(conversion);
+  assert.deepEqual(
+    verifiedExchangeDownload(conversion, {
+      asset_id: "asset-89",
+      format: "obj",
+      byte_size: 4096,
+      url: "https://objects.example.test/asset-89?signature=one",
+    }),
+    {
+      assetId: "asset-89",
+      format: "obj",
+      byteSize: 4096,
+      url: "https://objects.example.test/asset-89?signature=one",
+    },
+  );
+  assert.equal(
+    verifiedExchangeDownload(conversion, {
+      asset_id: "substituted",
+      format: "obj",
+      byte_size: 4096,
+      url: "https://objects.example.test/substituted",
+    }),
+    null,
+  );
+  assert.equal(
+    verifiedExchangeDownload(conversion, {
+      asset_id: "asset-89",
+      format: "glb",
+      byte_size: 4096,
+      url: "https://objects.example.test/asset-89",
+    }),
+    null,
+  );
+  assert.equal(
+    verifiedExchangeDownload(conversion, {
+      asset_id: "asset-89",
+      format: "obj",
+      byte_size: 4095,
+      url: "https://objects.example.test/asset-89",
+    }),
+    null,
+  );
+  assert.equal(
+    verifiedExchangeDownload(conversion, {
+      asset_id: "asset-89",
+      format: "obj",
+      byte_size: 4096,
+      url: "javascript:alert(1)",
+    }),
+    null,
+  );
+  assert.match(source, /format === "stl" \|\| format === "glb"/);
+  assert.match(source, /setExchangePreview\(/);
+  assert.match(source, /currentExchangePreview\.download\.url/);
+  assert.match(source, /Исходная immutable-версия остаётся в основном viewport/);
+  assert.match(source, /activeIdRef\.current !== versionId/);
+  assert.match(source, /exchangeExportRevision\.current !== requestRevision/);
+  assert.match(source, /verifiedExchangeDownload\(/);
 });
