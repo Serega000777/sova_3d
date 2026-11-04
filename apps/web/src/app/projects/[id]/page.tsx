@@ -27,6 +27,7 @@ import type {
   Material,
   Me,
   MeshModifierStack,
+  ModelComment,
   OperationStack,
   PhysicalAiClient,
   PrinterProfile,
@@ -102,6 +103,7 @@ import { Inspector, type Size } from "@/components/Inspector";
 import type { ComponentSelectionInfo, ViewerScenePart } from "@/components/ModelViewer";
 import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
 import { MeshModifierStackPanel } from "@/components/MeshModifierStackPanel";
+import { ModelCommentsPanel } from "@/components/ModelCommentsPanel";
 import { ModellingPanel } from "@/components/ModellingPanel";
 import { NavIcon } from "@/components/NavIcon";
 import { OperationStackPanel } from "@/components/OperationStackPanel";
@@ -545,6 +547,7 @@ type Tool =
   | "paint"
   | "size"
   | "measure"
+  | "comments"
   | "reverse"
   | "repair"
   | "engineer"
@@ -830,6 +833,21 @@ export default function ProjectPage() {
   const [scalePercent, setScalePercent] = useState(100);
   const [selected, setSelected] = useState<string[]>([]);
   const [measurementPoints, setMeasurementPoints] = useState<[number, number, number][]>([]);
+  const [modelComments, setModelComments] = useState<ModelComment[]>([]);
+  const [modelCommentPoint, setModelCommentPoint] = useState<Vec3 | null>(null);
+  const [modelCommentPicking, setModelCommentPicking] = useState(false);
+  const clearModelCommentPoint = useCallback(() => {
+    setModelCommentPoint(null);
+    setModelCommentPicking(false);
+  }, []);
+  const pickModelCommentPoint = useCallback(() => {
+    setModelCommentPoint(null);
+    setModelCommentPicking(true);
+  }, []);
+  useEffect(() => {
+    clearModelCommentPoint();
+    setModelComments([]);
+  }, [activeVersion?.id, clearModelCommentPoint]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
   const [tool, setTool] = useState<Tool | null>(() => {
@@ -3820,6 +3838,7 @@ export default function ProjectPage() {
     { id: "paint", label: ru ? "Кисть" : "Paint", icon: "paint", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
     { id: "size", label: ru ? "Размеры" : "Size", icon: "size", hint: ru ? "Точные габариты" : "Exact dimensions", section: ru ? "Точность" : "Precision" },
     { id: "measure", label: ru ? "Измерить" : "Measure", icon: "measure", hint: ru ? "Расстояние между двумя точками" : "Distance between two points" },
+    { id: "comments", label: ru ? "Обсуждение" : "Discussion", icon: "chat", hint: ru ? "Ветки комментариев в точках точной версии" : "Point threads on the exact version" },
     { id: "reverse", label: ru ? "В CAD" : "To CAD", icon: "reverse", hint: ru ? "Распознать геометрию и сделать редактируемой" : "Recognize geometry and make it editable" },
     { id: "repair", label: ru ? "Исправить скан" : "Repair scan", icon: "repair", hint: ru ? "Ещё раз закрыть отверстия и исправить сетку" : "Close holes and repair the mesh again" },
     { id: "engineer", label: ru ? "Инженер" : "Engineer", icon: "engineer", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
@@ -4110,7 +4129,7 @@ export default function ProjectPage() {
             displayMode={displayMode}
             showGrid={showGrid}
             // A remark must retain the exact surface hit; modelling-grid snap would move it.
-            grid={!annotationAnchorMode && complexity === "advanced" ? modellingGrid : undefined}
+            grid={!annotationAnchorMode && !modelCommentPicking && complexity === "advanced" ? modellingGrid : undefined}
             componentKind={complexity === "advanced" ? componentKind : null}
             boxSelect={boxSelect}
             selectThrough={selectThrough}
@@ -4126,11 +4145,16 @@ export default function ProjectPage() {
             }] : []}
             cameraPreset={cameraView.preset}
             cameraRevision={cameraView.revision}
-            measurementMode={tool === "measure" || annotationAnchorMode}
+            measurementMode={tool === "measure" || annotationAnchorMode || modelCommentPicking}
             measurementPoints={measurementPoints}
             onMeasurePoint={(point) => {
               if (annotationAnchorMode) {
                 void bindPlanAnnotation(point);
+                return;
+              }
+              if (modelCommentPicking) {
+                setModelCommentPoint(point);
+                setModelCommentPicking(false);
                 return;
               }
               setMeasurementPoints((current) => current.length >= 2 ? [point] : [...current, point]);
@@ -4172,6 +4196,18 @@ export default function ProjectPage() {
                 key: `plan-annotation-${annotationId}`,
                 colour: planAnnotation.colour,
                 point: planAnnotation.point,
+                kind: "note" as const,
+              }] : []),
+              ...modelComments.filter((comment) => comment.version_id === activeVersion?.id && comment.parent_comment_id === null).map((comment) => ({
+                key: `model-comment-${comment.id}`,
+                colour: comment.status === "open" ? "#ff9d4d" : "#63d391",
+                point: comment.point_mm,
+                kind: "note" as const,
+              })),
+              ...(modelCommentPoint ? [{
+                key: "model-comment-draft",
+                colour: "#ffffff",
+                point: modelCommentPoint,
                 kind: "note" as const,
               }] : []),
               ...(tool === "repair" ? (repairReport?.defectInstances ?? []).map((defect) => ({
@@ -4529,6 +4565,19 @@ export default function ProjectPage() {
                 })}
                 {proMatches.length === 0 && <span className="muted">{ru ? "Ничего не найдено" : "No tools found"}</span>}
               </div>
+            )}
+            {tool === "comments" && (
+              <ModelCommentsPanel
+                client={client}
+                versionId={activeVersion?.id ?? null}
+                workspaceId={session.workspaceId}
+                canEdit={canEditProject}
+                language={language}
+                pendingPoint={modelCommentPoint}
+                onPickPoint={pickModelCommentPoint}
+                onClearPoint={clearModelCommentPoint}
+                onCommentsChange={setModelComments}
+              />
             )}
             {tool === "photo" && (
               <div className="stack reference-tool">
