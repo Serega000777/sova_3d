@@ -45,6 +45,7 @@ const T = {
     workspaces: "Workspaces",
     current: "current",
     switchWorkspace: "Switch",
+    openTeam: "Open team dashboard",
     printers: "Printers and materials",
     printersNote: "Printer profiles, hole calibration and materials for print checks.",
     openPrinters: "Open printers",
@@ -92,6 +93,7 @@ const T = {
     workspaces: "Рабочие пространства",
     current: "текущее",
     switchWorkspace: "Выбрать",
+    openTeam: "Открыть командную панель",
     printers: "Принтеры и материалы",
     printersNote: "Профили принтеров, калибровка отверстий, материалы для проверки печати.",
     openPrinters: "Открыть принтеры",
@@ -387,6 +389,11 @@ export default function SettingsPage() {
             </li>
           ))}
         </ul>
+        {me?.workspaces.some((workspace) => workspace.id === session.workspaceId && workspace.kind === "team") && (
+          <Link className="btn" href="/team" style={{ alignSelf: "flex-start" }}>
+            {t.openTeam}
+          </Link>
+        )}
       </div>
 
       <div className="card stack">
