@@ -7,6 +7,7 @@ import hashlib
 import re
 import uuid
 from collections.abc import Iterator
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
@@ -23,6 +24,7 @@ from app.jobs import print_jobs, runner
 from app.models import Asset, Job, PrintAnalysisRecord, Project, ProjectVersion
 from app.models.core import Units
 from app.models.execution import JobStatus
+from app.models.printing import AnalysisKind
 from app.models.versioning import AssetKind, AssetRole, VersionAsset
 from app.services import printer_bridge, projects
 from app.storage import S3Storage
@@ -1581,6 +1583,104 @@ def test_analyze_print_stores_result(
         f"/api/v1/print-analyses/{result['analysis_id']}", headers=actor.headers
     ).json()
     assert detail["report"]["summary"].startswith("Printability")
+
+
+def test_manufacturing_estimate_is_persisted_recomputed_and_authorized(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _, version, asset = seed_version(db_session, storage, actor, t_shape_stl())
+    cleanup_keys.append(asset.storage_key)
+    api_client.post(f"/api/v1/models/{version.id}/analyze-print", json={}, headers=actor.headers)
+    (job,) = run_all(db_session, storage)
+    analysis_id = (job.result or {})["analysis_id"]
+    metrics = (job.result or {})["report"]["metrics"]
+    body = {
+        "machine_rate_per_hour": "100",
+        "printer_power_w": "200",
+        "electricity_rate_per_kwh": "5",
+        "postprocess_hours": "1",
+        "postprocess_rate_per_hour": "150",
+    }
+
+    created = api_client.post(
+        f"/api/v1/print-analyses/{analysis_id}/manufacturing-estimates",
+        json=body,
+        headers=actor.headers,
+    )
+    assert created.status_code == 201, created.text
+    estimate = created.json()
+    print_hours = Decimal(str(metrics["print_time_min"])) / Decimal(60)
+    expected_machine = (print_hours * Decimal(100)).quantize(Decimal("0.01"))
+    expected_electricity = (print_hours * Decimal("0.2") * Decimal(5)).quantize(Decimal("0.01"))
+    assert Decimal(estimate["material_cost"]) == Decimal(str(metrics["total_cost"]))
+    assert Decimal(estimate["machine_cost"]) == expected_machine
+    assert Decimal(estimate["electricity_cost"]) == expected_electricity
+    assert Decimal(estimate["postprocess_cost"]) == Decimal("150.00")
+    assert Decimal(estimate["total_cost"]) == (
+        Decimal(str(metrics["total_cost"])) + expected_machine + expected_electricity + Decimal(150)
+    ).quantize(Decimal("0.01"))
+    assert estimate["project_version_id"] == str(version.id)
+    assert estimate["material_id"] == "pla"
+
+    repeated = api_client.post(
+        f"/api/v1/print-analyses/{analysis_id}/manufacturing-estimates",
+        json=body,
+        headers=actor.headers,
+    )
+    assert repeated.status_code == 201
+    assert repeated.json()["id"] == estimate["id"]
+
+    viewer = make_actor(db_session, workspace=actor.workspace, role="viewer")
+    listed = api_client.get(
+        f"/api/v1/print-analyses/{analysis_id}/manufacturing-estimates",
+        headers=viewer.headers,
+    )
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [estimate["id"]]
+    blocked = api_client.post(
+        f"/api/v1/print-analyses/{analysis_id}/manufacturing-estimates",
+        json=body,
+        headers=viewer.headers,
+    )
+    assert blocked.status_code == 403
+
+    stranger = make_actor(db_session)
+    hidden = api_client.get(
+        f"/api/v1/print-analyses/{analysis_id}/manufacturing-estimates",
+        headers=stranger.headers,
+    )
+    assert hidden.status_code == 404
+    invalid_pair = api_client.post(
+        f"/api/v1/print-analyses/{analysis_id}/manufacturing-estimates",
+        json={"printer_power_w": "200"},
+        headers=actor.headers,
+    )
+    assert invalid_pair.status_code == 422
+
+    record = db_session.get(PrintAnalysisRecord, uuid.UUID(analysis_id))
+    assert record is not None
+    record.kind = AnalysisKind.optimize
+    db_session.flush()
+    wrong_kind = api_client.post(
+        f"/api/v1/print-analyses/{analysis_id}/manufacturing-estimates",
+        json={"machine_rate_per_hour": "101"},
+        headers=actor.headers,
+    )
+    assert wrong_kind.status_code == 422
+
+    record.kind = AnalysisKind.analysis
+    record.report = {**record.report, "metrics": {**record.report["metrics"], "total_cost": "nan"}}
+    db_session.flush()
+    corrupt = api_client.post(
+        f"/api/v1/print-analyses/{analysis_id}/manufacturing-estimates",
+        json={"machine_rate_per_hour": "101"},
+        headers=actor.headers,
+    )
+    assert corrupt.status_code == 422
 
 
 # --- T-071 / T-072 profile-aware analysis --------------------------------------------------------

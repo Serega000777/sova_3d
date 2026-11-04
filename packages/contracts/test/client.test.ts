@@ -91,6 +91,63 @@ test("team workspace creation posts the normalized typed body", async () => {
   assert.deepEqual(JSON.parse(String(request!.init.body)), { name: "Studio North" });
 });
 
+test("manufacturing estimates use the exact print-analysis subresource", async () => {
+  const requests: { url: string; init: RequestInit }[] = [];
+  const saved = {
+    id: "estimate-1",
+    analysis_id: "analysis-1",
+    project_version_id: "version-1",
+    created_by: "user-1",
+    printer_profile_id: "printer-1",
+    material_id: "pla",
+    currency: "USD",
+    material_cost: "4.0000",
+    print_time_min: "60.0000",
+    machine_rate_per_hour: "2.0000",
+    printer_power_w: null,
+    electricity_rate_per_kwh: null,
+    postprocess_hours: null,
+    postprocess_rate_per_hour: null,
+    machine_cost: "2.00",
+    electricity_cost: "0.00",
+    postprocess_cost: "0.00",
+    total_cost: "6.00",
+    created_at: "2026-11-04T20:00:00Z",
+  };
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      requests.push({ url, init });
+      return jsonResponse(init.method === "POST" ? saved : [saved], {
+        status: init.method === "POST" ? 201 : 200,
+      });
+    },
+  });
+
+  await client.createManufacturingEstimate("analysis-1", {
+    machine_rate_per_hour: 2,
+    printer_power_w: null,
+    electricity_rate_per_kwh: null,
+    postprocess_hours: null,
+    postprocess_rate_per_hour: null,
+  });
+  const listed = await client.listManufacturingEstimates("analysis-1");
+  assert.equal(listed[0].id, "estimate-1");
+  assert.equal(
+    requests[0].url,
+    "https://api.example.test/api/v1/print-analyses/analysis-1/manufacturing-estimates",
+  );
+  assert.equal(requests[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(String(requests[0].init.body)), {
+    machine_rate_per_hour: 2,
+    printer_power_w: null,
+    electricity_rate_per_kwh: null,
+    postprocess_hours: null,
+    postprocess_rate_per_hour: null,
+  });
+  assert.equal(requests[1].init.method, "GET");
+});
+
 test("team workspace tasks use the nested typed routes and revision guard", async () => {
   const requests: { url: string; init: RequestInit }[] = [];
   const client = new PhysicalAiClient({

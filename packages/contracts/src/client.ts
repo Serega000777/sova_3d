@@ -68,6 +68,7 @@ export type AIRequest = Schemas["AIRequestOut"];
 export type AIHistoryItem = Schemas["AIHistoryItem"];
 export type AICommandAccepted = Schemas["AICommandAccepted"];
 export type PrintAnalysis = Schemas["AnalysisOut"];
+export type ManufacturingEstimate = Schemas["ManufacturingEstimateOut"];
 export type PrintFarmPlan = Schemas["BatchPlanOut"];
 export type PrintQueue = Schemas["PrintQueueOut"];
 export type PrinterModel = Schemas["PrinterModelOut"];
@@ -1043,6 +1044,24 @@ export class PhysicalAiClient {
 
   listPrintAnalyses(versionId: string) {
     return this.request<PrintAnalysis[]>("GET", `/api/v1/models/${versionId}/print-analyses`);
+  }
+
+  createManufacturingEstimate(
+    analysisId: string,
+    body: Schemas["ManufacturingEstimateBody"],
+  ) {
+    return this.request<ManufacturingEstimate>(
+      "POST",
+      `/api/v1/print-analyses/${analysisId}/manufacturing-estimates`,
+      { body },
+    );
+  }
+
+  listManufacturingEstimates(analysisId: string) {
+    return this.request<ManufacturingEstimate[]>(
+      "GET",
+      `/api/v1/print-analyses/${analysisId}/manufacturing-estimates`,
+    );
   }
 
   // --- scanning (E9) -----------------------------------------------------------------------

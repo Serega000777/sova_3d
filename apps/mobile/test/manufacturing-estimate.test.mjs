@@ -33,13 +33,18 @@ test("the estimate uses explicit rates and excludes unsupported manufacturing co
   }
   assert.match(project, /calculateManufacturingEstimate/);
   assert.match(project, /analysisMatchesManufacturingContext/);
+  assert.match(project, /listManufacturingEstimates/);
+  assert.match(project, /createManufacturingEstimate/);
+  assert.match(project, /restoredManufacturingEstimate/);
   assert.match(project, /\[activeId, printProfileId, printMaterialId\]/);
   assert.match(project, /Для выбранных профиля и материала запустите новую проверку/);
-  assert.match(project, /Материалы и время приходят из серверного анализа/);
-  assert.match(project, /обслуживание, доставка, налоги и цена подрядчика не включены/);
+  assert.match(project, /Материалы и время приходят из точного серверного анализа/);
+  assert.match(project, /Обслуживание, доставка, налоги и цена подрядчика не включены/);
   assert.match(project, /не выдаёт смету за предложение подрядчика/);
   assert.match(project, /Итого материалов/);
   assert.match(project, /Расчётный итог/);
+  assert.match(project, /Сохранить смету/);
+  assert.match(project, /заново проверяется сервером/);
 });
 
 test("O08 accepts only the analysis record created by the exact successful job", () => {

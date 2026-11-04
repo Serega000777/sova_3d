@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from math import isfinite
 from typing import Any
 
@@ -16,6 +18,7 @@ from app.models.core import Workspace, WorkspaceRole
 from app.models.execution import Job
 from app.models.printing import (
     AnalysisKind,
+    ManufacturingEstimateRecord,
     Material,
     PrintAnalysisRecord,
     PrinterModel,
@@ -1132,5 +1135,169 @@ def list_analyses(
             sa.select(PrintAnalysisRecord)
             .where(PrintAnalysisRecord.project_version_id == version_id)
             .order_by(PrintAnalysisRecord.created_at.desc())
+        )
+    )
+
+
+def _estimate_source_metric(value: object, *, name: str, maximum: Decimal) -> Decimal:
+    if value is None or isinstance(value, bool):
+        raise ValidationFailedError(f"print analysis has no usable {name}")
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise ValidationFailedError(f"print analysis has no usable {name}") from None
+    if not parsed.is_finite() or parsed < 0 or parsed > maximum:
+        raise ValidationFailedError(f"print analysis has no usable {name}")
+    return parsed
+
+
+def _estimate_value(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return format(value.normalize(), "f")
+
+
+def create_manufacturing_estimate(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    analysis_id: uuid.UUID,
+    machine_rate_per_hour: Decimal | None,
+    printer_power_w: Decimal | None,
+    electricity_rate_per_kwh: Decimal | None,
+    postprocess_hours: Decimal | None,
+    postprocess_rate_per_hour: Decimal | None,
+) -> ManufacturingEstimateRecord:
+    analysis = get_analysis(db, user_id=user_id, analysis_id=analysis_id)
+    require_workspace_role(db, user_id, analysis.workspace_id, WorkspaceRole.editor)
+    db.execute(
+        sa.select(PrintAnalysisRecord.id)
+        .where(PrintAnalysisRecord.id == analysis.id)
+        .with_for_update()
+    )
+    if analysis.kind is not AnalysisKind.analysis:
+        raise ValidationFailedError("manufacturing estimates require a print analysis")
+    if analysis.material_id is None:
+        raise ValidationFailedError("print analysis has no material identity")
+    bounded_inputs = (
+        (machine_rate_per_hour, Decimal("1000000")),
+        (printer_power_w, Decimal("100000")),
+        (electricity_rate_per_kwh, Decimal("1000000")),
+        (postprocess_hours, Decimal("10000")),
+        (postprocess_rate_per_hour, Decimal("1000000")),
+    )
+    if any(
+        value is not None
+        and (
+            not value.is_finite()
+            or value < 0
+            or value > maximum
+            or value != value.quantize(Decimal("0.0001"))
+        )
+        for value, maximum in bounded_inputs
+    ):
+        raise ValidationFailedError("manufacturing rates are outside the supported range")
+    if (printer_power_w is None) != (electricity_rate_per_kwh is None):
+        raise ValidationFailedError("printer power and electricity rate must be supplied together")
+    if (postprocess_hours is None) != (postprocess_rate_per_hour is None):
+        raise ValidationFailedError("post-processing hours and rate must be supplied together")
+
+    metrics = analysis.report.get("metrics") if isinstance(analysis.report, dict) else None
+    if not isinstance(metrics, dict):
+        raise ValidationFailedError("print analysis has no usable cost metrics")
+    material_cost = _estimate_source_metric(
+        metrics.get("total_cost"), name="material total", maximum=Decimal("1000000000000")
+    ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    print_time_min = _estimate_source_metric(
+        metrics.get("print_time_min"), name="print duration", maximum=Decimal("10000000")
+    ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    currency = metrics.get("currency")
+    if (
+        not isinstance(currency, str)
+        or len(currency) != 3
+        or not currency.isascii()
+        or not currency.isalpha()
+    ):
+        raise ValidationFailedError("print analysis has no usable currency")
+    currency = currency.upper()
+
+    fingerprint_payload = {
+        "analysis_id": str(analysis.id),
+        "machine_rate_per_hour": _estimate_value(machine_rate_per_hour),
+        "printer_power_w": _estimate_value(printer_power_w),
+        "electricity_rate_per_kwh": _estimate_value(electricity_rate_per_kwh),
+        "postprocess_hours": _estimate_value(postprocess_hours),
+        "postprocess_rate_per_hour": _estimate_value(postprocess_rate_per_hour),
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    existing = db.scalar(
+        sa.select(ManufacturingEstimateRecord).where(
+            ManufacturingEstimateRecord.analysis_id == analysis.id,
+            ManufacturingEstimateRecord.fingerprint == fingerprint,
+        )
+    )
+    if existing is not None:
+        return existing
+
+    hours = print_time_min / Decimal(60)
+    money = Decimal("0.01")
+    machine_cost = (hours * (machine_rate_per_hour or Decimal(0))).quantize(
+        money, rounding=ROUND_HALF_UP
+    )
+    electricity_cost = (
+        hours
+        * ((printer_power_w or Decimal(0)) / Decimal(1000))
+        * (electricity_rate_per_kwh or Decimal(0))
+    ).quantize(money, rounding=ROUND_HALF_UP)
+    postprocess_cost = (
+        (postprocess_hours or Decimal(0)) * (postprocess_rate_per_hour or Decimal(0))
+    ).quantize(money, rounding=ROUND_HALF_UP)
+    total_cost = (material_cost + machine_cost + electricity_cost + postprocess_cost).quantize(
+        money, rounding=ROUND_HALF_UP
+    )
+    if total_cost > Decimal("99999999999999.99"):
+        raise ValidationFailedError("manufacturing estimate exceeds the supported total")
+
+    record = ManufacturingEstimateRecord(
+        workspace_id=analysis.workspace_id,
+        project_version_id=analysis.project_version_id,
+        analysis_id=analysis.id,
+        created_by=user_id,
+        printer_profile_id=analysis.printer_profile_id,
+        material_id=analysis.material_id,
+        currency=currency,
+        fingerprint=fingerprint,
+        material_cost=material_cost,
+        print_time_min=print_time_min,
+        machine_rate_per_hour=machine_rate_per_hour,
+        printer_power_w=printer_power_w,
+        electricity_rate_per_kwh=electricity_rate_per_kwh,
+        postprocess_hours=postprocess_hours,
+        postprocess_rate_per_hour=postprocess_rate_per_hour,
+        machine_cost=machine_cost,
+        electricity_cost=electricity_cost,
+        postprocess_cost=postprocess_cost,
+        total_cost=total_cost,
+    )
+    db.add(record)
+    db.flush()
+    return record
+
+
+def list_manufacturing_estimates(
+    db: Session, *, user_id: uuid.UUID, analysis_id: uuid.UUID
+) -> list[ManufacturingEstimateRecord]:
+    analysis = get_analysis(db, user_id=user_id, analysis_id=analysis_id)
+    return list(
+        db.scalars(
+            sa.select(ManufacturingEstimateRecord)
+            .where(ManufacturingEstimateRecord.analysis_id == analysis.id)
+            .order_by(
+                ManufacturingEstimateRecord.created_at.desc(),
+                ManufacturingEstimateRecord.id.desc(),
+            )
+            .limit(20)
         )
     )

@@ -169,3 +169,43 @@ class PrintAnalysisRecord(UUIDPrimaryKey, CreatedAt, Base):
     result_version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("project_versions.id", ondelete="SET NULL")
     )
+
+
+class ManufacturingEstimateRecord(UUIDPrimaryKey, CreatedAt, Base):
+    """Immutable editor-entered cost snapshot bound to one measured print analysis."""
+
+    __tablename__ = "manufacturing_estimates"
+    __table_args__ = (
+        Index("ix_manufacturing_estimates_analysis_created", "analysis_id", "created_at"),
+        UniqueConstraint(
+            "analysis_id", "fingerprint", name="uq_manufacturing_estimates_analysis_fingerprint"
+        ),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    analysis_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("print_analyses.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    printer_profile_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    material_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    material_cost: Mapped[Decimal] = mapped_column(Numeric(16, 4), nullable=False)
+    print_time_min: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    machine_rate_per_hour: Mapped[Decimal | None] = mapped_column(Numeric(16, 4))
+    printer_power_w: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))
+    electricity_rate_per_kwh: Mapped[Decimal | None] = mapped_column(Numeric(16, 4))
+    postprocess_hours: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    postprocess_rate_per_hour: Mapped[Decimal | None] = mapped_column(Numeric(16, 4))
+    machine_cost: Mapped[Decimal] = mapped_column(Numeric(16, 2), nullable=False)
+    electricity_cost: Mapped[Decimal] = mapped_column(Numeric(16, 2), nullable=False)
+    postprocess_cost: Mapped[Decimal] = mapped_column(Numeric(16, 2), nullable=False)
+    total_cost: Mapped[Decimal] = mapped_column(Numeric(16, 2), nullable=False)

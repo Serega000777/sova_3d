@@ -30,6 +30,7 @@ import type {
   MeshSelection,
   ModellingGrid,
   Material,
+  ManufacturingEstimate,
   ModelComment,
   PlanFootprint,
   PrintAnalysis,
@@ -122,6 +123,8 @@ import { shareTurntableVideo } from "@/src/turntable-video-file";
 import {
   analysisMatchesManufacturingContext,
   calculateManufacturingEstimate,
+  manufacturingEstimateInput,
+  restoredManufacturingEstimate,
   verifiedPrintAnalysisJob,
 } from "@/src/manufacturing-estimate";
 import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
@@ -370,6 +373,8 @@ export default function ProjectScreen() {
   const [active, setActive] = useState<Version | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
+  const [savedManufacturingEstimate, setSavedManufacturingEstimate] = useState<ManufacturingEstimate | null>(null);
+  const [manufacturingEstimateBusy, setManufacturingEstimateBusy] = useState(false);
   const [engineeringHistory, setEngineeringHistory] = useState<EngineeringReport[]>([]);
   const [engineeringRiskRegion, setEngineeringRiskRegion] = useState<RegionSelection | null>(null);
   const [localEditPreview, setLocalEditPreview] = useState<{
@@ -564,6 +569,7 @@ export default function ProjectScreen() {
   const [organicEstimateBusy, setOrganicEstimateBusy] = useState(false);
   const [organicEstimateError, setOrganicEstimateError] = useState<string | null>(null);
   const organicEstimateRevision = useRef(0);
+  const manufacturingEstimateRevision = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!client || !id) return;
@@ -955,6 +961,8 @@ export default function ProjectScreen() {
     setElectricityPerKwhText("");
     setPostProcessHoursText("");
     setPostProcessHourlyText("");
+    setSavedManufacturingEstimate(null);
+    setManufacturingEstimateBusy(false);
   }, [activeId, printProfileId, printMaterialId]);
   useEffect(() => {
     if (!client || !activeId) return;
@@ -3791,6 +3799,71 @@ export default function ProjectScreen() {
     }
   }
 
+  async function saveManufacturingEstimate() {
+    if (
+      !client
+      || !active
+      || !estimateAnalysis
+      || !manufacturingEstimate?.valid
+      || manufacturingEstimateBusy
+    ) return;
+    const input = manufacturingEstimateInput({
+      machineHourlyText,
+      printerPowerWText,
+      electricityPerKwhText,
+      postProcessHoursText,
+      postProcessHourlyText,
+    });
+    if (!input) {
+      setError(
+        ru
+          ? "Проверьте пары ставок электричества и постобработки."
+          : "Check the electricity and post-processing rate pairs.",
+      );
+      return;
+    }
+    const revision = manufacturingEstimateRevision.current;
+    const versionId = active.id;
+    const analysisId = estimateAnalysis.id;
+    setError(null);
+    setManufacturingEstimateBusy(true);
+    try {
+      const saved = await client.createManufacturingEstimate(analysisId, input);
+      const restored = restoredManufacturingEstimate(
+        saved,
+        estimateAnalysis,
+        versionId,
+        printProfileId,
+        printMaterialId,
+      );
+      if (
+        manufacturingEstimateRevision.current !== revision
+        || activeIdRef.current !== versionId
+      ) return;
+      if (!restored) {
+        throw new Error(
+          ru
+            ? "Сервер вернул смету, не совпадающую с выбранным анализом."
+            : "The saved estimate does not match the selected analysis.",
+        );
+      }
+      setSavedManufacturingEstimate(saved);
+      setNotice(
+        ru
+          ? "Смета сохранена для этой версии, профиля и материала."
+          : "Estimate saved for this version, printer profile, and material.",
+      );
+    } catch (reason) {
+      if (manufacturingEstimateRevision.current === revision) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      if (manufacturingEstimateRevision.current === revision) {
+        setManufacturingEstimateBusy(false);
+      }
+    }
+  }
+
   /** Reference 94: the worker owns fit-to-bed cutting and measured plate nesting. */
   async function preparePlateLayout() {
     if (!client || !active || !printProfileId) return;
@@ -4392,6 +4465,41 @@ export default function ProjectScreen() {
         postProcessHourlyText,
       })
     : null;
+  useEffect(() => {
+    const revision = manufacturingEstimateRevision.current + 1;
+    manufacturingEstimateRevision.current = revision;
+    setSavedManufacturingEstimate(null);
+    if (!client || !estimateAnalysis || !activeId) return;
+    let cancelled = false;
+    void client
+      .listManufacturingEstimates(estimateAnalysis.id)
+      .then((rows) => {
+        if (cancelled || manufacturingEstimateRevision.current !== revision) return;
+        const restored = rows
+          .map((row) => ({
+            row,
+            restored: restoredManufacturingEstimate(
+              row,
+              estimateAnalysis,
+              activeId,
+              printProfileId,
+              printMaterialId,
+            ),
+          }))
+          .find((item) => item.restored !== null);
+        if (!restored?.restored) return;
+        setMachineHourlyText(restored.restored.input.machine_rate_per_hour?.toString() ?? "");
+        setPrinterPowerWText(restored.restored.input.printer_power_w?.toString() ?? "");
+        setElectricityPerKwhText(restored.restored.input.electricity_rate_per_kwh?.toString() ?? "");
+        setPostProcessHoursText(restored.restored.input.postprocess_hours?.toString() ?? "");
+        setPostProcessHourlyText(restored.restored.input.postprocess_rate_per_hour?.toString() ?? "");
+        setSavedManufacturingEstimate(restored.row);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [client, estimateAnalysis, activeId, printProfileId, printMaterialId]);
   const modelCheckStatus = (ids: readonly string[]): "pass" | "warn" | "fail" | "unknown" => {
     if (!activeModelCheck) return "unknown";
     const checks = activeModelCheck.checks.filter((check) => ids.includes(check.id));
@@ -5722,7 +5830,10 @@ export default function ProjectScreen() {
                   placeholder={ru ? "Машина / ч" : "Machine / h"}
                   placeholderTextColor={colors.muted}
                   value={machineHourlyText}
-                  onChangeText={setMachineHourlyText}
+                  onChangeText={(value) => {
+                    setMachineHourlyText(value);
+                    setSavedManufacturingEstimate(null);
+                  }}
                 />
                 <TextInput
                   accessibilityLabel={ru ? "Мощность принтера, Вт" : "Printer power, W"}
@@ -5731,7 +5842,10 @@ export default function ProjectScreen() {
                   placeholder={ru ? "Мощность, Вт" : "Power, W"}
                   placeholderTextColor={colors.muted}
                   value={printerPowerWText}
-                  onChangeText={setPrinterPowerWText}
+                  onChangeText={(value) => {
+                    setPrinterPowerWText(value);
+                    setSavedManufacturingEstimate(null);
+                  }}
                 />
               </View>
               <TextInput
@@ -5741,7 +5855,10 @@ export default function ProjectScreen() {
                 placeholder={ru ? "Электричество / кВт·ч" : "Electricity / kWh"}
                 placeholderTextColor={colors.muted}
                 value={electricityPerKwhText}
-                onChangeText={setElectricityPerKwhText}
+                onChangeText={(value) => {
+                  setElectricityPerKwhText(value);
+                  setSavedManufacturingEstimate(null);
+                }}
               />
               <View style={styles.row}>
                 <TextInput
@@ -5751,7 +5868,10 @@ export default function ProjectScreen() {
                   placeholder={ru ? "Постобработка, ч" : "Post-process, h"}
                   placeholderTextColor={colors.muted}
                   value={postProcessHoursText}
-                  onChangeText={setPostProcessHoursText}
+                  onChangeText={(value) => {
+                    setPostProcessHoursText(value);
+                    setSavedManufacturingEstimate(null);
+                  }}
                 />
                 <TextInput
                   accessibilityLabel={ru ? "Ставка постобработки в час" : "Post-processing rate per hour"}
@@ -5760,7 +5880,10 @@ export default function ProjectScreen() {
                   placeholder={ru ? "Работа / ч" : "Labour / h"}
                   placeholderTextColor={colors.muted}
                   value={postProcessHourlyText}
-                  onChangeText={setPostProcessHourlyText}
+                  onChangeText={(value) => {
+                    setPostProcessHourlyText(value);
+                    setSavedManufacturingEstimate(null);
+                  }}
                 />
               </View>
               {manufacturingEstimate?.valid ? (
@@ -5785,10 +5908,32 @@ export default function ProjectScreen() {
                       : (ru ? "Расходы должны быть конечными неотрицательными числами в допустимом диапазоне." : "Costs must be finite non-negative numbers within the supported range.")}
                 </Text>
               ) : null}
+              {savedManufacturingEstimate ? (
+                <Text style={[styles.muted, { color: colors.green }]}>
+                  {ru ? "Сохранено" : "Saved"}: {new Date(savedManufacturingEstimate.created_at).toLocaleString(ru ? "ru-RU" : "en-US")}
+                </Text>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={ru ? "Сохранить смету" : "Save estimate"}
+                style={[
+                  styles.button,
+                  styles.buttonPrimary,
+                  (!manufacturingEstimate?.valid || manufacturingEstimateBusy) && { opacity: 0.5 },
+                ]}
+                disabled={!manufacturingEstimate?.valid || manufacturingEstimateBusy}
+                onPress={() => void saveManufacturingEstimate()}
+              >
+                <Text style={styles.buttonText}>
+                  {manufacturingEstimateBusy
+                    ? (ru ? "Сохраняем…" : "Saving…")
+                    : (ru ? "Сохранить смету" : "Save estimate")}
+                </Text>
+              </Pressable>
               <Text style={styles.muted}>
                 {ru
-                  ? "Материалы и время приходят из серверного анализа. Дополнительные расходы считаются только из ваших ставок; обслуживание, доставка, налоги и цена подрядчика не включены."
-                  : "Materials and time come from server analysis. Additional costs use only your rates; maintenance, shipping, taxes, and supplier markup are excluded."}
+                  ? "Материалы и время приходят из точного серверного анализа. Сохранённая смета привязана к этой версии, профилю и материалу и заново проверяется сервером. Обслуживание, доставка, налоги и цена подрядчика не включены."
+                  : "Materials and time come from the exact server analysis. A saved estimate is bound to this version, profile, and material and is recomputed by the server. Maintenance, shipping, taxes, and supplier markup are excluded."}
               </Text>
             </View>
           ) : null}

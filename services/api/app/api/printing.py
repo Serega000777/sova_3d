@@ -221,6 +221,52 @@ class AnalysisOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ManufacturingEstimateBody(BaseModel):
+    machine_rate_per_hour: Decimal | None = Field(
+        default=None, ge=0, le=1_000_000, decimal_places=4
+    )
+    printer_power_w: Decimal | None = Field(default=None, ge=0, le=100_000, decimal_places=4)
+    electricity_rate_per_kwh: Decimal | None = Field(
+        default=None, ge=0, le=1_000_000, decimal_places=4
+    )
+    postprocess_hours: Decimal | None = Field(default=None, ge=0, le=10_000, decimal_places=4)
+    postprocess_rate_per_hour: Decimal | None = Field(
+        default=None, ge=0, le=1_000_000, decimal_places=4
+    )
+
+    @model_validator(mode="after")
+    def paired_rates_are_complete(self) -> ManufacturingEstimateBody:
+        if (self.printer_power_w is None) != (self.electricity_rate_per_kwh is None):
+            raise ValueError("printer power and electricity rate must be supplied together")
+        if (self.postprocess_hours is None) != (self.postprocess_rate_per_hour is None):
+            raise ValueError("post-processing hours and rate must be supplied together")
+        return self
+
+
+class ManufacturingEstimateOut(BaseModel):
+    id: uuid.UUID
+    analysis_id: uuid.UUID
+    project_version_id: uuid.UUID
+    created_by: uuid.UUID | None
+    printer_profile_id: uuid.UUID | None
+    material_id: str
+    currency: str
+    material_cost: Decimal
+    print_time_min: Decimal
+    machine_rate_per_hour: Decimal | None
+    printer_power_w: Decimal | None
+    electricity_rate_per_kwh: Decimal | None
+    postprocess_hours: Decimal | None
+    postprocess_rate_per_hour: Decimal | None
+    machine_cost: Decimal
+    electricity_cost: Decimal
+    postprocess_cost: Decimal
+    total_cost: Decimal
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class BatchItemBody(BaseModel):
     version_id: uuid.UUID
     quantity: int = Field(default=1, ge=1, le=50)
@@ -818,3 +864,39 @@ def get_print_analysis(analysis_id: uuid.UUID, db: DbDep, principal: PrincipalDe
     return AnalysisOut.model_validate(
         printing.get_analysis(db, user_id=principal.user_id, analysis_id=analysis_id)
     )
+
+
+@router.post(
+    "/print-analyses/{analysis_id}/manufacturing-estimates",
+    response_model=ManufacturingEstimateOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_manufacturing_estimate(
+    analysis_id: uuid.UUID,
+    body: ManufacturingEstimateBody,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ManufacturingEstimateOut:
+    return ManufacturingEstimateOut.model_validate(
+        printing.create_manufacturing_estimate(
+            db,
+            user_id=principal.user_id,
+            analysis_id=analysis_id,
+            **body.model_dump(),
+        )
+    )
+
+
+@router.get(
+    "/print-analyses/{analysis_id}/manufacturing-estimates",
+    response_model=list[ManufacturingEstimateOut],
+)
+def list_manufacturing_estimates(
+    analysis_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> list[ManufacturingEstimateOut]:
+    return [
+        ManufacturingEstimateOut.model_validate(record)
+        for record in printing.list_manufacturing_estimates(
+            db, user_id=principal.user_id, analysis_id=analysis_id
+        )
+    ]

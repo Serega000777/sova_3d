@@ -18,6 +18,7 @@ from app.models.marketplace import (
 )
 from app.models.plan_annotations import PlanAnnotations
 from app.models.printing import (
+    ManufacturingEstimateRecord,
     Material,
     PrintAnalysisRecord,
     PrinterModel,
@@ -64,6 +65,7 @@ __all__ = [
     "Job",
     "JobArtifact",
     "Material",
+    "ManufacturingEstimateRecord",
     "MeshModifier",
     "ModelComment",
     "ModelCommentAsset",

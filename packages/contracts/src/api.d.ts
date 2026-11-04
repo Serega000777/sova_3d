@@ -3732,6 +3732,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/print-analyses/{analysis_id}/manufacturing-estimates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Manufacturing Estimates */
+        get: operations["list_manufacturing_estimates_api_v1_print_analyses__analysis_id__manufacturing_estimates_get"];
+        put?: never;
+        /** Create Manufacturing Estimate */
+        post: operations["create_manufacturing_estimate_api_v1_print_analyses__analysis_id__manufacturing_estimates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/integrity-report": {
         parameters: {
             query?: never;
@@ -7559,6 +7577,72 @@ export interface components {
             radius: number;
             /** Points */
             points: components["schemas"]["MaskPoint"][];
+        };
+        /** ManufacturingEstimateBody */
+        ManufacturingEstimateBody: {
+            /** Machine Rate Per Hour */
+            machine_rate_per_hour?: number | string | null;
+            /** Printer Power W */
+            printer_power_w?: number | string | null;
+            /** Electricity Rate Per Kwh */
+            electricity_rate_per_kwh?: number | string | null;
+            /** Postprocess Hours */
+            postprocess_hours?: number | string | null;
+            /** Postprocess Rate Per Hour */
+            postprocess_rate_per_hour?: number | string | null;
+        };
+        /** ManufacturingEstimateOut */
+        ManufacturingEstimateOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Analysis Id
+             * Format: uuid
+             */
+            analysis_id: string;
+            /**
+             * Project Version Id
+             * Format: uuid
+             */
+            project_version_id: string;
+            /** Created By */
+            created_by: string | null;
+            /** Printer Profile Id */
+            printer_profile_id: string | null;
+            /** Material Id */
+            material_id: string;
+            /** Currency */
+            currency: string;
+            /** Material Cost */
+            material_cost: string;
+            /** Print Time Min */
+            print_time_min: string;
+            /** Machine Rate Per Hour */
+            machine_rate_per_hour: string | null;
+            /** Printer Power W */
+            printer_power_w: string | null;
+            /** Electricity Rate Per Kwh */
+            electricity_rate_per_kwh: string | null;
+            /** Postprocess Hours */
+            postprocess_hours: string | null;
+            /** Postprocess Rate Per Hour */
+            postprocess_rate_per_hour: string | null;
+            /** Machine Cost */
+            machine_cost: string;
+            /** Electricity Cost */
+            electricity_cost: string;
+            /** Postprocess Cost */
+            postprocess_cost: string;
+            /** Total Cost */
+            total_cost: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** MarketOffersOut */
         MarketOffersOut: {
@@ -20159,6 +20243,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnalysisOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_manufacturing_estimates_api_v1_print_analyses__analysis_id__manufacturing_estimates_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                analysis_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingEstimateOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_manufacturing_estimate_api_v1_print_analyses__analysis_id__manufacturing_estimates_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                analysis_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingEstimateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingEstimateOut"];
                 };
             };
             /** @description Validation Error */
