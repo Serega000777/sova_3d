@@ -138,6 +138,31 @@ class VersionComment(Timestamps, Base):
     )
 
 
+class AssemblyGuideProgress(Timestamps, Base):
+    """Mutable, revision-guarded checklist state outside immutable mechanism geometry."""
+
+    __tablename__ = "assembly_guide_progress"
+    __table_args__ = (
+        CheckConstraint("revision >= 1", name="assembly_guide_progress_revision_positive"),
+        CheckConstraint(
+            "guide_kind IN ('hinged_lid', 'sliding_lid')",
+            name="assembly_guide_progress_kind",
+        ),
+    )
+
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_versions.id", ondelete="CASCADE"), primary_key=True
+    )
+    guide_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    completed_step_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
 class ModelComment(UUIDPrimaryKey, Timestamps, Base):
     """Mutable, version-scoped discussion point kept outside immutable geometry."""
 

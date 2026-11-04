@@ -808,6 +808,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/versions/{version_id}/assembly-guide-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Assembly Guide Progress */
+        get: operations["get_assembly_guide_progress_api_v1_versions__version_id__assembly_guide_progress_get"];
+        /** Put Assembly Guide Progress */
+        put: operations["put_assembly_guide_progress_api_v1_versions__version_id__assembly_guide_progress_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/versions/{version_id}/comment": {
         parameters: {
             query?: never;
@@ -4378,6 +4396,39 @@ export interface components {
             effective_visible: boolean;
             /** World Transform */
             world_transform: number[][];
+        };
+        /** AssemblyGuideProgressOut */
+        AssemblyGuideProgressOut: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /**
+             * Guide Kind
+             * @enum {string}
+             */
+            guide_kind: "hinged_lid" | "sliding_lid";
+            /** Completed Step Ids */
+            completed_step_ids: string[];
+            /** Revision */
+            revision: number;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
+        /** AssemblyGuideProgressUpdate */
+        AssemblyGuideProgressUpdate: {
+            /**
+             * Guide Kind
+             * @enum {string}
+             */
+            guide_kind: "hinged_lid" | "sliding_lid";
+            /** Completed Step Ids */
+            completed_step_ids: string[];
+            /** Expected Revision */
+            expected_revision: number;
         };
         /** AssemblyInspectionOut */
         AssemblyInspectionOut: {
@@ -13756,6 +13807,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionHistoryItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_assembly_guide_progress_api_v1_versions__version_id__assembly_guide_progress_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssemblyGuideProgressOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_assembly_guide_progress_api_v1_versions__version_id__assembly_guide_progress_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssemblyGuideProgressUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssemblyGuideProgressOut"];
                 };
             };
             /** @description Validation Error */

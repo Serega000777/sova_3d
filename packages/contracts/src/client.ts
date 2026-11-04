@@ -37,6 +37,7 @@ export interface PlanAnnotationsOut {
 export type Version = Schemas["VersionOut"];
 export type VersionHistoryItem = Schemas["VersionHistoryItem"];
 export type WorkspaceVersionActivityItem = Schemas["WorkspaceVersionActivityItem"];
+export type AssemblyGuideProgress = Schemas["AssemblyGuideProgressOut"];
 export type VersionComment = Schemas["VersionCommentOut"];
 export type ModelComment = Schemas["ModelCommentOut"];
 export type ThumbnailAngle = Schemas["ThumbnailAngle"];
@@ -837,6 +838,24 @@ export class PhysicalAiClient {
     return this.request<WorkspaceVersionActivityItem[]>(
       "GET",
       `/api/v1/workspaces/${workspaceId}/version-activity?limit=${limit}`,
+    );
+  }
+
+  getAssemblyGuideProgress(versionId: string) {
+    return this.request<AssemblyGuideProgress>(
+      "GET",
+      `/api/v1/versions/${versionId}/assembly-guide-progress`,
+    );
+  }
+
+  putAssemblyGuideProgress(
+    versionId: string,
+    body: Schemas["AssemblyGuideProgressUpdate"],
+  ) {
+    return this.request<AssemblyGuideProgress>(
+      "PUT",
+      `/api/v1/versions/${versionId}/assembly-guide-progress`,
+      { body },
     );
   }
 

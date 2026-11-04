@@ -178,6 +178,41 @@ test("workspace version activity uses the bounded read-only timeline route", asy
   assert.equal(new Headers(request!.init.headers).get("Authorization"), "Bearer viewer-token");
 });
 
+test("assembly guide progress uses version scope and a revision-guarded body", async () => {
+  const requests: { url: string; init: RequestInit }[] = [];
+  const progress = {
+    version_id: "version-1",
+    guide_kind: "hinged_lid",
+    completed_step_ids: ["inspect-parts"],
+    revision: 1,
+    updated_at: "2026-11-04T20:00:00Z",
+    updated_by: "user-1",
+  };
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      requests.push({ url, init });
+      return jsonResponse(init.method === "PUT" ? progress : { ...progress, revision: 0 });
+    },
+  });
+
+  await client.getAssemblyGuideProgress("version-1");
+  await client.putAssemblyGuideProgress("version-1", {
+    guide_kind: "hinged_lid",
+    completed_step_ids: ["inspect-parts"],
+    expected_revision: 0,
+  });
+  assert.deepEqual(requests.map((request) => [request.init.method, request.url]), [
+    ["GET", "https://api.example.test/api/v1/versions/version-1/assembly-guide-progress"],
+    ["PUT", "https://api.example.test/api/v1/versions/version-1/assembly-guide-progress"],
+  ]);
+  assert.deepEqual(JSON.parse(String(requests[1].init.body)), {
+    guide_kind: "hinged_lid",
+    completed_step_ids: ["inspect-parts"],
+    expected_revision: 0,
+  });
+});
+
 test("team workspace tasks use the nested typed routes and revision guard", async () => {
   const requests: { url: string; init: RequestInit }[] = [];
   const client = new PhysicalAiClient({

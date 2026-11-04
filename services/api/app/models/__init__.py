@@ -33,6 +33,7 @@ from app.models.training_consent import ProjectTrainingConsent, ProjectTrainingC
 from app.models.uploads import UploadSession
 from app.models.usage import UsageEntry
 from app.models.versioning import (
+    AssemblyGuideProgress,
     Asset,
     ModelComment,
     ModelCommentAsset,
@@ -56,6 +57,7 @@ __all__ = [
     "MarketplaceItemComponent",
     "MarketplaceOrder",
     "ApiToken",
+    "AssemblyGuideProgress",
     "Asset",
     "Base",
     "EngineeringReportRecord",

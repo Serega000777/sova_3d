@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { verifiedAssemblyGuideProgress } from "../src/assembly-guide-progress.ts";
 import { mechanismAssemblyGuide } from "../src/mechanism-assembly-guide.ts";
 
 const hinge = {
@@ -86,6 +87,57 @@ test("mobile guide fails closed for hidden, conflicting or substituted parts", (
   ), null);
 });
 
+test("shared guide progress stays bound to the exact version, kind and known steps", () => {
+  const guide = mechanismAssemblyGuide(
+    { build_hinged_lid: hinge },
+    new Set(["base", "lid", "pin"]),
+    bom("base", "lid", "pin"),
+  );
+  assert.ok(guide);
+  const verified = verifiedAssemblyGuideProgress({
+    version_id: "version-69",
+    guide_kind: "hinged_lid",
+    completed_step_ids: ["inspect-parts", "insert-pin"],
+    revision: 3,
+    updated_at: null,
+    updated_by: null,
+  }, "version-69", guide);
+  assert.deepEqual([...verified.completed], ["inspect-parts", "insert-pin"]);
+  assert.equal(verified.revision, 3);
+  assert.equal(verifiedAssemblyGuideProgress({
+    version_id: "substituted",
+    guide_kind: "hinged_lid",
+    completed_step_ids: [],
+    revision: 0,
+    updated_at: null,
+    updated_by: null,
+  }, "version-69", guide), null);
+  assert.equal(verifiedAssemblyGuideProgress({
+    version_id: "version-69",
+    guide_kind: "sliding_lid",
+    completed_step_ids: [],
+    revision: 0,
+    updated_at: null,
+    updated_by: null,
+  }, "version-69", guide), null);
+  assert.equal(verifiedAssemblyGuideProgress({
+    version_id: "version-69",
+    guide_kind: "hinged_lid",
+    completed_step_ids: ["inspect-parts", "inspect-parts"],
+    revision: 1,
+    updated_at: null,
+    updated_by: null,
+  }, "version-69", guide), null);
+  assert.equal(verifiedAssemblyGuideProgress({
+    version_id: "version-69",
+    guide_kind: "hinged_lid",
+    completed_step_ids: ["unknown"],
+    revision: 1,
+    updated_at: null,
+    updated_by: null,
+  }, "version-69", guide), null);
+});
+
 test("project screen renders the version-scoped guide and connects part selection", () => {
   const source = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
   const card = readFileSync(new URL("../src/AssemblyGuideCard.tsx", import.meta.url), "utf8");
@@ -95,9 +147,14 @@ test("project screen renders the version-scoped guide and connects part selectio
   assert.match(source, /onSelectNode=\{\(nodeId\) =>/);
   assert.match(source, /setSelectedSceneNodeId\(nodeId\)/);
   assert.match(source, /\.inspectAssembly\(activeId\)/);
-  assert.match(card, /sova:assembly-guide:v1:\$\{versionId\}/);
-  assert.match(card, /AsyncStorage\.setItem/);
+  assert.match(source, /editable=\{canEditWorkspace\}/);
+  assert.match(card, /getAssemblyGuideProgress\(versionId\)/);
+  assert.match(card, /putAssemblyGuideProgress\(versionId/);
+  assert.match(card, /expected_revision: revision/);
+  assert.match(card, /reason instanceof ApiError && reason\.status === 409/);
+  assert.match(card, /if \(requestRevision\.current === request\) \{\s+setSyncError/);
+  assert.doesNotMatch(card, /AsyncStorage/);
   assert.match(card, /accessibilityRole="checkbox"/);
-  assert.match(card, /только на этом устройстве для этой версии/);
+  assert.match(card, /синхронизируются для этой версии между участниками workspace/);
   assert.match(card, /Ведомость деталей инструкции/);
 });

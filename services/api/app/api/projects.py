@@ -182,6 +182,30 @@ class VersionCommentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+AssemblyGuideKind = Literal["hinged_lid", "sliding_lid"]
+
+
+class AssemblyGuideProgressUpdate(BaseModel):
+    guide_kind: AssemblyGuideKind
+    completed_step_ids: list[str] = Field(max_length=4)
+    expected_revision: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def unique_steps(self) -> "AssemblyGuideProgressUpdate":
+        if len(self.completed_step_ids) != len(set(self.completed_step_ids)):
+            raise ValueError("completed_step_ids must be unique")
+        return self
+
+
+class AssemblyGuideProgressOut(BaseModel):
+    version_id: uuid.UUID
+    guide_kind: AssemblyGuideKind
+    completed_step_ids: list[str]
+    revision: int = Field(ge=0)
+    updated_at: datetime | None = None
+    updated_by: uuid.UUID | None = None
+
+
 class ModelCommentCreate(BaseModel):
     comment: str = Field(min_length=1, max_length=2000)
     point_mm: tuple[float, float, float]
@@ -607,6 +631,46 @@ def list_version_history(
             )
         )
     return result
+
+
+@router.get(
+    "/versions/{version_id}/assembly-guide-progress",
+    response_model=AssemblyGuideProgressOut,
+)
+def get_assembly_guide_progress(
+    version_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> AssemblyGuideProgressOut:
+    return AssemblyGuideProgressOut.model_validate(
+        projects.get_assembly_guide_progress(db, user_id=principal.user_id, version_id=version_id)
+    )
+
+
+@router.put(
+    "/versions/{version_id}/assembly-guide-progress",
+    response_model=AssemblyGuideProgressOut,
+)
+def put_assembly_guide_progress(
+    version_id: uuid.UUID,
+    body: AssemblyGuideProgressUpdate,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> AssemblyGuideProgressOut:
+    record = projects.put_assembly_guide_progress(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        guide_kind=body.guide_kind,
+        completed_step_ids=body.completed_step_ids,
+        expected_revision=body.expected_revision,
+    )
+    return AssemblyGuideProgressOut(
+        version_id=record.version_id,
+        guide_kind=cast(AssemblyGuideKind, record.guide_kind),
+        completed_step_ids=record.completed_step_ids,
+        revision=record.revision,
+        updated_at=record.updated_at,
+        updated_by=record.updated_by,
+    )
 
 
 @router.put("/versions/{version_id}/comment", response_model=VersionCommentOut)

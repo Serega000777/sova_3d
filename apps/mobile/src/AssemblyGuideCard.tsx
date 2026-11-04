@@ -1,7 +1,8 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useEffect, useMemo, useState } from "react";
+import { ApiError, type PhysicalAiClient } from "@physical-ai/contracts";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
+import { verifiedAssemblyGuideProgress } from "./assembly-guide-progress";
 import type { MechanismAssemblyGuide } from "./mechanism-assembly-guide";
 import { colors, radii, styles } from "./theme";
 
@@ -9,42 +10,108 @@ export function AssemblyGuideCard({
   guide,
   versionId,
   language,
+  client,
+  editable,
   nodeNames,
   onSelectNode,
 }: {
   guide: MechanismAssemblyGuide;
   versionId: string;
   language: "ru" | "en";
+  client: PhysicalAiClient | null;
+  editable: boolean;
   nodeNames: ReadonlyMap<string, string>;
   onSelectNode: (nodeId: string) => void;
 }) {
   const ru = language === "ru";
-  const storageKey = `sova:assembly-guide:v1:${versionId}:${guide.kind}`;
   const stepIds = useMemo(() => new Set(guide.steps.map((step) => step.id)), [guide.steps]);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [revision, setRevision] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const requestRevision = useRef(0);
 
   useEffect(() => {
+    const request = ++requestRevision.current;
     let cancelled = false;
     setCompleted(new Set());
-    void AsyncStorage.getItem(storageKey)
-      .then((raw) => {
-        if (cancelled || raw === null) return;
-        const parsed: unknown = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return;
-        setCompleted(new Set(parsed.filter((value): value is string => typeof value === "string" && stepIds.has(value))));
+    setRevision(0);
+    setLoaded(false);
+    setSaving(false);
+    setSyncError(null);
+    if (!client || !versionId) return () => { cancelled = true; };
+    void client.getAssemblyGuideProgress(versionId)
+      .then((progress) => {
+        if (cancelled || requestRevision.current !== request) return;
+        const verified = verifiedAssemblyGuideProgress(progress, versionId, guide);
+        if (!verified) throw new Error("Invalid assembly guide progress response");
+        setCompleted(verified.completed);
+        setRevision(verified.revision);
+        setLoaded(true);
       })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [stepIds, storageKey]);
+      .catch((reason) => {
+        if (!cancelled && requestRevision.current === request) {
+          setSyncError(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+    return () => {
+      cancelled = true;
+      requestRevision.current += 1;
+    };
+  }, [client, guide, stepIds, versionId]);
+
+  const save = async (next: Set<string>) => {
+    if (!client || !editable || !loaded || saving) return;
+    const request = ++requestRevision.current;
+    setSaving(true);
+    setSyncError(null);
+    try {
+      const progress = await client.putAssemblyGuideProgress(versionId, {
+        guide_kind: guide.kind,
+        completed_step_ids: guide.steps.flatMap((step) => next.has(step.id) ? [step.id] : []),
+        expected_revision: revision,
+      });
+      const verified = verifiedAssemblyGuideProgress(progress, versionId, guide);
+      if (!verified) throw new Error("Invalid assembly guide progress response");
+      if (requestRevision.current !== request) return;
+      setCompleted(verified.completed);
+      setRevision(verified.revision);
+    } catch (reason) {
+      if (requestRevision.current !== request) return;
+      if (reason instanceof ApiError && reason.status === 409) {
+        try {
+          const latest = verifiedAssemblyGuideProgress(
+            await client.getAssemblyGuideProgress(versionId),
+            versionId,
+            guide,
+          );
+          if (!latest || requestRevision.current !== request) {
+            throw new Error("Invalid assembly guide progress response");
+          }
+          setCompleted(latest.completed);
+          setRevision(latest.revision);
+          setSyncError(ru
+            ? "Отметки изменились на другом устройстве — показана свежая версия."
+            : "The checklist changed on another device; the latest version is shown.");
+        } catch (reloadReason) {
+          if (requestRevision.current === request) {
+            setSyncError(reloadReason instanceof Error ? reloadReason.message : String(reloadReason));
+          }
+        }
+      } else {
+        setSyncError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      if (requestRevision.current === request) setSaving(false);
+    }
+  };
 
   const toggle = (stepId: string) => {
-    setCompleted((current) => {
-      const next = new Set(current);
-      if (next.has(stepId)) next.delete(stepId);
-      else next.add(stepId);
-      void AsyncStorage.setItem(storageKey, JSON.stringify([...next])).catch(() => undefined);
-      return next;
-    });
+    const next = new Set(completed);
+    if (next.has(stepId)) next.delete(stepId);
+    else next.add(stepId);
+    void save(next);
   };
 
   return (
@@ -72,14 +139,15 @@ export function AssemblyGuideCard({
         ))}
       </View>
       <View style={[styles.row, { justifyContent: "space-between" }]}>
-        <Text style={styles.text}>{ru ? "Выполнено" : "Completed"}: {completed.size}/{guide.steps.length}</Text>
+        <Text style={styles.text}>
+          {ru ? "Выполнено" : "Completed"}: {completed.size}/{guide.steps.length}
+          {saving ? (ru ? " · синхронизация…" : " · syncing…") : ""}
+        </Text>
         {completed.size > 0 ? (
           <Pressable
             style={styles.chip}
-            onPress={() => {
-              setCompleted(new Set());
-              void AsyncStorage.removeItem(storageKey).catch(() => undefined);
-            }}
+            disabled={!editable || saving || !loaded}
+            onPress={() => void save(new Set())}
           >
             <Text style={styles.chipText}>{ru ? "Сбросить" : "Reset"}</Text>
           </Pressable>
@@ -93,6 +161,7 @@ export function AssemblyGuideCard({
           <Pressable
             accessibilityRole="checkbox"
             accessibilityState={{ checked: completed.has(step.id) }}
+            disabled={!editable || saving || !loaded}
             onPress={() => toggle(step.id)}
             style={[styles.row, { alignItems: "flex-start" }]}
           >
@@ -117,10 +186,15 @@ export function AssemblyGuideCard({
           </View>
         </View>
       ))}
+      {syncError ? <Text style={[styles.muted, { color: colors.red }]}>{syncError}</Text> : null}
       <Text style={[styles.muted, { color: colors.yellow }]}>
         {ru
-          ? "Отметки хранятся только на этом устройстве для этой версии и не подтверждают физическую сборку. Фотографии и внешний крепёж не добавлены; посадку и прочность проверьте физически."
-          : "Checks stay only on this device for this version and do not prove physical assembly. Photos and external fasteners are not included; validate fit and strength physically."}
+          ? editable
+            ? "Отметки синхронизируются для этой версии между участниками workspace, но не подтверждают физическую сборку. Фотографии и внешний крепёж не добавлены; посадку и прочность проверьте физически."
+            : "Отметки синхронизируются для этой версии; у вас доступ только для чтения. Они не подтверждают физическую сборку."
+          : editable
+            ? "Checks sync for this version across workspace members, but do not prove physical assembly. Photos and external fasteners are not included; validate fit and strength physically."
+            : "Checks sync for this version; your access is read-only. They do not prove physical assembly."}
       </Text>
     </View>
   );

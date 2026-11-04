@@ -8,6 +8,7 @@ coverage test at the bottom, not a user's privacy.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -100,6 +101,40 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         },
         created_by=actor.user.id,
     )
+    family_id = uuid.uuid4()
+    family_members = [
+        projects.create_version_internal(
+            db_session,
+            project_id=project.id,
+            parent_version_id=version.id,
+            assets={AssetRole.model: asset.id},
+            finalize=False,
+            created_by=actor.user.id,
+        )
+        for _ in range(3)
+    ]
+    family_payload = {
+        "schema_version": 1,
+        "id": str(family_id),
+        "source_version_id": str(version.id),
+        "members": [
+            {
+                "label": label,
+                "version_id": str(member.id),
+                "width_mm": dimension,
+                "depth_mm": dimension,
+                "height_mm": dimension,
+            }
+            for label, member, dimension in zip(
+                ("S", "M", "L"), family_members, (80.0, 100.0, 120.0), strict=True
+            )
+        ],
+    }
+    for member in family_members:
+        member.provenance = {**member.provenance, "size_family": family_payload}
+    db_session.flush()
+    for member in family_members:
+        projects.finalize_version(db_session, member)
     model_comment = projects.create_model_comment(
         db_session,
         user_id=actor.user.id,
@@ -308,6 +343,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         "developer_token": str(developer_token.id),
         "project_share_link": str(project_share_link.id),
         "verification_link": str(verification_link.id),
+        "size_family": str(family_id),
         "workspace": str(actor.workspace.id),
         "member": str(actor.user.id),
         # not a real row's id: a plan is identified by a client-chosen string, not a UUID
@@ -427,8 +463,37 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("DELETE", f"/api/v1/projects/{project}", None),
         ("GET", f"/api/v1/projects/{project}/versions", None),
         ("GET", f"/api/v1/projects/{project}/version-history", None),
+        ("GET", f"/api/v1/projects/{project}/size-families", None),
+        (
+            "POST",
+            f"/api/v1/projects/{project}/size-families",
+            {
+                "source_version_id": version,
+                "selected_label": "M",
+                "members": [
+                    {"label": "S", "version_id": version},
+                    {"label": "M", "version_id": version},
+                    {"label": "L", "version_id": version},
+                ],
+            },
+        ),
+        (
+            "POST",
+            f"/api/v1/projects/{project}/size-families/{ids['size_family']}/select",
+            {"label": "M"},
+        ),
         ("POST", f"/api/v1/projects/{project}/versions", {}),
         ("GET", f"/api/v1/versions/{version}", None),
+        ("GET", f"/api/v1/versions/{version}/assembly-guide-progress", None),
+        (
+            "PUT",
+            f"/api/v1/versions/{version}/assembly-guide-progress",
+            {
+                "guide_kind": "hinged_lid",
+                "completed_step_ids": [],
+                "expected_revision": 0,
+            },
+        ),
         (
             "PUT",
             f"/api/v1/versions/{version}/comment",
@@ -741,6 +806,12 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("DELETE", f"/api/v1/printer-profiles/{ids['profile']}/tuning", None),
         ("DELETE", f"/api/v1/printer-profiles/{ids['profile']}", None),
         ("GET", f"/api/v1/print-analyses/{ids['analysis']}", None),
+        ("GET", f"/api/v1/print-analyses/{ids['analysis']}/manufacturing-estimates", None),
+        (
+            "POST",
+            f"/api/v1/print-analyses/{ids['analysis']}/manufacturing-estimates",
+            {"machine_rate_per_hour": "1.00"},
+        ),
         # the marketplace's owner-only side (F-004); the shelf itself is public, see PUBLIC
         ("GET", f"/api/v1/projects/{project}/listings", None),
         ("POST", f"/api/v1/projects/{project}/listings", {"title": "x", "license_id": "CC0-1.0"}),
@@ -802,6 +873,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             None,
         ),
         ("GET", f"/api/v1/workspaces/{ids['workspace']}/members", None),
+        ("GET", f"/api/v1/workspaces/{ids['workspace']}/version-activity", None),
         (
             "POST",
             f"/api/v1/workspaces/{ids['workspace']}/members",

@@ -17,6 +17,7 @@ from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.models.core import Project, User, WorkspaceMember, WorkspaceRole
 from app.models.versioning import (
     CONTENT_ROLES,
+    AssemblyGuideProgress,
     Asset,
     AssetRole,
     ModelComment,
@@ -97,6 +98,94 @@ def delete_project(db: Session, *, user_id: uuid.UUID, project_id: uuid.UUID) ->
 
 
 # --- versions ------------------------------------------------------------------------------
+
+ASSEMBLY_GUIDE_STEPS: dict[str, tuple[str, ...]] = {
+    "hinged_lid": ("inspect-parts", "align-hinge", "insert-pin", "verify-motion"),
+    "sliding_lid": ("inspect-parts", "align-guides", "seat-lid", "verify-motion"),
+}
+
+
+def _assembly_guide_definition(version: ProjectVersion) -> tuple[str, tuple[str, ...]]:
+    if version.state is not VersionState.finalized:
+        raise ValidationFailedError("assembly guide progress requires a finalized version")
+    hinge = version.provenance.get("build_hinged_lid")
+    slide = version.provenance.get("build_sliding_lid")
+    if (isinstance(hinge, dict)) == (isinstance(slide, dict)):
+        raise ValidationFailedError("version has no unambiguous supported assembly guide")
+    record = hinge if isinstance(hinge, dict) else slide
+    kind = record.get("kind") if record is not None else None
+    if kind not in ASSEMBLY_GUIDE_STEPS:
+        raise ValidationFailedError("version has no unambiguous supported assembly guide")
+    return kind, ASSEMBLY_GUIDE_STEPS[kind]
+
+
+def get_assembly_guide_progress(
+    db: Session, *, user_id: uuid.UUID, version_id: uuid.UUID
+) -> dict[str, Any]:
+    version = get_version(db, user_id=user_id, version_id=version_id)
+    kind, _ = _assembly_guide_definition(version)
+    record = db.get(AssemblyGuideProgress, version.id)
+    if record is not None and record.guide_kind != kind:
+        raise ValidationFailedError("stored assembly guide kind does not match version provenance")
+    return {
+        "version_id": version.id,
+        "guide_kind": kind,
+        "completed_step_ids": record.completed_step_ids if record is not None else [],
+        "revision": record.revision if record is not None else 0,
+        "updated_at": record.updated_at if record is not None else None,
+        "updated_by": record.updated_by if record is not None else None,
+    }
+
+
+def put_assembly_guide_progress(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    guide_kind: str,
+    completed_step_ids: list[str],
+    expected_revision: int,
+) -> AssemblyGuideProgress:
+    version = get_version(db, user_id=user_id, version_id=version_id)
+    project = get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    canonical_kind, canonical_steps = _assembly_guide_definition(version)
+    if guide_kind != canonical_kind:
+        raise ValidationFailedError("assembly guide kind does not match version provenance")
+    completed = set(completed_step_ids)
+    if len(completed) != len(completed_step_ids) or not completed.issubset(canonical_steps):
+        raise ValidationFailedError("completed assembly guide steps must be unique known step ids")
+    canonical_completed = [step_id for step_id in canonical_steps if step_id in completed]
+    db.execute(
+        sa.select(ProjectVersion.id).where(ProjectVersion.id == version.id).with_for_update()
+    )
+    record = db.get(AssemblyGuideProgress, version.id)
+    current_revision = record.revision if record is not None else 0
+    if current_revision != expected_revision:
+        raise ConflictError(
+            "assembly guide progress changed; reload before saving",
+            {"current_revision": current_revision},
+        )
+    if record is None:
+        record = AssemblyGuideProgress(
+            version_id=version.id,
+            guide_kind=canonical_kind,
+            completed_step_ids=canonical_completed,
+            revision=1,
+            updated_by=user_id,
+        )
+        db.add(record)
+    else:
+        if record.guide_kind != canonical_kind:
+            raise ValidationFailedError(
+                "stored assembly guide kind does not match version provenance"
+            )
+        record.completed_step_ids = canonical_completed
+        record.revision += 1
+        record.updated_by = user_id
+    db.flush()
+    db.refresh(record)
+    return record
 
 
 def get_version(db: Session, *, user_id: uuid.UUID, version_id: uuid.UUID) -> ProjectVersion:

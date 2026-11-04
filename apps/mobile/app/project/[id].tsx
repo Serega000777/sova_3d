@@ -404,6 +404,7 @@ export default function ProjectScreen() {
   const [modelCheckVersionId, setModelCheckVersionId] = useState<string | null>(null);
   const [workspaceParticipantCount, setWorkspaceParticipantCount] = useState<number | null>(null);
   const [canManageShareLinks, setCanManageShareLinks] = useState(false);
+  const [canEditWorkspace, setCanEditWorkspace] = useState(false);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
   const [selectedRepairDefectIds, setSelectedRepairDefectIds] = useState<string[]>([]);
@@ -646,6 +647,7 @@ export default function ProjectScreen() {
       setWorkspaceParticipantCount(null);
       setWorkspaceMembers([]);
       setCanManageShareLinks(false);
+      setCanEditWorkspace(false);
       return;
     }
     let cancelled = false;
@@ -656,6 +658,7 @@ export default function ProjectScreen() {
         setExperienceMode(me.user.experience_mode);
         const current = me.workspaces.find((item) => item.id === session.workspaceId);
         setCanManageShareLinks(current?.role === "owner");
+        setCanEditWorkspace(Boolean(current && current.role !== "viewer"));
         if (!current) return null;
         if (current.kind === "personal") {
           if (!cancelled) setWorkspaceMembers([]);
@@ -673,6 +676,7 @@ export default function ProjectScreen() {
           setWorkspaceParticipantCount(null);
           setWorkspaceMembers([]);
           setCanManageShareLinks(false);
+          setCanEditWorkspace(false);
         }
       });
     return () => {
@@ -8114,6 +8118,8 @@ export default function ProjectScreen() {
             guide={assemblyGuide}
             versionId={activeId ?? ""}
             language={language}
+            client={client}
+            editable={canEditWorkspace}
             nodeNames={sceneNodeNames}
             onSelectNode={(nodeId) => {
               setSelectedSceneNodeId(nodeId);
