@@ -29,3 +29,15 @@ test("reply comments do not create duplicate viewport markers", () => {
   assert.match(studio, /parent_comment_id === null/);
   assert.doesNotMatch(studio, /modelComments\.map\(\(comment\) => \(\{/);
 });
+
+test("web comment photos use workspace upload, exact CAS, and verified signed URLs", () => {
+  assert.match(panel, /client\.uploadFile\(workspaceId, file, file\.name, file\.type\)/);
+  assert.match(panel, /client\.addModelCommentPhoto\(target\.id, asset\.id, target\.revision\)/);
+  assert.match(panel, /client\.removeModelCommentPhoto\(comment\.id, assetId, comment\.revision\)/);
+  assert.match(panel, /client\.download\(assetId\)/);
+  assert.match(panel, /result\.value\.asset_id === assetId/);
+  assert.match(panel, /PHOTO_FORMATS\.has/);
+  assert.match(panel, /result\.value\.byte_size > 0/);
+  assert.match(panel, /safePhotoUrl\(result\.value\.url\)/);
+  assert.match(panel, /photo_asset_ids \?\? \[\]\)\.length >= 10/);
+});

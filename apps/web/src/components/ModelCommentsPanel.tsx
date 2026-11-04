@@ -6,7 +6,7 @@ import type {
   WorkspaceMember,
 } from "@physical-ai/contracts";
 import { ApiError } from "@physical-ai/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 
 type Point = [number, number, number];
 
@@ -34,6 +34,17 @@ function samePoint(left: Point, right: Point): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
+function safePhotoUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+const PHOTO_FORMATS = new Set(["jpg", "jpeg", "png", "webp"]);
+
 export function ModelCommentsPanel({
   client,
   versionId,
@@ -53,10 +64,13 @@ export function ModelCommentsPanel({
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [replyMentions, setReplyMentions] = useState<string[]>([]);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const [photoTargetId, setPhotoTargetId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadRevision = useRef(0);
+  const photoInput = useRef<HTMLInputElement>(null);
 
   const publish = useCallback((rows: ModelComment[]) => {
     setComments(rows);
@@ -78,7 +92,27 @@ export function ModelCommentsPanel({
     ]);
     if (loadRevision.current !== request) return;
     if (commentsResult.status === "fulfilled") {
-      publish(commentsResult.value);
+      const rows = commentsResult.value;
+      publish(rows);
+      const assetIds = [...new Set(rows.flatMap((comment) => comment.photo_asset_ids ?? []))];
+      const downloads = await Promise.allSettled(assetIds.map((assetId) => client.download(assetId)));
+      if (loadRevision.current !== request) return;
+      const nextUrls: Record<string, string> = {};
+      downloads.forEach((result, index) => {
+        const assetId = assetIds[index];
+        if (
+          assetId
+          && result.status === "fulfilled"
+          && result.value.asset_id === assetId
+          && PHOTO_FORMATS.has((result.value.format ?? "").toLowerCase())
+          && result.value.byte_size > 0
+          && result.value.expires_in_seconds > 0
+          && safePhotoUrl(result.value.url)
+        ) {
+          nextUrls[assetId] = result.value.url;
+        }
+      });
+      setPhotoUrls(nextUrls);
     } else {
       publish([]);
       setError(commentsResult.reason instanceof Error ? commentsResult.reason.message : String(commentsResult.reason));
@@ -95,6 +129,8 @@ export function ModelCommentsPanel({
     setReplyTo(null);
     setReply("");
     setReplyMentions([]);
+    setPhotoUrls({});
+    setPhotoTargetId(null);
     onClearPoint();
     void load();
     return () => { loadRevision.current += 1; };
@@ -185,6 +221,71 @@ export function ModelCommentsPanel({
     }
   }
 
+  function choosePhoto(comment: ModelComment) {
+    if ((comment.photo_asset_ids ?? []).length >= 10 || busy) return;
+    setPhotoTargetId(comment.id);
+    photoInput.current?.click();
+  }
+
+  async function attachPhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    const target = comments.find((comment) => comment.id === photoTargetId);
+    setPhotoTargetId(null);
+    if (!client || !file || !target || busy) return;
+    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) {
+      setError(ru ? "Поддерживаются JPEG, PNG и WebP." : "JPEG, PNG, and WebP are supported.");
+      return;
+    }
+    const request = loadRevision.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const asset = await client.uploadFile(workspaceId, file, file.name, file.type);
+      if (loadRevision.current !== request) return;
+      if (asset.workspace_id !== workspaceId || !asset.mime.startsWith("image/") || asset.byte_size <= 0) {
+        throw new Error(ru ? "Загрузка вернула неподходящий файл." : "The upload returned an invalid file.");
+      }
+      const saved = await client.addModelCommentPhoto(target.id, asset.id, target.revision);
+      if (loadRevision.current !== request) return;
+      if (
+        saved.id !== target.id
+        || saved.version_id !== target.version_id
+        || !(saved.photo_asset_ids ?? []).includes(asset.id)
+      ) {
+        throw new Error(ru ? "Сервер не подтвердил вложение." : "The server did not confirm the attachment.");
+      }
+      await load();
+    } catch (reason) {
+      if (!(await reloadAfterConflict(reason))) setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePhoto(comment: ModelComment, assetId: string) {
+    if (!client || busy) return;
+    const request = loadRevision.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await client.removeModelCommentPhoto(comment.id, assetId, comment.revision);
+      if (loadRevision.current !== request) return;
+      if (
+        saved.id !== comment.id
+        || saved.version_id !== comment.version_id
+        || (saved.photo_asset_ids ?? []).includes(assetId)
+      ) {
+        throw new Error(ru ? "Сервер не подтвердил удаление вложения." : "The server did not confirm attachment removal.");
+      }
+      await load();
+    } catch (reason) {
+      if (!(await reloadAfterConflict(reason))) setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const roots = comments.filter((comment) => comment.parent_comment_id === null);
   const memberName = new Map(members.map((member) => [member.user_id, mentionLabel(member)]));
   const mentionPicker = (selected: string[], change: (ids: string[]) => void) => members.length ? (
@@ -207,6 +308,7 @@ export function ModelCommentsPanel({
 
   return (
     <div className="stack" data-version-id={versionId ?? undefined}>
+      <input ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => void attachPhoto(event)} />
       {error && <div className="error">{error}</div>}
       <span className="muted">{ru
         ? "Каждая ветка привязана к точке и точной неизменяемой версии модели."
@@ -237,6 +339,18 @@ export function ModelCommentsPanel({
             <span>{root.comment}</span>
             <span className="muted">{root.point_mm.map((value) => value.toFixed(1)).join(" × ")} mm</span>
             {(root.mentioned_user_ids ?? []).length > 0 && <span className="muted">{(root.mentioned_user_ids ?? []).map((id) => `@${memberName.get(id) ?? id.slice(0, 8)}`).join(" ")}</span>}
+            {(root.photo_asset_ids ?? []).length > 0 && (
+              <div className="row" style={{ flexWrap: "wrap" }}>
+                {(root.photo_asset_ids ?? []).map((assetId) => (
+                  <div className="stack" key={assetId} style={{ maxWidth: 180 }}>
+                    {photoUrls[assetId]
+                      ? <img src={photoUrls[assetId]} alt={ru ? "Фото к комментарию" : "Comment attachment"} style={{ width: "100%", borderRadius: 12 }} />
+                      : <span className="muted">{ru ? "Фото недоступно" : "Photo unavailable"}</span>}
+                    {canEdit && <button className="btn" type="button" disabled={busy} onClick={() => void removePhoto(root, assetId)}>{ru ? "Удалить фото" : "Remove photo"}</button>}
+                  </div>
+                ))}
+              </div>
+            )}
             {replies.map((item) => (
               <div key={item.id} className="stack" style={{ borderLeft: "2px solid var(--border)", paddingLeft: 12 }}>
                 <strong>{item.author_name || (ru ? "Участник" : "Member")}</strong>
@@ -248,6 +362,7 @@ export function ModelCommentsPanel({
               <div className="row" style={{ flexWrap: "wrap" }}>
                 <button className="btn" type="button" disabled={busy} onClick={() => void toggleStatus(root)}>{root.status === "open" ? (ru ? "Отметить решённым" : "Resolve") : (ru ? "Открыть снова" : "Reopen")}</button>
                 <button className="btn" type="button" disabled={busy} onClick={() => { setReplyTo(replyTo === root.id ? null : root.id); setReply(""); setReplyMentions([]); }}>{ru ? "Ответить" : "Reply"}</button>
+                <button className="btn" type="button" disabled={busy || (root.photo_asset_ids ?? []).length >= 10} onClick={() => choosePhoto(root)}>{ru ? `+ Фото · ${(root.photo_asset_ids ?? []).length}/10` : `+ Photo · ${(root.photo_asset_ids ?? []).length}/10`}</button>
               </div>
             )}
             {replyTo === root.id && (
