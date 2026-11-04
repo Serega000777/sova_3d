@@ -200,6 +200,7 @@ export default function ProjectsPage() {
       <header className="library-head">
         <h1>{ru ? "Библиотека" : "Library"}</h1>
         <div className="row">
+          <Link href="/collections" className="btn">{ru ? "Мои модели" : "My models"}</Link>
           <Link href="/analytics" className="btn">{ru ? "Аналитика" : "Analytics"}</Link>
           <Link href="/new" className="btn primary library-create">
             {ru ? "+ Создать" : "+ Create"}
