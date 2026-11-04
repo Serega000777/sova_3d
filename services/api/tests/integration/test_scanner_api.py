@@ -23,6 +23,7 @@ from app.models.versioning import AssetRole, ProjectVersion, VersionAsset
 from app.storage import S3Storage
 from tests.integration.conftest import Actor
 from tests.integration.test_imports_api import run_all, upload
+from tests.integration.test_scanning_api import room_plan_v2
 
 DEVICE = {
     "device": {
@@ -441,6 +442,99 @@ def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
     )
     assert edited_plan.status_code == 200, edited_plan.text
     assert edited_plan.json()["walls"][1]["height_mm"] == 2_900
+
+
+def test_roomplan_structure_reconstructs_and_accepts_a_vertically_aligned_shell(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executed_plans: list[Any] = []
+
+    def execute_shell(plan: Any) -> SimpleNamespace:
+        executed_plans.append(plan)
+        return SimpleNamespace(
+            stl=stl(trimesh.creation.box(extents=(4_000, 3_000, 5_700))),
+            kernel="OpenCASCADE-test",
+        )
+
+    monkeypatch.setattr("app.jobs.reconstruct_scan.run_plan", execute_shell)
+    project_id = api_client.post(
+        "/api/v1/projects",
+        json={"workspace_id": str(actor.workspace.id), "name": "Two-floor home"},
+        headers=actor.headers,
+    ).json()["id"]
+    scan = start_scanner_session(
+        api_client,
+        actor,
+        project_id=project_id,
+        label="Home · two measured floors",
+        capabilities={"capture_source": "apple_roomplan_structure", "subject": "home"},
+    )
+    captured = api_client.put(
+        f"/api/v1/scans/{scan['id']}/room-plan-structure",
+        json={
+            "structure_id": "apple-structure-two-floors",
+            "coordinate_space": "shared_arkit_world",
+            "rooms": [room_plan_v2("ground", 0, 0), room_plan_v2("upper", 0, 3)],
+        },
+        headers=actor.headers,
+    )
+    assert captured.status_code == 200, captured.text
+    assert [level["elevation_mm"] for level in captured.json()["floor_plans"]] == [0, 3_000]
+
+    room_usdz = tmp_path / "two-floor-home.usdz"
+    write_usdz(trimesh.creation.box(extents=(4_000, 3_000, 5_700)), room_usdz)
+    asset_id = upload(
+        api_client,
+        actor,
+        room_usdz.read_bytes(),
+        room_usdz.name,
+        "model/vnd.usdz+zip",
+    )
+    added = api_client.post(
+        f"/api/v1/scans/{scan['id']}/frames",
+        json={"asset_id": asset_id, "sequence_no": 0, "kind": "mesh"},
+        headers=actor.headers,
+    )
+    assert added.status_code == 201, added.text
+    finalized = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize", json={}, headers=actor.headers
+    )
+    assert finalized.status_code == 202, finalized.text
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    assert len(executed_plans) == 1
+    elevation = next(
+        operation
+        for operation in executed_plans[0].operations
+        if operation.id == "room_1_floor_elevation"
+    )
+    assert elevation.type == "translate"
+    assert elevation.target == "room_1_floor"
+    assert elevation.offset_mm == (0, 0, 3_000)
+
+    ready = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()
+    assert ready["room_shell_asset_id"]
+    assert ready["report"]["room_shell"]["source"] == "apple_roomplan_structure"
+    accepted = api_client.post(f"/api/v1/scans/{scan['id']}/accept", json={}, headers=actor.headers)
+    assert accepted.status_code == 200, accepted.text
+    version = db_session.get(ProjectVersion, uuid.UUID(accepted.json()["result_version_id"]))
+    assert version is not None
+    shell_link = (
+        db_session.query(VersionAsset)
+        .filter_by(version_id=version.id, role=AssetRole.room_shell)
+        .one()
+    )
+    assert str(shell_link.asset_id) == ready["room_shell_asset_id"]
+    floors = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert floors.status_code == 200, floors.text
+    assert floors.json()["version_id"] == str(version.id)
+    assert [level["elevation_mm"] for level in floors.json()["levels"]] == [0, 3_000]
 
 
 def test_photo_room_requires_four_wall_coverage_orientation_and_measured_span(

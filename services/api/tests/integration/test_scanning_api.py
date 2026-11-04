@@ -314,7 +314,8 @@ def test_roomplan_structure_keeps_two_rooms_in_one_shared_metric_plan(
     assert room_plan["source"] == "apple_roomplan_structure"
     assert room_plan["coordinate_space"] == "shared_arkit_world"
     assert room_plan["room_count"] == 2
-    assert room_plan["room_shell"]["schema_version"] == 3
+    assert room_plan["room_shell"]["schema_version"] == 4
+    assert room_plan["room_shell"]["elevations_mm"] == [0, 0]
     assert len(room_plan["room_shell"]["rooms"]) == 2
 
 
@@ -362,7 +363,8 @@ def test_roomplan_structure_persists_two_aligned_floor_plans_on_accept(
     stored = db_session.get(ScanSession, uuid.UUID(scan["id"]))
     assert stored is not None
     assert stored.capture_stats["room_plan"]["floor_count"] == 2
-    assert stored.capture_stats["room_plan"]["room_shell"] is None
+    assert stored.capture_stats["room_plan"]["room_shell"]["schema_version"] == 4
+    assert stored.capture_stats["room_plan"]["room_shell"]["elevations_mm"] == [0, 3_000]
     stored.mesh_asset_id = model.id
     stored.status = ScanStatus.ready
     db_session.flush()

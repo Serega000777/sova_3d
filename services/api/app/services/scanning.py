@@ -421,9 +421,7 @@ def set_room_plan_structure(
             plan_id=f"scan-{session.id}-roomplan-structure",
             name=session.label or "RoomPlan structure",
         )
-        shell = (
-            room_shell_structure_spec(capture, converted) if len(converted.levels) == 1 else None
-        )
+        shell = room_shell_structure_spec(capture, converted)
     except ValueError as exc:
         raise ValidationFailedError(str(exc)) from exc
     session.capture_stats = {
@@ -443,9 +441,9 @@ def set_room_plan_structure(
                 "floor_height_mm": converted.floor_height_mm,
                 "levels": [level.model_dump(mode="json") for level in converted.levels],
             },
-            # Exact per-room loops share one artifact on the proved single-floor path.
-            # Multi-floor capture retains the measured plans but does not flatten shells to Z=0.
-            "room_shell": shell.to_dict() if shell is not None else None,
+            # Exact per-room loops share one artifact while retaining measured relative Z.
+            # No exterior watertight building perimeter or inferred inter-storey slab is added.
+            "room_shell": shell.to_dict(),
         },
     }
     db.flush()

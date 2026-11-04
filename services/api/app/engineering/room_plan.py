@@ -195,6 +195,7 @@ class RoomPlanConversion:
 class RoomPlanStructureConversion:
     plan: FloorPlan
     levels: tuple[BuildingFloorLevel, ...]
+    room_elevations_mm: tuple[float, ...]
     floor_height_mm: float
     warnings: tuple[str, ...]
     room_ids: tuple[str, ...]
@@ -490,9 +491,13 @@ def floor_plan_from_room_plan_structure(
         for group in floor_groups
     ]
     base_elevation = floor_elevations[0]
+    room_elevations_mm = [0.0 for _ in capture.rooms]
     levels: list[BuildingFloorLevel] = []
     all_points: list[PointMM] = []
     for floor_index, room_indices in enumerate(floor_groups):
+        relative_elevation_mm = (floor_elevations[floor_index] - base_elevation) * 1_000
+        for room_index in room_indices:
+            room_elevations_mm[room_index] = relative_elevation_mm
         walls: list[PlanWall] = []
         openings: list[PlanOpening] = []
         rooms: list[PlanRoom] = []
@@ -540,7 +545,7 @@ def floor_plan_from_room_plan_structure(
             BuildingFloorLevel(
                 index=floor_index,
                 name=f"{floor_index + 1} этаж",
-                elevation_mm=(floor_elevations[floor_index] - base_elevation) * 1_000,
+                elevation_mm=relative_elevation_mm,
                 plan=level_plan,
             )
         )
@@ -560,6 +565,7 @@ def floor_plan_from_room_plan_structure(
     return RoomPlanStructureConversion(
         plan=levels[0].plan,
         levels=tuple(levels),
+        room_elevations_mm=tuple(room_elevations_mm),
         floor_height_mm=floor_height_mm,
         warnings=tuple(warnings),
         room_ids=tuple(room.room_id for room in capture.rooms),

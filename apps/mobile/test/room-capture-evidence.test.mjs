@@ -47,7 +47,7 @@ test("reference 78 keeps one ARKit frame and uploads Apple's merged structure", 
   assert.match(client, /\/room-plan-structure/);
 });
 
-test("multi-floor RoomPlan review exposes the measured level count without a flat shell claim", () => {
+test("multi-floor RoomPlan review exposes measured levels and a height-preserving shell claim", () => {
   assert.match(resultScreen, /floor_count\?: number/);
   assert.match(
     resultScreen,
@@ -55,7 +55,8 @@ test("multi-floor RoomPlan review exposes the measured level count without a fla
   );
   assert.match(resultScreen, /label: "Этажи"/);
   assert.match(resultScreen, /Здесь показан нижний этаж/);
-  assert.match(resultScreen, /multi-floor empty shell пока не строится/);
+  assert.match(resultScreen, /Exact shell сохраняет их на измеренных/);
+  assert.match(resultScreen, /высотах и показывается только после успешной обработки/);
 });
 
 test("a missing or subset native merge falls back to honest separate rooms", () => {

@@ -169,8 +169,18 @@ def test_structure_projects_aligned_rooms_to_two_measured_floor_levels() -> None
     assert [level.elevation_mm for level in converted.levels] == [0, 3_000]
     assert [len(level.plan.rooms) for level in converted.levels] == [1, 1]
     assert converted.levels[0].plan.rooms[0].outline == converted.levels[1].plan.rooms[0].outline
-    with pytest.raises(ValueError, match="one floor level"):
-        room_shell_structure_spec(capture, converted)
+    spec = room_shell_structure_spec(capture, converted)
+    restored = RoomShellStructureSpec.from_dict(spec.to_dict())
+    plan = build_room_shell_structure_plan(restored)
+
+    assert restored.elevations_mm == (0, 3_000)
+    assert len(plan.operations) == 44
+    elevation = next(
+        operation for operation in plan.operations if operation.id.endswith("elevation")
+    )
+    assert elevation.type == "translate"
+    assert elevation.target == "room_1_floor"
+    assert elevation.offset_mm == (0, 0, 3_000)
 
 
 def test_structure_rejects_ambiguous_or_more_than_three_floor_levels() -> None:
@@ -212,11 +222,56 @@ def test_structure_shell_accepts_the_operation_budget_max_and_rejects_the_next_r
     )
     assert room is not None
     bounded = RoomShellStructureSpec(tuple(room for _ in range(11)))
+    bounded_multi_floor = RoomShellStructureSpec(
+        tuple(room for _ in range(11)),
+        (0, *(3_000 for _ in range(10))),
+    )
     oversized = RoomShellStructureSpec(tuple(room for _ in range(12)))
 
     plan = build_room_shell_structure_plan(bounded)
+    multi_floor_plan = build_room_shell_structure_plan(bounded_multi_floor)
 
     assert len(plan.operations) == 241
+    assert len(multi_floor_plan.operations) == 251
 
     with pytest.raises(ValueError, match="operation limit"):
         build_room_shell_structure_plan(oversized)
+
+
+def test_structure_shell_rejects_invalid_elevation_lineage_and_reads_legacy_v3() -> None:
+    room = room_shell_spec(
+        structure_room("room", 0),
+        floor_plan_from_room_plan(structure_room("room", 0), plan_id="room", name="Room"),
+    )
+    assert room is not None
+
+    legacy = RoomShellStructureSpec.from_dict(
+        {"schema_version": 3, "rooms": [room.to_dict(), room.to_dict()]}
+    )
+    assert legacy.validated_elevations() == (0, 0)
+    with pytest.raises(ValueError, match="elevation count"):
+        build_room_shell_structure_plan(RoomShellStructureSpec((room, room), (0,)))
+    with pytest.raises(ValueError, match="0..12000"):
+        build_room_shell_structure_plan(RoomShellStructureSpec((room, room), (0, 12_001)))
+    with pytest.raises(ValueError, match="zero base level"):
+        build_room_shell_structure_plan(RoomShellStructureSpec((room, room), (3_000, 6_000)))
+    with pytest.raises(ValueError, match="requires room elevations"):
+        RoomShellStructureSpec.from_dict(
+            {"schema_version": 4, "rooms": [room.to_dict(), room.to_dict()]}
+        )
+    with pytest.raises(ValueError, match="elevations must be a list"):
+        RoomShellStructureSpec.from_dict(
+            {
+                "schema_version": 3,
+                "rooms": [room.to_dict(), room.to_dict()],
+                "elevations_mm": "0,3000",
+            }
+        )
+    with pytest.raises(ValueError, match="elevations must be numeric"):
+        RoomShellStructureSpec.from_dict(
+            {
+                "schema_version": 4,
+                "rooms": [room.to_dict(), room.to_dict()],
+                "elevations_mm": [0, "upper"],
+            }
+        )

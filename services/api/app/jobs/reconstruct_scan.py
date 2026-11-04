@@ -414,7 +414,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
     shell_payload = room_plan.get("room_shell") if isinstance(room_plan, dict) else None
     if isinstance(shell_payload, dict):
         try:
-            if shell_payload.get("schema_version") == 3:
+            if shell_payload.get("schema_version") in {3, 4}:
                 structure_shell = RoomShellStructureSpec.from_dict(shell_payload)
                 shell_plan = build_room_shell_structure_plan(structure_shell)
                 shell_source = "apple_roomplan_structure"

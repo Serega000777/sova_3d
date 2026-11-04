@@ -86,19 +86,60 @@ class RoomShellStructureSpec:
     """
 
     rooms: tuple[RoomShellSpec, ...]
+    elevations_mm: tuple[float, ...] = ()
+
+    def validated_elevations(self) -> tuple[float, ...]:
+        elevations = self.elevations_mm or tuple(0.0 for _ in self.rooms)
+        if len(elevations) != len(self.rooms):
+            raise ValueError("RoomPlan structure shell elevation count must match its room loops")
+        if any(not math.isfinite(value) or not 0 <= value <= 12_000 for value in elevations):
+            raise ValueError(
+                "RoomPlan structure shell elevations must be finite and within 0..12000 mm"
+            )
+        if elevations and min(elevations) > 1:
+            raise ValueError("RoomPlan structure shell elevations must include the zero base level")
+        return elevations
 
     def to_dict(self) -> dict[str, object]:
+        elevations = self.validated_elevations()
         return {
-            "schema_version": 3,
+            "schema_version": 4,
             "rooms": [room.to_dict() for room in self.rooms],
+            "elevations_mm": list(elevations),
         }
 
     @classmethod
     def from_dict(cls, value: dict[str, object]) -> RoomShellStructureSpec:
-        raw_rooms = cast(list[dict[str, object]], value["rooms"])
+        try:
+            schema_version = int(cast(int, value.get("schema_version", 3)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("RoomPlan structure shell schema version is invalid") from exc
+        if schema_version not in {3, 4}:
+            raise ValueError("RoomPlan structure shell schema version is unsupported")
+        raw_rooms_value = value.get("rooms")
+        if not isinstance(raw_rooms_value, list):
+            raise ValueError("RoomPlan structure shell rooms must be a list")
+        raw_rooms = cast(list[dict[str, object]], raw_rooms_value)
         if not 2 <= len(raw_rooms) <= 64:
             raise ValueError("RoomPlan structure shell requires between 2 and 64 room loops")
-        return cls(tuple(RoomShellSpec.from_dict(room) for room in raw_rooms))
+        raw_elevations_value = value.get("elevations_mm")
+        if schema_version == 4 and not isinstance(raw_elevations_value, list):
+            raise ValueError("RoomPlan structure shell v4 requires room elevations")
+        if raw_elevations_value is not None and not isinstance(raw_elevations_value, list):
+            raise ValueError("RoomPlan structure shell elevations must be a list")
+        raw_elevations = cast(list[float] | None, raw_elevations_value)
+        try:
+            elevations = (
+                tuple(float(item) for item in raw_elevations) if raw_elevations is not None else ()
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("RoomPlan structure shell elevations must be numeric") from exc
+        restored = cls(
+            tuple(RoomShellSpec.from_dict(room) for room in raw_rooms),
+            elevations,
+        )
+        restored.validated_elevations()
+        return restored
 
 
 def room_shell_spec(
@@ -152,7 +193,8 @@ def room_shell_spec(
             raise ValueError(f"RoomPlan opening {source.identifier} transform is inconsistent")
         center_y_mm = float(source.transform_m[13]) * 1_000
         height_mm = float(source.dimensions_m[1]) * 1_000
-        bottom_mm = center_y_mm - height_mm / 2
+        floor_elevation_mm = float(capture.floor_elevation_m or 0) * 1_000
+        bottom_mm = center_y_mm - floor_elevation_mm - height_mm / 2
         if bottom_mm < -50 or bottom_mm + height_mm > wall_height_mm + 50:
             raise ValueError(f"RoomPlan opening {source.identifier} lies outside its wall height")
         shell_openings.append(
@@ -191,8 +233,6 @@ def room_shell_structure_spec(
     """Build one exact shell spec per validated room in the common ARKit frame."""
     if tuple(room.room_id for room in capture.rooms) != conversion.room_ids:
         raise ValueError("RoomPlan structure shell room lineage is inconsistent")
-    if len(conversion.levels) != 1:
-        raise ValueError("RoomPlan structure exact shell currently supports one floor level")
     rooms: list[RoomShellSpec] = []
     for index, room in enumerate(capture.rooms):
         room_conversion = floor_plan_from_room_plan(
@@ -204,7 +244,7 @@ def room_shell_structure_spec(
         if spec is None:
             raise ValueError("RoomPlan structure shell requires complete v2 room geometry")
         rooms.append(spec)
-    return RoomShellStructureSpec(tuple(rooms))
+    return RoomShellStructureSpec(tuple(rooms), conversion.room_elevations_mm)
 
 
 def build_room_shell_plan(spec: RoomShellSpec) -> OperationPlan:
@@ -348,6 +388,7 @@ def build_room_shell_structure_plan(spec: RoomShellStructureSpec) -> OperationPl
     """Combine exact per-room shell plans without inventing an exterior building loop."""
     if not 2 <= len(spec.rooms) <= 64:
         raise ValueError("RoomPlan structure shell requires between 2 and 64 room loops")
+    elevations = spec.validated_elevations()
     operations: list[dict[str, object]] = []
     combined_root: str | None = None
     for room_index, room in enumerate(spec.rooms):
@@ -366,6 +407,17 @@ def build_room_shell_structure_plan(spec: RoomShellStructureSpec) -> OperationPl
                     prefixed[field] = identifiers[value]
             operations.append(prefixed)
         room_root = identifiers[str(cast(list[str], room_plan["expected_outputs"])[0])]
+        elevation_mm = elevations[room_index]
+        if elevation_mm > 0:
+            operations.append(
+                {
+                    "id": f"room_{room_index}_floor_elevation",
+                    "type": "translate",
+                    "schema_version": 1,
+                    "target": room_root,
+                    "offset_mm": (0.0, 0.0, elevation_mm),
+                }
+            )
         if combined_root is None:
             combined_root = room_root
         else:
@@ -389,6 +441,7 @@ def build_room_shell_structure_plan(spec: RoomShellStructureSpec) -> OperationPl
             "goal": "Build exact empty-room shells from validated RoomPlan structure loops",
             "assumptions": [
                 "All dimensions are millimetres in one shared ARKit world frame.",
+                "Each room shell keeps its measured floor elevation relative to the lowest level.",
                 "Each room loop remains authoritative; no exterior building perimeter is inferred.",
                 "Shared walls may remain interior; disconnected loops may remain separate solids.",
             ],
@@ -396,6 +449,7 @@ def build_room_shell_structure_plan(spec: RoomShellStructureSpec) -> OperationPl
             "validation_steps": [
                 "Confirm one exact floor and measured wall set per room loop.",
                 "Confirm every opening remains inside its original parent wall.",
+                "Confirm every room shell remains at its measured relative floor elevation.",
             ],
             "expected_outputs": [combined_root],
         }
