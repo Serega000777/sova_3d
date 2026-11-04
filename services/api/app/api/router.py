@@ -41,6 +41,7 @@ from app.api import (
     share_links,
     signin,
     site_plans,
+    size_families,
     splitting,
     templates,
     three_d_generation,
@@ -61,6 +62,7 @@ api_v1.include_router(signin.router)
 api_v1.include_router(workspaces.router)
 api_v1.include_router(workspace_tasks.router)
 api_v1.include_router(share_links.router)
+api_v1.include_router(size_families.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(interior_materials.router)

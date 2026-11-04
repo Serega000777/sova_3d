@@ -1985,6 +1985,215 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/size-families": {
+      "get": {
+        "tags": [
+          "size-families"
+        ],
+        "summary": "List Size Families",
+        "operationId": "list_size_families_api_v1_projects__project_id__size_families_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SizeFamilyOut"
+                  },
+                  "title": "Response List Size Families Api V1 Projects  Project Id  Size Families Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "size-families"
+        ],
+        "summary": "Create Size Family",
+        "operationId": "create_size_family_api_v1_projects__project_id__size_families_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SizeFamilyCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SizeFamilyOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/size-families/{family_id}/select": {
+      "post": {
+        "tags": [
+          "size-families"
+        ],
+        "summary": "Select Size Family Member",
+        "operationId": "select_size_family_member_api_v1_projects__project_id__size_families__family_id__select_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "family_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Family Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SizeFamilySelect"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SizeFamilyOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/uploads": {
       "post": {
         "tags": [
@@ -34544,6 +34753,178 @@
           "terrain_max_delta_mm"
         ],
         "title": "SitePlanCompatibilityOut"
+      },
+      "SizeFamilyCreate": {
+        "properties": {
+          "source_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Version Id"
+          },
+          "selected_label": {
+            "type": "string",
+            "enum": [
+              "S",
+              "M",
+              "L"
+            ],
+            "title": "Selected Label",
+            "default": "M"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/SizeFamilyMemberBody"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Members"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_version_id",
+          "members"
+        ],
+        "title": "SizeFamilyCreate"
+      },
+      "SizeFamilyMemberBody": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "S",
+              "M",
+              "L"
+            ],
+            "title": "Label"
+          },
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "version_id"
+        ],
+        "title": "SizeFamilyMemberBody"
+      },
+      "SizeFamilyMemberOut": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "S",
+              "M",
+              "L"
+            ],
+            "title": "Label"
+          },
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "width_mm": {
+            "type": "number",
+            "title": "Width Mm"
+          },
+          "depth_mm": {
+            "type": "number",
+            "title": "Depth Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "title": "Height Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "version_id",
+          "width_mm",
+          "depth_mm",
+          "height_mm"
+        ],
+        "title": "SizeFamilyMemberOut"
+      },
+      "SizeFamilyOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "source_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Version Id"
+          },
+          "selected_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "S",
+                  "M",
+                  "L"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Label"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/SizeFamilyMemberOut"
+            },
+            "type": "array",
+            "title": "Members"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "source_version_id",
+          "selected_label",
+          "members",
+          "created_at"
+        ],
+        "title": "SizeFamilyOut"
+      },
+      "SizeFamilySelect": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "S",
+              "M",
+              "L"
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "SizeFamilySelect"
       },
       "SliceBody": {
         "properties": {

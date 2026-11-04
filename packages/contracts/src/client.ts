@@ -21,6 +21,7 @@ export type ShareLinkOut = Schemas["ShareLinkOut"];
 export type SharedProjectOut = Schemas["SharedProjectOut"];
 export type VerificationLinkOut = Schemas["VerificationLinkOut"];
 export type VerifiedIntegrityReportOut = Schemas["VerifiedIntegrityReportOut"];
+export type SizeFamily = Schemas["SizeFamilyOut"];
 export type ProjectReference = Schemas["ReferenceOut"];
 export type ProjectReferenceUpdate = Schemas["ReferenceUpdate"];
 export type FunctionalPartProposal = Schemas["FunctionalPartProposalOut"];
@@ -802,6 +803,25 @@ export class PhysicalAiClient {
 
   listVersions(projectId: string) {
     return this.request<Version[]>("GET", `/api/v1/projects/${projectId}/versions`);
+  }
+
+  /** Reference 81: persist three verified preview versions as one reusable exact family. */
+  createSizeFamily(projectId: string, body: Schemas["SizeFamilyCreate"]) {
+    return this.request<SizeFamily>("POST", `/api/v1/projects/${projectId}/size-families`, {
+      body,
+    });
+  }
+
+  listSizeFamilies(projectId: string) {
+    return this.request<SizeFamily[]>("GET", `/api/v1/projects/${projectId}/size-families`);
+  }
+
+  selectSizeFamilyMember(projectId: string, familyId: string, label: "S" | "M" | "L") {
+    return this.request<SizeFamily>(
+      "POST",
+      `/api/v1/projects/${projectId}/size-families/${familyId}/select`,
+      { body: { label } },
+    );
   }
 
   listVersionHistory(projectId: string) {

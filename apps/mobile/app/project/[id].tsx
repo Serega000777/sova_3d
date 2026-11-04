@@ -41,6 +41,7 @@ import type {
   SceneGraph,
   SceneNode,
   ScannedFacadeBody,
+  SizeFamily,
   SplitProvenance,
   ThumbnailAngle,
   ThumbnailUrlSet,
@@ -453,6 +454,7 @@ export default function ProjectScreen() {
   const [sizeFamily, setSizeFamily] = useState<
     { label: "S" | "M" | "L"; version: Version; size: [number, number, number] }[]
   >([]);
+  const [sizeFamilyRecord, setSizeFamilyRecord] = useState<SizeFamily | null>(null);
   const [sizeFamilyDraft, setSizeFamilyDraft] = useState<SizeFamilyDraft | null>(null);
   const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -571,6 +573,25 @@ export default function ProjectScreen() {
       const list = await client.listVersionHistory(id);
       setVersions(list);
       setVersionHistory(list);
+      const families = await client.listSizeFamilies(id);
+      const savedFamily = families[0] ?? null;
+      setSizeFamilyRecord(savedFamily);
+      if (savedFamily) {
+        const byId = new Map(list.map((version) => [version.id, version]));
+        const savedMembers = savedFamily.members.flatMap((member) => {
+          const version = byId.get(member.version_id);
+          return version
+            ? [{
+                label: member.label,
+                version,
+                size: [member.width_mm, member.depth_mm, member.height_mm] as [number, number, number],
+              }]
+            : [];
+        });
+        setSizeFamily(savedMembers.length === 3 ? savedMembers : []);
+      } else {
+        setSizeFamily([]);
+      }
       const savedReference = await client.getProjectReference(id);
       setProjectReference(savedReference);
       setReferenceKnownMm(savedReference?.known_mm ? String(savedReference.known_mm) : "");
@@ -1452,8 +1473,8 @@ export default function ProjectScreen() {
   }, [size]);
 
   useEffect(() => {
-    if (size && !sizeFamily.length) setSizeFamilyDraft(defaultSizeFamilyDraft(size));
-  }, [size, sizeFamily.length]);
+    if (size) setSizeFamilyDraft(defaultSizeFamilyDraft(size));
+  }, [size]);
 
   useEffect(() => {
     if (!client || !furnitureOpen || furniture.length > 0) return;
@@ -1784,6 +1805,7 @@ export default function ProjectScreen() {
       }
       if (completed.length !== presets.length) {
         await Promise.all(completed.map((item) => client.discardVersion(item.version.id)));
+        await refresh();
         setError(
           ru
             ? "Сервер не построил все три проверяемых размера; неполное семейство удалено."
@@ -1791,17 +1813,28 @@ export default function ProjectScreen() {
         );
         return;
       }
-      setSizeFamily(completed);
-      setActive(completed[1]!.version);
+      const persisted = await client.createSizeFamily(id, {
+        source_version_id: source.id,
+        selected_label: "M",
+        members: completed.map((item) => ({ label: item.label, version_id: item.version.id })),
+      });
+      const finalized = await Promise.all(
+        completed.map(async (item) => ({ ...item, version: await client.getVersion(item.version.id) })),
+      );
+      setSizeFamilyRecord(persisted);
+      setSizeFamily(finalized);
+      await refresh();
+      setActive(finalized.find((item) => item.label === persisted.selected_label)?.version ?? finalized[1]!.version);
       setNotice(
         ru
-          ? "S/M/L готовы как draft-версии. Выберите одну или удалите всё семейство."
-          : "S/M/L are ready as draft versions. Keep one or discard the whole family.",
+          ? "S/M/L сохранены как одно точное семейство. Любой размер можно выбрать повторно."
+          : "S/M/L are saved as one exact family. Any size can be selected again.",
       );
     } catch (reason) {
       await Promise.all(
         completed.map((item) => client.discardVersion(item.version.id).catch(() => undefined)),
       );
+      await refresh();
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(null);
@@ -1818,29 +1851,20 @@ export default function ProjectScreen() {
       : current);
   }
 
-  async function decideSizeFamily(chosen: Version | null) {
-    if (!client || !id || !sizeFamily.length) return;
+  async function selectSizeFamily(label: SizeFamilyLabel) {
+    if (!client || !id || !sizeFamilyRecord) return;
     setError(null);
-    setBusy(
-      chosen
-        ? ru ? "Сохраняем размер" : "Keeping size"
-        : ru ? "Удаляем семейство" : "Discarding family",
-    );
+    setBusy(ru ? "Выбираем размер" : "Selecting size");
     try {
-      if (chosen) await client.acceptVersion(chosen.id);
-      await Promise.all(
-        sizeFamily
-          .filter((item) => item.version.id !== chosen?.id)
-          .map((item) => client.discardVersion(item.version.id)),
-      );
-      setSizeFamily([]);
+      const selected = await client.selectSizeFamilyMember(id, sizeFamilyRecord.id, label);
+      setSizeFamilyRecord(selected);
       await refresh();
       const summary = await client.getProject(id);
       setActive(summary.head_version ?? null);
       setNotice(
-        chosen
-          ? ru ? "Выбранный размер сохранён новой версией." : "The selected size was saved as a new version."
-          : ru ? "Все draft-размеры удалены; исходная версия не изменилась." : "All size drafts were discarded; the source version is unchanged.",
+        ru
+          ? `Размер ${label} выбран; остальные варианты семейства сохранены.`
+          : `Size ${label} is selected; the other family variants remain saved.`,
       );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -4969,13 +4993,13 @@ export default function ProjectScreen() {
           </>
         ) : <Text style={styles.muted}>Размеры появятся после загрузки модели.</Text>}
       </View>
-      {sizeFamily.length > 0 && (
+      {sizeFamilyRecord && sizeFamily.length === 3 && (
         <View style={[styles.card, { gap: 8, borderColor: colors.yellow }]} accessibilityLabel={ru ? "Семейство точных размеров" : "Exact size family"}>
-          <Text style={styles.heading}>{ru ? "Семейство размеров ещё не применено" : "Size family is not applied yet"}</Text>
+          <Text style={styles.heading}>{ru ? "Сохранённое семейство размеров" : "Saved size family"}</Text>
           <Text style={styles.muted}>
             {ru
-              ? "Каждый вариант построен сервером от одной исходной версии. Коснитесь карточки для просмотра, затем сохраните только один."
-              : "Every variant was built by the server from the same source version. Tap a card to inspect it, then keep exactly one."}
+              ? "Все три immutable-версии построены сервером от одного источника. Выбор меняет текущую версию, но не удаляет другие размеры."
+              : "All three immutable versions were built by the server from one source. Selecting changes the current version without deleting the other sizes."}
           </Text>
           <View style={[styles.row, { flexWrap: "wrap" }]}>
             {sizeFamily.map((item) => (
@@ -4986,15 +5010,16 @@ export default function ProjectScreen() {
               >
                 <Text style={styles.title}>{item.label}</Text>
                 <Text style={styles.mono}>{item.size.map((value) => value.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 3 })).join(" × ")} {ru ? "мм" : "mm"}</Text>
-                <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void decideSizeFamily(item.version)}>
-                  <Text style={styles.buttonText}>{ru ? "Оставить этот" : "Keep this one"}</Text>
+                <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void selectSizeFamily(item.label)}>
+                  <Text style={styles.buttonText}>
+                    {sizeFamilyRecord.selected_label === item.label
+                      ? ru ? "Выбран" : "Selected"
+                      : ru ? "Выбрать" : "Select"}
+                  </Text>
                 </Pressable>
               </Pressable>
             ))}
           </View>
-          <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void decideSizeFamily(null)}>
-            <Text style={styles.buttonText}>{ru ? "Удалить все draft-варианты" : "Discard all drafts"}</Text>
-          </Pressable>
         </View>
       )}
       <View style={{ gap: 8 }}>

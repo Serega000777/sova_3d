@@ -623,6 +623,51 @@ test("opening an integrity verification link needs no bearer token", async () =>
   assert.equal(headers.has("Authorization"), false);
 });
 
+test("size-family client creates, lists and selects exact persisted members", async () => {
+  const requests: { url: string; init: RequestInit }[] = [];
+  const family = {
+    id: "family-1",
+    project_id: "project-1",
+    source_version_id: "source-1",
+    selected_label: "M",
+    members: [],
+    created_at: "2026-11-04T00:00:00Z",
+  };
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "editor-token",
+    fetch: async (url: string, init: RequestInit) => {
+      requests.push({ url, init });
+      return jsonResponse(init.method === "GET" ? [family] : family, {
+        status: init.method === "POST" && !url.endsWith("/select") ? 201 : 200,
+      });
+    },
+  });
+  const body = {
+    source_version_id: "source-1",
+    selected_label: "M" as const,
+    members: (["S", "M", "L"] as const).map((label) => ({
+      label,
+      version_id: `version-${label}`,
+    })),
+  };
+
+  await client.createSizeFamily("project-1", body);
+  await client.listSizeFamilies("project-1");
+  await client.selectSizeFamilyMember("project-1", "family-1", "L");
+
+  assert.deepEqual(
+    requests.map((request) => [request.init.method, request.url]),
+    [
+      ["POST", "https://api.example.test/api/v1/projects/project-1/size-families"],
+      ["GET", "https://api.example.test/api/v1/projects/project-1/size-families"],
+      ["POST", "https://api.example.test/api/v1/projects/project-1/size-families/family-1/select"],
+    ],
+  );
+  assert.deepEqual(JSON.parse(requests[0]!.init.body as string), body);
+  assert.deepEqual(JSON.parse(requests[2]!.init.body as string), { label: "L" });
+});
+
 test("buyer Sova package requests the authenticated order archive", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const mime = "application/vnd.sova.project+zip";

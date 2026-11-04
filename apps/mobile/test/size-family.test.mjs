@@ -49,13 +49,16 @@ test("the table fails closed for incomplete, non-finite, non-positive and oversi
   }
 });
 
-test("the family fails closed and keeps exactly one explicit choice", () => {
+test("the family fails closed, persists all three versions and can reselect any member", () => {
   assert.match(project, /if \(completed\.length !== presets\.length\)/);
   assert.match(project, /неполное семейство удалено/);
-  assert.match(project, /if \(chosen\) await client\.acceptVersion\(chosen\.id\)/);
-  assert.match(project, /item\.version\.id !== chosen\?\.id/);
-  assert.match(project, /client\.discardVersion\(item\.version\.id\)/);
-  assert.match(project, /decideSizeFamily\(null\)/);
+  assert.match(project, /client\.createSizeFamily\(id/);
+  assert.match(project, /source_version_id: source\.id/);
+  assert.match(project, /selected_label: "M"/);
+  assert.match(project, /client\.listSizeFamilies\(id\)/);
+  assert.match(project, /client\.selectSizeFamilyMember\(id, sizeFamilyRecord\.id, label\)/);
+  assert.match(project, /остальные варианты семейства сохранены/);
+  assert.doesNotMatch(project, /decideSizeFamily/);
 });
 
 test("every measured draft must match its requested S M or L row", () => {

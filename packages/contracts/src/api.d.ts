@@ -486,6 +486,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/size-families": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Size Families */
+        get: operations["list_size_families_api_v1_projects__project_id__size_families_get"];
+        put?: never;
+        /** Create Size Family */
+        post: operations["create_size_family_api_v1_projects__project_id__size_families_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/size-families/{family_id}/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Select Size Family Member */
+        post: operations["select_size_family_member_api_v1_projects__project_id__size_families__family_id__select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/uploads": {
         parameters: {
             query?: never;
@@ -10391,6 +10426,89 @@ export interface components {
             /** Terrain Max Delta Mm */
             terrain_max_delta_mm: number | null;
         };
+        /** SizeFamilyCreate */
+        SizeFamilyCreate: {
+            /**
+             * Source Version Id
+             * Format: uuid
+             */
+            source_version_id: string;
+            /**
+             * Selected Label
+             * @default M
+             * @enum {string}
+             */
+            selected_label: "S" | "M" | "L";
+            /** Members */
+            members: components["schemas"]["SizeFamilyMemberBody"][];
+        };
+        /** SizeFamilyMemberBody */
+        SizeFamilyMemberBody: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "S" | "M" | "L";
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+        };
+        /** SizeFamilyMemberOut */
+        SizeFamilyMemberOut: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "S" | "M" | "L";
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Width Mm */
+            width_mm: number;
+            /** Depth Mm */
+            depth_mm: number;
+            /** Height Mm */
+            height_mm: number;
+        };
+        /** SizeFamilyOut */
+        SizeFamilyOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Source Version Id
+             * Format: uuid
+             */
+            source_version_id: string;
+            /** Selected Label */
+            selected_label: ("S" | "M" | "L") | null;
+            /** Members */
+            members: components["schemas"]["SizeFamilyMemberOut"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** SizeFamilySelect */
+        SizeFamilySelect: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "S" | "M" | "L";
+        };
         /** SliceBody */
         SliceBody: {
             /** Printer Profile Id */
@@ -12637,6 +12755,114 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VerifiedIntegrityReportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_size_families_api_v1_projects__project_id__size_families_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SizeFamilyOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_size_family_api_v1_projects__project_id__size_families_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SizeFamilyCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SizeFamilyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_size_family_member_api_v1_projects__project_id__size_families__family_id__select_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+                family_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SizeFamilySelect"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SizeFamilyOut"];
                 };
             };
             /** @description Validation Error */
