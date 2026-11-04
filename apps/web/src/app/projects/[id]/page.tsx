@@ -852,7 +852,9 @@ export default function ProjectPage() {
   // the studio: one tool panel open at a time, the chat by default
   const [tool, setTool] = useState<Tool | null>(() => {
     const requested = search.get("tool");
-    return requested === "photo" || requested === "shape" ? requested : "chat";
+    return requested === "photo" || requested === "shape" || requested === "repair" || requested === "export"
+      ? requested
+      : "chat";
   });
   const [complexity, setComplexity] = useState<"simple" | "advanced">(projectGoal?.complexity ?? "simple");
   const [proSearch, setProSearch] = useState("");

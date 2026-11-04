@@ -2809,6 +2809,15 @@ summary {
 .scan-progress-track { height: 8px; overflow: hidden; border-radius: 999px; background: var(--panel-2); }
 .scan-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
 .scan-progress-actions { justify-content: flex-end; }
+.scan-result-stage { position: relative; }
+.scan-result-actions { display: flex; gap: 8px; overflow-x: auto; padding: 2px 1px 6px; scrollbar-width: thin; }
+.scan-result-actions > a, .scan-result-actions > button { min-width: 70px; min-height: 68px; display: grid; justify-items: center; align-content: center; gap: 5px; padding: 8px; border: 1px solid var(--border); border-radius: 18px; background: var(--panel); color: var(--muted); font: inherit; font-size: 11px; font-weight: 700; text-decoration: none; cursor: pointer; }
+.scan-result-actions > a:hover, .scan-result-actions > button:hover, .scan-result-actions > .active { border-color: var(--accent); background: var(--accent-wash); color: var(--accent); }
+.scan-result-actions svg { width: 23px; height: 23px; }
+
+@media (min-width: 981px) {
+  .scan-result-actions { position: absolute; z-index: 2; left: 14px; top: 14px; flex-direction: column; max-height: calc(100% - 28px); margin: 0; overflow: auto; }
+}
 
 /* explore lane on the library */
 .library-explore header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }

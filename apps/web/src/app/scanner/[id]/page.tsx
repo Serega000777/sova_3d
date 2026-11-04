@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { FragmentSource } from "@/components/FragmentsViewer";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { NavIcon } from "@/components/NavIcon";
 import { ScanMaskEditor, type FrameMaskCorrection } from "@/components/ScanMaskEditor";
 import { useSession } from "@/lib/session";
 
@@ -386,17 +387,45 @@ export default function ScannerSessionPage() {
         </div>
         {scan.status === "ready" || scan.status === "accepted" ? (
           <div className="stack">
-            {roomShellUrl && (
-              <div className="row" role="group" aria-label={ru ? "Вид комнаты" : "Room view"}>
-                <button className={`btn ${!showEmptyRoom ? "primary" : ""}`} type="button" onClick={() => setShowEmptyRoom(false)}>
-                  {ru ? "Исходный скан" : "Captured scan"}
+            <div className="scan-result-stage">
+              <nav className="scan-result-actions" aria-label={ru ? "Действия с результатом скана" : "Scan result actions"}>
+                <button className={!showEmptyRoom ? "active" : ""} type="button" onClick={() => setShowEmptyRoom(false)}>
+                  <NavIcon name="scanner" />
+                  <span>{ru ? "Скан" : "Scan"}</span>
                 </button>
-                <button className={`btn ${showEmptyRoom ? "primary" : ""}`} type="button" onClick={() => setShowEmptyRoom(true)}>
-                  {ru ? "Пустая комната" : "Empty room"}
-                </button>
-              </div>
-            )}
-            <ModelViewer url={showEmptyRoom ? roomShellUrl : modelUrl} format={showEmptyRoom ? "stl" : undefined} selected={[]} onSelect={() => undefined} />
+                {roomShellUrl && (
+                  <button className={showEmptyRoom ? "active" : ""} type="button" onClick={() => setShowEmptyRoom(true)}>
+                    <NavIcon name="modeling" />
+                    <span>{ru ? "Пустая комната" : "Empty room"}</span>
+                  </button>
+                )}
+                {roomMeasurements && (
+                  <a href="#scan-room-measurements">
+                    <NavIcon name="dimension" />
+                    <span>{ru ? "Размеры" : "Measure"}</span>
+                  </a>
+                )}
+                {scan.status === "accepted" && scan.project_id && measuredPlan && (
+                  <Link href={`/plan?project_id=${encodeURIComponent(scan.project_id)}`}>
+                    <NavIcon name="plans" />
+                    <span>{ru ? "План" : "Plan"}</span>
+                  </Link>
+                )}
+                {scan.status === "accepted" && scan.project_id && (
+                  <>
+                    <Link href={`/projects/${scan.project_id}?tool=repair`}>
+                      <NavIcon name="pencil" />
+                      <span>{ru ? "Правка" : "Repair"}</span>
+                    </Link>
+                    <Link href={`/projects/${scan.project_id}?tool=export`}>
+                      <NavIcon name="arrow" />
+                      <span>{ru ? "Экспорт" : "Export"}</span>
+                    </Link>
+                  </>
+                )}
+              </nav>
+              <ModelViewer url={showEmptyRoom ? roomShellUrl : modelUrl} format={showEmptyRoom ? "stl" : undefined} selected={[]} onSelect={() => undefined} />
+            </div>
             {showEmptyRoom && (
               <span className="muted" style={{ fontSize: 12 }}>
                 {ru
@@ -410,7 +439,7 @@ export default function ScannerSessionPage() {
               </span>
             )}
             {roomMeasurements && (
-              <section className="card stack" aria-label={ru ? "Размеры помещения после сканирования" : "Room measurements after scanning"}>
+              <section id="scan-room-measurements" className="card stack" aria-label={ru ? "Размеры помещения после сканирования" : "Room measurements after scanning"}>
                 <div>
                   <strong>{ru ? "Размеры помещения" : "Room measurements"}</strong>
                   <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
