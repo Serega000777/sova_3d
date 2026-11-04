@@ -199,9 +199,12 @@ export default function ProjectsPage() {
       <Onboarding language={language} />
       <header className="library-head">
         <h1>{ru ? "Библиотека" : "Library"}</h1>
-        <Link href="/new" className="btn primary library-create">
-          {ru ? "+ Создать" : "+ Create"}
-        </Link>
+        <div className="row">
+          <Link href="/analytics" className="btn">{ru ? "Аналитика" : "Analytics"}</Link>
+          <Link href="/new" className="btn primary library-create">
+            {ru ? "+ Создать" : "+ Create"}
+          </Link>
+        </div>
       </header>
       <div className="library-tools">
         <input
