@@ -102,6 +102,11 @@ test("mobile projects route exposes analytics without invented completion metric
 
   assert.match(projectsSource, /router\.push\("\/analytics"\)/);
   assert.match(analyticsSource, /client\.listProjects\(session\.workspaceId\)/);
+  assert.match(analyticsSource, /client\.listWorkspaceVersionActivity\(session\.workspaceId, 30\)/);
+  assert.match(analyticsSource, /Последние immutable-версии рабочего пространства/);
+  assert.match(analyticsSource, /item\.project_name/);
+  assert.match(analyticsSource, /item\.creator_name/);
+  assert.match(analyticsSource, /item\.total_asset_bytes/);
   assert.match(analyticsSource, /client\.getLatestIntegrityReport\(versionId\)/);
   assert.match(analyticsSource, /parseOrdinaryModelCheck\(record\.report\)/);
   assert.doesNotMatch(analyticsSource, /parseIntegrityReport\(record\.report\)/);

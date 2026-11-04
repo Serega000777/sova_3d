@@ -157,6 +157,17 @@ class VersionHistoryItem(VersionOut):
     total_asset_bytes: int = Field(ge=0)
 
 
+class WorkspaceVersionActivityItem(BaseModel):
+    version_id: uuid.UUID
+    project_id: uuid.UUID
+    project_name: str
+    sequence_no: int = Field(ge=1)
+    label: str | None
+    creator_name: str | None
+    created_at: datetime
+    total_asset_bytes: int = Field(ge=0)
+
+
 class VersionCommentUpdate(BaseModel):
     comment: str = Field(default="", max_length=2000)
     base_revision: int = Field(ge=0)
@@ -402,6 +413,39 @@ def list_projects(
             else None,
         )
         for project in rows
+    ]
+
+
+@router.get(
+    "/workspaces/{workspace_id}/version-activity",
+    response_model=list[WorkspaceVersionActivityItem],
+)
+def list_workspace_version_activity(
+    workspace_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> list[WorkspaceVersionActivityItem]:
+    rows = projects.list_workspace_version_activity(
+        db,
+        user_id=principal.user_id,
+        workspace_id=workspace_id,
+        limit=limit,
+        offset=offset,
+    )
+    return [
+        WorkspaceVersionActivityItem(
+            version_id=row["version"].id,
+            project_id=row["version"].project_id,
+            project_name=row["project_name"],
+            sequence_no=row["version"].sequence_no,
+            label=row["version"].label,
+            creator_name=row["creator_name"],
+            created_at=row["version"].created_at,
+            total_asset_bytes=row["total_asset_bytes"],
+        )
+        for row in rows
     ]
 
 

@@ -36,6 +36,7 @@ export interface PlanAnnotationsOut {
 }
 export type Version = Schemas["VersionOut"];
 export type VersionHistoryItem = Schemas["VersionHistoryItem"];
+export type WorkspaceVersionActivityItem = Schemas["WorkspaceVersionActivityItem"];
 export type VersionComment = Schemas["VersionCommentOut"];
 export type ModelComment = Schemas["ModelCommentOut"];
 export type ThumbnailAngle = Schemas["ThumbnailAngle"];
@@ -829,6 +830,13 @@ export class PhysicalAiClient {
     return this.request<VersionHistoryItem[]>(
       "GET",
       `/api/v1/projects/${projectId}/version-history`,
+    );
+  }
+
+  listWorkspaceVersionActivity(workspaceId: string, limit = 50) {
+    return this.request<WorkspaceVersionActivityItem[]>(
+      "GET",
+      `/api/v1/workspaces/${workspaceId}/version-activity?limit=${limit}`,
     );
   }
 

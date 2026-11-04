@@ -173,6 +173,61 @@ def list_version_history(
     ]
 
 
+def list_workspace_version_activity(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Return one authorized, deterministic timeline of finalized workspace versions."""
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.viewer)
+    rows = list(
+        db.execute(
+            sa.select(ProjectVersion, Project.name, User.display_name)
+            .join(Project, Project.id == ProjectVersion.project_id)
+            .outerjoin(User, User.id == ProjectVersion.created_by)
+            .where(
+                Project.workspace_id == workspace_id,
+                Project.deleted_at.is_(None),
+                ProjectVersion.state == VersionState.finalized,
+            )
+            .order_by(ProjectVersion.created_at.desc(), ProjectVersion.id)
+            .limit(limit)
+            .offset(offset)
+        )
+    )
+    if not rows:
+        return []
+    version_ids = [row[0].id for row in rows]
+    distinct_assets = (
+        sa.select(VersionAsset.version_id, VersionAsset.asset_id)
+        .where(VersionAsset.version_id.in_(version_ids))
+        .distinct()
+        .subquery()
+    )
+    asset_bytes = {
+        version_id: int(total or 0)
+        for version_id, total in db.execute(
+            sa.select(distinct_assets.c.version_id, sa.func.sum(Asset.byte_size))
+            .join(Asset, Asset.id == distinct_assets.c.asset_id)
+            .group_by(distinct_assets.c.version_id)
+        )
+    }
+    return [
+        {
+            "version": version,
+            "project_name": project_name,
+            "creator_name": (
+                display_name.strip() if display_name and display_name.strip() else None
+            ),
+            "total_asset_bytes": asset_bytes.get(version.id, 0),
+        }
+        for version, project_name, display_name in rows
+    ]
+
+
 def put_version_comment(
     db: Session,
     *,

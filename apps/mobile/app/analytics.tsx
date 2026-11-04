@@ -3,6 +3,7 @@ import {
   relativeTime,
   type IntegrityReport,
   type Project,
+  type WorkspaceVersionActivityItem,
 } from "@physical-ai/contracts";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
@@ -28,6 +29,12 @@ function Metric({ value, label, accent = colors.text }: { value: number; label: 
   );
 }
 
+function formatAssetBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
 export default function AnalyticsScreen() {
   const router = useRouter();
   const isTablet = useIsTablet();
@@ -39,6 +46,9 @@ export default function AnalyticsScreen() {
   const [integrityByVersion, setIntegrityByVersion] = useState<Map<string, IntegrityReport["status"]>>(new Map());
   const [integrityLoaded, setIntegrityLoaded] = useState(false);
   const [integrityError, setIntegrityError] = useState<string | null>(null);
+  const [versionActivity, setVersionActivity] = useState<WorkspaceVersionActivityItem[]>([]);
+  const [versionActivityLoaded, setVersionActivityLoaded] = useState(false);
+  const [versionActivityError, setVersionActivityError] = useState<string | null>(null);
   const analytics = useMemo(() => buildProjectAnalytics(projects, Date.now()), [projects]);
   const integrity = useMemo(
     () => buildProjectIntegrityAnalytics(projects, integrityByVersion),
@@ -53,6 +63,16 @@ export default function AnalyticsScreen() {
       const nextProjects = await client.listProjects(session.workspaceId);
       setProjects(nextProjects);
       setError(null);
+      try {
+        const activity = await client.listWorkspaceVersionActivity(session.workspaceId, 30);
+        setVersionActivity(activity);
+        setVersionActivityLoaded(true);
+        setVersionActivityError(null);
+      } catch (reason) {
+        setVersionActivity([]);
+        setVersionActivityLoaded(false);
+        setVersionActivityError(reason instanceof Error ? reason.message : String(reason));
+      }
       try {
         const headIds = nextProjects.flatMap((project) => (
           project.head_version_id ? [project.head_version_id] : []
@@ -189,6 +209,36 @@ export default function AnalyticsScreen() {
           </View>
           <Text style={styles.sectionSubtitle}>Это активность проектов, а не число созданных версий или моделей.</Text>
         </View>
+
+        {versionActivityLoaded ? (
+          <View style={[styles.card, { gap: 12 }]} accessibilityLabel="Последние immutable-версии рабочего пространства">
+            <View style={{ gap: 4 }}>
+              <Text style={styles.heading}>Последние версии</Text>
+              <Text style={styles.muted}>Финализированные immutable-версии всех доступных проектов workspace.</Text>
+            </View>
+            {versionActivity.length ? versionActivity.map((item) => (
+              <Pressable
+                key={item.version_id}
+                accessibilityRole="button"
+                onPress={() => router.push(`/project/${item.project_id}`)}
+                style={[styles.button, { alignItems: "flex-start", gap: 3 }]}
+              >
+                <Text style={styles.buttonText}>{item.project_name} · v{item.sequence_no}</Text>
+                <Text style={styles.sectionSubtitle}>
+                  {item.label ?? "Без названия"} · {item.creator_name ?? "Система"} · {relativeTime(item.created_at, Date.now(), "ru")}
+                </Text>
+                <Text style={styles.muted}>{formatAssetBytes(item.total_asset_bytes)}</Text>
+              </Pressable>
+            )) : (
+              <Text style={styles.muted}>Финализированных версий пока нет.</Text>
+            )}
+          </View>
+        ) : versionActivityError ? (
+          <View style={[styles.card, { gap: 4, borderColor: colors.yellow }]}>
+            <Text style={styles.heading}>Лента версий недоступна</Text>
+            <Text style={styles.muted}>{versionActivityError}</Text>
+          </View>
+        ) : null}
 
         {analytics.mostRecent ? (
           <Pressable

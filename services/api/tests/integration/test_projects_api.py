@@ -271,6 +271,77 @@ def test_version_history_has_author_size_and_revision_guarded_comment(
     assert refreshed["comment_updated_by"] == str(actor.user.id)
 
 
+def test_workspace_version_activity_is_viewer_scoped_and_finalized_only(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    actor.user.display_name = "Анна Архитектор"
+    db_session.flush()
+    viewer = make_actor(db_session, role=WorkspaceRole.viewer, workspace=actor.workspace)
+    stranger = make_actor(db_session)
+    first_project = create_project(api_client, actor, "Корпус").json()
+    second_project = create_project(api_client, actor, "Крышка").json()
+    model = make_asset(db_session, actor.workspace.id, "a1")
+    first = create_version(
+        api_client,
+        actor,
+        first_project["id"],
+        label="Основа",
+        assets={"model": str(model.id), "preview": str(model.id)},
+    ).json()
+    draft = create_version(
+        api_client,
+        actor,
+        first_project["id"],
+        label="Черновик",
+        finalize=False,
+    ).json()
+    second = create_version(
+        api_client,
+        actor,
+        second_project["id"],
+        label="Финал",
+        assets={"model": str(model.id)},
+    ).json()
+    deleted_project = create_project(api_client, actor, "Удалённый").json()
+    deleted_version = create_version(
+        api_client,
+        actor,
+        deleted_project["id"],
+        label="Не показывать",
+        assets={"model": str(model.id)},
+    ).json()
+    deleted = api_client.delete(f"/api/v1/projects/{deleted_project['id']}", headers=actor.headers)
+    assert deleted.status_code == 204
+
+    activity = api_client.get(
+        f"/api/v1/workspaces/{actor.workspace.id}/version-activity",
+        headers=viewer.headers,
+    )
+    assert activity.status_code == 200, activity.text
+    rows = activity.json()
+    assert {row["version_id"] for row in rows} == {second["id"], first["id"]}
+    assert all(row["version_id"] != draft["id"] for row in rows)
+    assert all(row["version_id"] != deleted_version["id"] for row in rows)
+    by_version = {row["version_id"]: row for row in rows}
+    assert by_version[second["id"]]["project_name"] == "Крышка"
+    assert by_version[second["id"]]["creator_name"] == "Анна Архитектор"
+    assert by_version[second["id"]]["total_asset_bytes"] == 10
+    assert by_version[first["id"]]["total_asset_bytes"] == 10
+
+    limited = api_client.get(
+        f"/api/v1/workspaces/{actor.workspace.id}/version-activity",
+        params={"limit": 1},
+        headers=viewer.headers,
+    )
+    assert limited.status_code == 200
+    assert limited.json()[0]["version_id"] in {second["id"], first["id"]}
+    foreign = api_client.get(
+        f"/api/v1/workspaces/{actor.workspace.id}/version-activity",
+        headers=stranger.headers,
+    )
+    assert foreign.status_code == 404
+
+
 def test_model_comments_persist_points_and_use_revision_guarded_updates(
     api_client: TestClient, actor: Actor, db_session: Session
 ) -> None:

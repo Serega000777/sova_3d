@@ -3047,6 +3047,92 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspace_id}/version-activity": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List Workspace Version Activity",
+        "operationId": "list_workspace_version_activity_api_v1_workspaces__workspace_id__version_activity_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceVersionActivityItem"
+                  },
+                  "title": "Response List Workspace Version Activity Api V1 Workspaces  Workspace Id  Version Activity Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}": {
       "get": {
         "tags": [
@@ -38059,6 +38145,73 @@
           "expected_revision"
         ],
         "title": "WorkspaceTaskUpdate"
+      },
+      "WorkspaceVersionActivityItem": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "sequence_no": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Sequence No"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "creator_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creator Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "total_asset_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Asset Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "project_id",
+          "project_name",
+          "sequence_no",
+          "label",
+          "creator_name",
+          "created_at",
+          "total_asset_bytes"
+        ],
+        "title": "WorkspaceVersionActivityItem"
       }
     }
   }

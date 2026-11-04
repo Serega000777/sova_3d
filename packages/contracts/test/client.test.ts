@@ -148,6 +148,36 @@ test("manufacturing estimates use the exact print-analysis subresource", async (
   assert.equal(requests[1].init.method, "GET");
 });
 
+test("workspace version activity uses the bounded read-only timeline route", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "viewer-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse([{
+        version_id: "version-1",
+        project_id: "project-1",
+        project_name: "Корпус",
+        sequence_no: 2,
+        label: "Финал",
+        creator_name: "Анна",
+        created_at: "2026-11-04T20:00:00Z",
+        total_asset_bytes: 4096,
+      }]);
+    },
+  });
+
+  const rows = await client.listWorkspaceVersionActivity("workspace-1", 30);
+  assert.equal(rows[0].version_id, "version-1");
+  assert.equal(
+    request!.url,
+    "https://api.example.test/api/v1/workspaces/workspace-1/version-activity?limit=30",
+  );
+  assert.equal(request!.init.method, "GET");
+  assert.equal(new Headers(request!.init.headers).get("Authorization"), "Bearer viewer-token");
+});
+
 test("team workspace tasks use the nested typed routes and revision guard", async () => {
   const requests: { url: string; init: RequestInit }[] = [];
   const client = new PhysicalAiClient({
