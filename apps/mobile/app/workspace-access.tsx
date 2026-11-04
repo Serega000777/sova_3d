@@ -3,8 +3,11 @@ import type {
   WorkspaceMember,
   WorkspaceMemberRole,
   WorkspaceTask,
+  WorkspaceVersionActivityItem,
 } from "@physical-ai/contracts";
-import { useEffect, useMemo, useState } from "react";
+import { relativeTime } from "@physical-ai/contracts";
+import { useRouter } from "expo-router";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -14,11 +17,21 @@ import { colors, styles } from "@/src/theme";
 const roles: WorkspaceMemberRole[] = ["admin", "editor", "viewer"];
 type WorkspaceBrief = Me["workspaces"][number];
 
+function formatAssetBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
 export default function WorkspaceAccessScreen() {
   const { client, session, selectWorkspace } = useSession();
+  const router = useRouter();
   const [workspaces, setWorkspaces] = useState<WorkspaceBrief[]>([]);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [tasks, setTasks] = useState<WorkspaceTask[]>([]);
+  const [activity, setActivity] = useState<WorkspaceVersionActivityItem[]>([]);
+  const [activityLoaded, setActivityLoaded] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
   const [openTaskCount, setOpenTaskCount] = useState<number | null>(null);
   const [projectCount, setProjectCount] = useState<number | null>(null);
   const [workspaceName, setWorkspaceName] = useState("");
@@ -27,6 +40,7 @@ export default function WorkspaceAccessScreen() {
   const [taskTitle, setTaskTitle] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const loadRevision = useRef(0);
   const workspace = useMemo(
     () => workspaces.find((item) => item.id === session?.workspaceId) ?? null,
     [session?.workspaceId, workspaces],
@@ -34,24 +48,45 @@ export default function WorkspaceAccessScreen() {
 
   const load = async () => {
     if (!client || !session) return;
+    const request = ++loadRevision.current;
+    const workspaceId = session.workspaceId;
     setError(null);
-    const me = await client.me();
-    const current = me.workspaces.find((item) => item.id === session.workspaceId) ?? null;
-    if (!current) throw new Error("Текущее рабочее пространство больше недоступно.");
-    setWorkspaces(me.workspaces);
-    const [projects, nextMembers, taskList] = await Promise.all([
-      client.listProjects(session.workspaceId),
-      current.kind === "team"
-        ? client.listWorkspaceMembers(session.workspaceId)
-        : Promise.resolve([]),
-      current.kind === "team"
-        ? client.listWorkspaceTasks(session.workspaceId)
-        : Promise.resolve({ open_count: 0, total_count: 0, tasks: [] }),
-    ]);
-    setProjectCount(projects.length);
-    setMembers(nextMembers);
-    setOpenTaskCount(current.kind === "team" ? taskList.open_count : null);
-    setTasks(taskList.tasks);
+    try {
+      const me = await client.me();
+      if (loadRevision.current !== request) return;
+      const current = me.workspaces.find((item) => item.id === workspaceId) ?? null;
+      if (!current) throw new Error("Текущее рабочее пространство больше недоступно.");
+      const [projects, nextMembers, taskList, activityResult] = await Promise.all([
+        client.listProjects(workspaceId),
+        current.kind === "team"
+          ? client.listWorkspaceMembers(workspaceId)
+          : Promise.resolve([]),
+        current.kind === "team"
+          ? client.listWorkspaceTasks(workspaceId)
+          : Promise.resolve({ open_count: 0, total_count: 0, tasks: [] }),
+        current.kind === "team"
+          ? client.listWorkspaceVersionActivity(workspaceId, 12)
+            .then((items) => ({ items, error: null as string | null }))
+            .catch((reason: unknown) => ({
+              items: [] as WorkspaceVersionActivityItem[],
+              error: reason instanceof Error ? reason.message : String(reason),
+            }))
+          : Promise.resolve({ items: [] as WorkspaceVersionActivityItem[], error: null }),
+      ]);
+      if (loadRevision.current !== request) return;
+      setWorkspaces(me.workspaces);
+      setProjectCount(projects.length);
+      setMembers(nextMembers);
+      setOpenTaskCount(current.kind === "team" ? taskList.open_count : null);
+      setTasks(taskList.tasks);
+      setActivity(activityResult.items);
+      setActivityLoaded(current.kind === "team" && activityResult.error === null);
+      setActivityError(activityResult.error);
+    } catch (reason) {
+      if (loadRevision.current === request) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    }
   };
 
   useEffect(() => {
@@ -59,9 +94,13 @@ export default function WorkspaceAccessScreen() {
     setMembers([]);
     setTasks([]);
     setOpenTaskCount(null);
-    void load().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+    setActivity([]);
+    setActivityLoaded(false);
+    setActivityError(null);
+    void load();
     // A workspace switch replaces session/client and reloads the canonical selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { loadRevision.current += 1; };
   }, [client, session?.workspaceId]);
 
   const createWorkspace = async () => {
@@ -233,6 +272,36 @@ export default function WorkspaceAccessScreen() {
             ) : null}
           </View>
         </View>
+
+        {workspace?.kind === "team" ? (
+          <View style={{ gap: 10 }} accessibilityLabel="Последние версии команды">
+            <Text style={styles.heading}>Активность команды</Text>
+            <Text style={styles.muted}>Финализированные immutable-версии проектов выбранного workspace.</Text>
+            {activityLoaded ? activity.length > 0 ? activity.map((item) => (
+              <Pressable
+                key={item.version_id}
+                accessibilityRole="button"
+                onPress={() => router.push(`/project/${item.project_id}`)}
+                style={[styles.card, { gap: 3 }]}
+              >
+                <Text style={styles.heading}>{item.project_name} · v{item.sequence_no}</Text>
+                <Text style={styles.muted}>
+                  {item.label ?? "Без названия"} · {item.creator_name ?? "Система"} · {relativeTime(item.created_at, Date.now(), "ru")}
+                </Text>
+                <Text style={styles.muted}>{formatAssetBytes(item.total_asset_bytes)}</Text>
+              </Pressable>
+            )) : (
+              <Text style={styles.muted}>Финализированных версий пока нет.</Text>
+            ) : activityError ? (
+              <View style={[styles.card, { gap: 3, borderColor: colors.yellow }]}>
+                <Text style={styles.heading}>Лента версий недоступна</Text>
+                <Text style={styles.muted}>{activityError}</Text>
+              </View>
+            ) : (
+              <Text style={styles.muted}>Загрузка активности…</Text>
+            )}
+          </View>
+        ) : null}
 
         {workspace?.kind === "team" ? (
           <View style={{ gap: 10 }}>

@@ -17,6 +17,7 @@ test("references 62 and 64 reach canonical team workspace access", () => {
   assert.match(access, /updateWorkspaceMember/);
   assert.match(access, /removeWorkspaceMember/);
   assert.match(access, /listWorkspaceTasks/);
+  assert.match(access, /listWorkspaceVersionActivity\(workspaceId, 12\)/);
   assert.match(access, /createWorkspaceTask/);
   assert.match(access, /updateWorkspaceTask/);
 });
@@ -30,4 +31,9 @@ test("creation, selection and owner-only mutation boundaries stay explicit", () 
   assert.match(access, /expected_revision: task\.revision/);
   assert.match(access, /workspace\.role !== "viewer"/);
   assert.match(access, /accessibilityRole="checkbox"/);
+  assert.match(access, /loadRevision\.current !== request/);
+  assert.match(access, /Активность команды/);
+  assert.match(access, /Финализированные immutable-версии проектов выбранного workspace/);
+  assert.match(access, /router\.push\(`\/project\/\$\{item\.project_id\}`\)/);
+  assert.match(access, /Лента версий недоступна/);
 });
