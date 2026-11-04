@@ -73,9 +73,13 @@ device can reach:
 EXPO_PUBLIC_API_URL=http://192.168.1.50:18000 pnpm run start:dev
 ```
 
-One capture currently produces one measured room and uploads its USDZ mesh. Combining
-several rooms into a whole house/building with RoomPlan `StructureBuilder` is T-197 and
-must be implemented after this single-room path is validated on hardware.
+On iOS 17+, one Home capture flow keeps the same ARKit session alive between rooms and
+passes the finished `CapturedRoom` array through RoomPlan `StructureBuilder`. When every
+default-selected room belongs to that native result, the app uploads one merged USDZ plus
+one shared-frame metric floor plan. Removing a room from the selection, an incompatible
+world frame, iOS 16, or a native merge failure falls back visibly to separate room scans.
+The merged editable plan is currently bounded to one floor; exact multi-loop empty-shell
+generation and physical LiDAR-device acceptance remain open.
 
 ### The depth-scan boundary
 

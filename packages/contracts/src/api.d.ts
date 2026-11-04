@@ -2784,6 +2784,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/scans/{scan_id}/room-plan-structure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Room Plan Structure */
+        put: operations["set_room_plan_structure_api_v1_scans__scan_id__room_plan_structure_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans/{scan_id}/finalize": {
         parameters: {
             query?: never;
@@ -9631,6 +9648,8 @@ export interface components {
             schema_version: 1 | 2;
             /** Room Id */
             room_id: string;
+            /** Floor Elevation M */
+            floor_elevation_m?: number | null;
             /** Walls */
             walls: components["schemas"]["RoomPlanWallSurface"][];
             /** Openings */
@@ -9670,6 +9689,41 @@ export interface components {
                 number,
                 number
             ] | null;
+        };
+        /**
+         * RoomPlanStructureCapture
+         * @description Several RoomPlan rooms that Apple merged in one continuous ARKit world frame.
+         */
+        RoomPlanStructureCapture: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Structure Id */
+            structure_id: string;
+            /**
+             * Coordinate Space
+             * @constant
+             */
+            coordinate_space: "shared_arkit_world";
+            /** Rooms */
+            rooms: components["schemas"]["RoomPlanCapture"][];
+        };
+        /** RoomPlanStructureCaptureResult */
+        RoomPlanStructureCaptureResult: {
+            floor_plan: components["schemas"]["FloorPlan"];
+            /** Floor Height Mm */
+            floor_height_mm: number;
+            /** Warnings */
+            warnings: string[];
+            /** Structure Id */
+            structure_id: string;
+            /** Room Ids */
+            room_ids: string[];
+            /** Room Count */
+            room_count: number;
         };
         /** RoomPlanWallSurface */
         RoomPlanWallSurface: {
@@ -17754,6 +17808,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoomPlanCaptureResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_room_plan_structure_api_v1_scans__scan_id__room_plan_structure_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomPlanStructureCapture"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomPlanStructureCaptureResult"];
                 };
             };
             /** @description Validation Error */

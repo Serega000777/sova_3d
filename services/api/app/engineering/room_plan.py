@@ -55,6 +55,7 @@ class RoomPlanCapture(BaseModel):
 
     schema_version: Literal[1, 2] = 1
     room_id: str = Field(min_length=1, max_length=100)
+    floor_elevation_m: float | None = Field(default=None, ge=-100, le=100)
     walls: list[RoomPlanWallSurface] = Field(min_length=3, max_length=MAX_SURFACES)
     openings: list[RoomPlanOpeningSurface] = Field(default_factory=list, max_length=MAX_SURFACES)
 
@@ -102,6 +103,36 @@ class RoomPlanCapture(BaseModel):
         return self
 
 
+class RoomPlanStructureCapture(BaseModel):
+    """Several RoomPlan rooms that Apple merged in one continuous ARKit world frame."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    structure_id: str = Field(min_length=1, max_length=100)
+    coordinate_space: Literal["shared_arkit_world"]
+    rooms: list[RoomPlanCapture] = Field(min_length=2, max_length=64)
+
+    @model_validator(mode="after")
+    def shared_frame_is_bounded(self) -> RoomPlanStructureCapture:
+        room_ids = [room.room_id for room in self.rooms]
+        if len(set(room_ids)) != len(room_ids):
+            raise ValueError("RoomPlan structure room identifiers must be unique")
+        if any(room.schema_version != 2 for room in self.rooms):
+            raise ValueError("RoomPlan structure requires complete v2 room geometry")
+        floor_elevations = [room.floor_elevation_m for room in self.rooms]
+        if any(elevation is None or not math.isfinite(elevation) for elevation in floor_elevations):
+            raise ValueError("RoomPlan structure requires each room's floor elevation")
+        measured_elevations = [
+            float(elevation) for elevation in floor_elevations if elevation is not None
+        ]
+        if max(measured_elevations) - min(measured_elevations) > 0.25:
+            raise ValueError("RoomPlan structure currently supports one floor elevation")
+        if sum(len(room.walls) + len(room.openings) for room in self.rooms) > 1_024:
+            raise ValueError("RoomPlan structure exceeds the 1024 surface limit")
+        return self
+
+
 @dataclass(frozen=True, slots=True)
 class RoomPlanConversion:
     plan: FloorPlan
@@ -110,6 +141,15 @@ class RoomPlanConversion:
     wall_ids: tuple[str, ...]
     source_origin_mm: PointMM
     opening_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RoomPlanStructureConversion:
+    plan: FloorPlan
+    floor_height_mm: float
+    warnings: tuple[str, ...]
+    room_ids: tuple[str, ...]
+    source_origin_mm: PointMM
 
 
 def _distance(a: PointMM, b: PointMM) -> float:
@@ -314,4 +354,138 @@ def floor_plan_from_room_plan(
         wall_ids=tuple(identifier for identifier, _, _, _ in ordered),
         source_origin_mm=origin,
         opening_ids=tuple(opening_ids),
+    )
+
+
+def _translated(point: PointMM, offset: PointMM) -> PointMM:
+    return (point[0] + offset[0], point[1] + offset[1])
+
+
+def _point_strictly_inside_polygon(point: PointMM, polygon: list[PointMM]) -> bool:
+    """Odd-even containment that treats a shared boundary as outside."""
+    inside = False
+    x, y = point
+    for index, a in enumerate(polygon):
+        b = polygon[(index + 1) % len(polygon)]
+        cross = _cross(a, b, point)
+        if (
+            abs(cross) <= 1e-6
+            and min(a[0], b[0]) <= x <= max(a[0], b[0])
+            and min(a[1], b[1]) <= y <= max(a[1], b[1])
+        ):
+            return False
+        if (a[1] > y) != (b[1] > y):
+            intersection_x = a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1])
+            if intersection_x > x:
+                inside = not inside
+    return inside
+
+
+def _outlines_overlap(left: list[PointMM], right: list[PointMM]) -> bool:
+    for left_index, left_a in enumerate(left):
+        left_b = left[(left_index + 1) % len(left)]
+        for right_index, right_a in enumerate(right):
+            right_b = right[(right_index + 1) % len(right)]
+            if _proper_intersection(left_a, left_b, right_a, right_b):
+                return True
+    left_probes = [
+        *left,
+        *[
+            (
+                (point[0] + left[(index + 1) % len(left)][0]) / 2,
+                (point[1] + left[(index + 1) % len(left)][1]) / 2,
+            )
+            for index, point in enumerate(left)
+        ],
+        (sum(point[0] for point in left) / len(left), sum(point[1] for point in left) / len(left)),
+    ]
+    right_probes = [
+        *right,
+        *[
+            (
+                (point[0] + right[(index + 1) % len(right)][0]) / 2,
+                (point[1] + right[(index + 1) % len(right)][1]) / 2,
+            )
+            for index, point in enumerate(right)
+        ],
+        (
+            sum(point[0] for point in right) / len(right),
+            sum(point[1] for point in right) / len(right),
+        ),
+    ]
+    return any(_point_strictly_inside_polygon(point, right) for point in left_probes) or any(
+        _point_strictly_inside_polygon(point, left) for point in right_probes
+    )
+
+
+def floor_plan_from_room_plan_structure(
+    capture: RoomPlanStructureCapture, *, plan_id: str, name: str
+) -> RoomPlanStructureConversion:
+    """Preserve Apple's shared world frame while combining several validated rooms.
+
+    This first structure boundary is deliberately single-level: RoomPlan can describe
+    multiple stories, but the platform's editable ``FloorPlan`` currently has one elevation.
+    """
+    converted = [
+        floor_plan_from_room_plan(
+            room,
+            plan_id=f"{plan_id}-room-{index + 1}",
+            name=f"Комната {index + 1}",
+        )
+        for index, room in enumerate(capture.rooms)
+    ]
+    global_origin = (
+        min(room.source_origin_mm[0] for room in converted),
+        min(room.source_origin_mm[1] for room in converted),
+    )
+    walls: list[PlanWall] = []
+    openings: list[PlanOpening] = []
+    rooms: list[PlanRoom] = []
+    warnings: list[str] = []
+    outlines: list[list[PointMM]] = []
+    for index, room in enumerate(converted):
+        offset = (
+            room.source_origin_mm[0] - global_origin[0],
+            room.source_origin_mm[1] - global_origin[1],
+        )
+        wall_offset = len(walls)
+        walls.extend(
+            PlanWall(
+                a=_translated(wall.a, offset),
+                b=_translated(wall.b, offset),
+                thickness_mm=wall.thickness_mm,
+                height_mm=wall.height_mm,
+                material_id=wall.material_id,
+            )
+            for wall in room.plan.walls
+        )
+        openings.extend(
+            opening.model_copy(update={"wall": opening.wall + wall_offset})
+            for opening in room.plan.openings
+        )
+        outline = [_translated(point, offset) for point in room.plan.rooms[0].outline]
+        if any(_outlines_overlap(outline, existing) for existing in outlines):
+            raise ValueError("RoomPlan structure rooms overlap in the shared world frame")
+        outlines.append(outline)
+        rooms.append(PlanRoom(name=f"Комната {index + 1}", outline=outline))
+        warnings.extend(
+            f"room {capture.rooms[index].room_id}: {warning}" for warning in room.warnings
+        )
+
+    points = [point for outline in outlines for point in outline]
+    if (
+        max(point[0] for point in points) - min(point[0] for point in points) > 500_000
+        or max(point[1] for point in points) - min(point[1] for point in points) > 500_000
+    ):
+        raise ValueError("RoomPlan structure exceeds the 500 metre shared-frame limit")
+
+    heights = [room.floor_height_mm for room in converted]
+    if max(heights) - min(heights) > 500:
+        raise ValueError("RoomPlan structure room heights disagree by more than 500 mm")
+    return RoomPlanStructureConversion(
+        plan=FloorPlan(id=plan_id, name=name, walls=walls, openings=openings, rooms=rooms),
+        floor_height_mm=float(median(heights)),
+        warnings=tuple(warnings),
+        room_ids=tuple(room.room_id for room in capture.rooms),
+        source_origin_mm=global_origin,
     )

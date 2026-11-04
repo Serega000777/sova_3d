@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
 from app.engineering.floor_plan import FloorPlan
-from app.engineering.room_plan import RoomPlanCapture
+from app.engineering.room_plan import RoomPlanCapture, RoomPlanStructureCapture
 from app.models.execution import JobStatus
 from app.models.scanning import FrameKind, ScanMode, ScanStatus
 from app.services import scanning
@@ -67,6 +67,12 @@ class RoomPlanCaptureResult(BaseModel):
     floor_plan: FloorPlan
     floor_height_mm: float
     warnings: list[str]
+
+
+class RoomPlanStructureCaptureResult(RoomPlanCaptureResult):
+    structure_id: str
+    room_ids: list[str]
+    room_count: int
 
 
 class MaskPoint(BaseModel):
@@ -335,6 +341,29 @@ def set_room_plan(
         capture=body,
     )
     return RoomPlanCaptureResult(
+        floor_plan=converted.plan,
+        floor_height_mm=converted.floor_height_mm,
+        warnings=list(converted.warnings),
+    )
+
+
+@router.put("/scans/{scan_id}/room-plan-structure", response_model=RoomPlanStructureCaptureResult)
+def set_room_plan_structure(
+    scan_id: uuid.UUID,
+    body: RoomPlanStructureCapture,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> RoomPlanStructureCaptureResult:
+    converted = scanning.set_room_plan_structure(
+        db,
+        user_id=principal.user_id,
+        session_id=scan_id,
+        capture=body,
+    )
+    return RoomPlanStructureCaptureResult(
+        structure_id=body.structure_id,
+        room_ids=list(converted.room_ids),
+        room_count=len(converted.room_ids),
         floor_plan=converted.plan,
         floor_height_mm=converted.floor_height_mm,
         warnings=list(converted.warnings),

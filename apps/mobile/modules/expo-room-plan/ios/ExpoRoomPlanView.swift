@@ -1,7 +1,37 @@
+import ARKit
 import ExpoModulesCore
 import RoomPlan
 import simd
 import UIKit
+
+@available(iOS 17.0, *)
+@MainActor
+private final class RoomPlanStructureSession {
+  let arSession = ARSession()
+  var rooms: [CapturedRoom] = []
+
+  init() {
+    // RoomCaptureView's shared-session initializer requires an already-running world
+    // tracking session. Keeping this same instance alive is what gives every room one
+    // compatible coordinate frame for StructureBuilder.
+    arSession.run(ARWorldTrackingConfiguration())
+  }
+}
+
+@MainActor
+private enum RoomPlanStructureRegistry {
+  @available(iOS 17.0, *)
+  static var sessions: [String: RoomPlanStructureSession] = [:]
+
+  @available(iOS 17.0, *)
+  static func session(for id: String) -> RoomPlanStructureSession {
+    if let existing = sessions[id] { return existing }
+    sessions.values.forEach { $0.arSession.pause() }
+    let created = RoomPlanStructureSession()
+    sessions = [id: created]
+    return created
+  }
+}
 
 /// Hosts Apple's own `RoomCaptureView` — this class adds no AR rendering of its own, only
 /// the plumbing from its declarative `capturing` prop to RoomPlan's session lifecycle, and
@@ -14,6 +44,7 @@ import UIKit
 public class ExpoRoomPlanView: ExpoView {
   private var captureView: UIView?
   private var capturing = false
+  private var structureSessionId: String?
 
   let onRoomUpdate = EventDispatcher()
   let onInstruction = EventDispatcher()
@@ -22,12 +53,27 @@ public class ExpoRoomPlanView: ExpoView {
 
   public required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
-    setUpIfAvailable()
   }
 
-  private func setUpIfAvailable() {
+  func setStructureSessionId(_ sessionId: String) {
+    guard !sessionId.isEmpty, sessionId != structureSessionId else { return }
+    structureSessionId = sessionId
+    setUpIfAvailable(sessionId: sessionId)
+    if capturing { applyCapturing(true) }
+  }
+
+  private func setUpIfAvailable(sessionId: String) {
     guard #available(iOS 16.0, *) else { return }
-    let view = RoomCaptureView(frame: .zero)
+    captureView?.removeFromSuperview()
+    let view: RoomCaptureView
+    if #available(iOS 17.0, *) {
+      view = RoomCaptureView(
+        frame: .zero,
+        arSession: RoomPlanStructureRegistry.session(for: sessionId).arSession
+      )
+    } else {
+      view = RoomCaptureView(frame: .zero)
+    }
     view.delegate = self
     view.captureSession.delegate = self
     view.translatesAutoresizingMaskIntoConstraints = false
@@ -48,6 +94,13 @@ public class ExpoRoomPlanView: ExpoView {
     guard value != capturing else { return }
     capturing = value
 
+    // Expo may apply props in either order. Wait for the stable structure session id so
+    // the first room cannot accidentally begin in a throwaway ARSession.
+    guard structureSessionId != nil else { return }
+    applyCapturing(value)
+  }
+
+  private func applyCapturing(_ value: Bool) {
     guard #available(iOS 16.0, *), let view = captureView as? RoomCaptureView else {
       if value {
         onCaptureError(["message": "RoomPlan needs iOS 16 or later."])
@@ -64,7 +117,12 @@ public class ExpoRoomPlanView: ExpoView {
       }
       view.captureSession.run(configuration: RoomCaptureSession.Configuration())
     } else {
-      view.captureSession.stop()
+      if #available(iOS 17.0, *) {
+        // Apple requires the same live ARSession for rooms that StructureBuilder merges.
+        view.captureSession.stop(pauseARSession: false)
+      } else {
+        view.captureSession.stop()
+      }
     }
   }
 }
@@ -132,21 +190,71 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
         "doors": processedResult.doors.count,
         "windows": processedResult.windows.count,
         "objects": processedResult.objects.count,
-        "roomPlan": [
-          "schema_version": 2,
-          "room_id": processedResult.identifier.uuidString,
-          "walls": walls,
-          "openings": openings,
-        ],
+        "roomPlan": roomPlanPayload(processedResult, walls: walls, openings: openings),
       ]
       if let error {
         payload["trackingWarning"] =
           "Трекинг на секунду терялся во время съёмки — часть геометрии может быть неполной (\(error.localizedDescription))."
       }
-      onCaptureFinish(payload)
+      if #available(iOS 17.0, *), let sessionId = structureSessionId {
+        let state = RoomPlanStructureRegistry.session(for: sessionId)
+        state.rooms.append(processedResult)
+        guard state.rooms.count >= 2 else {
+          onCaptureFinish(payload)
+          return
+        }
+        let rooms = state.rooms
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          do {
+            let structure = try await StructureBuilder().capturedStructure(from: rooms)
+            let structureDestination = FileManager.default.temporaryDirectory
+              .appendingPathComponent("structure-\(UUID().uuidString).usdz")
+            try structure.export(to: structureDestination)
+            payload["structure"] = [
+              "schema_version": 1,
+              "structure_id": structure.identifier.uuidString,
+              "coordinate_space": "shared_arkit_world",
+              "rooms": structure.rooms.map { self.roomPlanPayload($0) },
+              "usdzPath": structureDestination.path,
+            ]
+          } catch {
+            payload["structureError"] =
+              "RoomPlan не смог объединить комнаты в одном координатном пространстве: \(error.localizedDescription)"
+          }
+          self.onCaptureFinish(payload)
+        }
+      } else {
+        onCaptureFinish(payload)
+      }
     } catch {
       onCaptureError(["message": "USDZ export failed: \(error.localizedDescription)"])
     }
+  }
+
+  private func roomPlanPayload(
+    _ room: CapturedRoom,
+    walls: [[String: Any]]? = nil,
+    openings: [[String: Any]]? = nil
+  ) -> [String: Any] {
+    let roomWalls = walls ?? room.walls.compactMap { roomPlanWall($0) }
+    let roomOpenings = openings
+      ?? (room.doors.compactMap { roomPlanOpening($0, kind: "door") }
+        + room.openings.compactMap { roomPlanOpening($0, kind: "opening") }
+        + room.windows.compactMap { roomPlanOpening($0, kind: "window") })
+    let floorElevations = room.walls
+      .map { Double($0.transform.columns.3.y - $0.dimensions.y / 2) }
+      .sorted()
+    var payload: [String: Any] = [
+      "schema_version": 2,
+      "room_id": room.identifier.uuidString,
+      "walls": roomWalls,
+      "openings": roomOpenings,
+    ]
+    if !floorElevations.isEmpty {
+      payload["floor_elevation_m"] = floorElevations[floorElevations.count / 2]
+    }
+    return payload
   }
 
   /// RoomPlan defines a wall as a transformed 2D surface. Its local X axis and X dimension

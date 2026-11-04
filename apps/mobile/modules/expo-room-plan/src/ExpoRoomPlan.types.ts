@@ -45,8 +45,23 @@ export interface RoomPlanOpeningSurface {
 export interface RoomPlanCapture {
   schema_version: 2;
   room_id: string;
+  /** Median wall-bottom Y in the shared ARKit world; required by multi-room merge. */
+  floor_elevation_m?: number;
   walls: RoomPlanWallSurface[];
   openings: RoomPlanOpeningSurface[];
+}
+
+/** Apple StructureBuilder output from rooms captured in one continuous ARKit world frame. */
+export interface RoomPlanStructureCapture {
+  schema_version: 1;
+  structure_id: string;
+  coordinate_space: "shared_arkit_world";
+  rooms: RoomPlanCapture[];
+}
+
+export interface RoomPlanStructureEvent extends RoomPlanStructureCapture {
+  /** One USDZ containing the complete merged CapturedStructure. */
+  usdzPath: string;
 }
 
 export interface CaptureFinishEvent extends RoomProgress {
@@ -59,6 +74,10 @@ export interface CaptureFinishEvent extends RoomProgress {
   /** Missing only when current JS is running inside an older development build; rebuilding
    * the native app upgrades the bridge. */
   roomPlan?: RoomPlanCapture;
+  /** Present from iOS 17 after at least two compatible rooms have been captured. */
+  structure?: RoomPlanStructureEvent;
+  /** A merge failure does not discard the usable single-room result. */
+  structureError?: string;
   /** Set when ARKit lost tracking mid-session but RoomPlan still reconstructed enough walls
    * to be worth keeping (iOS-side honesty, not a hidden retry) — show it, don't silently drop
    * the capture. Absent on a clean session. */
@@ -70,6 +89,8 @@ export interface CaptureErrorEvent {
 }
 
 export interface RoomCaptureViewProps {
+  /** Stable for every room in one capture flow; a new id starts a fresh ARKit world frame. */
+  structureSessionId: string;
   /** Declarative, not imperative: RoomPlan's session starts when this becomes true and
    * stops (triggering its own post-processing, then `onCaptureFinish`) when it becomes
    * false. There is no `startCapture()`/`stopCapture()` ref method to call instead. */

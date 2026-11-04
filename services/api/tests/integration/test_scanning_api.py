@@ -110,6 +110,33 @@ def run_all(db: Session, storage: S3Storage) -> list[Any]:
     return done
 
 
+def room_plan_v2(room_id: str, x0: float) -> dict[str, Any]:
+    identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    x1 = x0 + 4
+    walls = [
+        ("south", [x0, 0], [x1, 0], 4),
+        ("east", [x1, 0], [x1, 3], 3),
+        ("north", [x1, 3], [x0, 3], 4),
+        ("west", [x0, 3], [x0, 0], 3),
+    ]
+    return {
+        "schema_version": 2,
+        "room_id": room_id,
+        "floor_elevation_m": 0,
+        "walls": [
+            {
+                "identifier": f"{room_id}-{identifier}",
+                "a_m": a,
+                "b_m": b,
+                "height_m": 2.7,
+                "transform_m": identity,
+                "dimensions_m": [width, 2.7, 0.12],
+            }
+            for identifier, a, b, width in walls
+        ],
+    }
+
+
 # --- T-078 resumable upload -------------------------------------------------------------------
 
 
@@ -233,6 +260,61 @@ def test_roomplan_print_ideas_are_measured_buildable_templates(
             bounds[key]["min"] <= value <= bounds[key]["max"]
             for key, value in idea["params"].items()
         )
+
+
+def test_roomplan_structure_keeps_two_rooms_in_one_shared_metric_plan(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    scan = start_scan(
+        api_client,
+        actor,
+        mode="scanner",
+        label="Home · RoomPlan",
+        capabilities={"capture_source": "apple_roomplan_structure", "subject": "home"},
+    )
+    response = api_client.put(
+        f"/api/v1/scans/{scan['id']}/room-plan-structure",
+        json={
+            "structure_id": "apple-structure-1",
+            "coordinate_space": "shared_arkit_world",
+            "rooms": [room_plan_v2("kitchen", 0), room_plan_v2("hall", 4)],
+        },
+        headers=actor.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["room_ids"] == ["kitchen", "hall"]
+    assert result["room_count"] == 2
+    assert len(result["floor_plan"]["rooms"]) == 2
+    assert len(result["floor_plan"]["walls"]) == 8
+    assert min(point[0] for point in result["floor_plan"]["rooms"][1]["outline"]) == 4_000
+
+    stored = db_session.get(ScanSession, uuid.UUID(scan["id"]))
+    assert stored is not None
+    room_plan = stored.capture_stats["room_plan"]
+    assert room_plan["source"] == "apple_roomplan_structure"
+    assert room_plan["coordinate_space"] == "shared_arkit_world"
+    assert room_plan["room_count"] == 2
+    assert room_plan["room_shell"] is None
+
+
+def test_roomplan_structure_requires_server_declared_capture_source(
+    api_client: TestClient, actor: Actor
+) -> None:
+    scan = start_scan(api_client, actor, mode="scanner")
+    response = api_client.put(
+        f"/api/v1/scans/{scan['id']}/room-plan-structure",
+        json={
+            "structure_id": "forged-structure",
+            "coordinate_space": "shared_arkit_world",
+            "rooms": [room_plan_v2("room-a", 0), room_plan_v2("room-b", 4)],
+        },
+        headers=actor.headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_failed"
 
 
 # --- T-079..T-084 finalize, reconstruct, accept ------------------------------------------------

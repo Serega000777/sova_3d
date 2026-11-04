@@ -15,6 +15,7 @@ import {
   type CaptureFinishEvent,
   type InstructionEvent,
   type RoomPlanCapture as NativeRoomPlanCapture,
+  type RoomPlanStructureEvent as NativeRoomPlanStructureEvent,
   type RoomUpdateEvent,
 } from "expo-room-plan";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -210,6 +211,8 @@ interface CapturedRoomEntry {
   doors?: number;
   windows?: number;
   roomPlan: NativeRoomPlanCapture | null;
+  structure: NativeRoomPlanStructureEvent | null;
+  structureError: string | null;
   trackingWarning: string | null;
 }
 
@@ -222,6 +225,9 @@ export default function ScanScreen() {
 
   const camera = useRef<CameraView>(null);
   const tracker = useRef(new ScanTracker());
+  const roomStructureSessionId = useRef(
+    `roomplan-structure-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  ).current;
   const [permission, requestPermission] = useCameraPermissions();
   const [scanId, setScanId] = useState<string | null>(null);
   const [subject, setSubject] = useState<ScanSubject | null>(
@@ -677,6 +683,8 @@ export default function ScanScreen() {
       doors: event.doors,
       windows: event.windows,
       roomPlan: event.roomPlan ?? null,
+      structure: event.structure ?? null,
+      structureError: event.structureError ?? null,
       trackingWarning: event.trackingWarning ?? null,
     };
     setCapturedRooms((prev) => [...prev, entry]);
@@ -720,6 +728,32 @@ export default function ScanScreen() {
     return scan.id;
   }
 
+  /** iOS 17 StructureBuilder has already proved that every room shares one ARKit world
+   * frame. Upload its one merged USDZ and the matching multi-room metric plan as one scan. */
+  async function createAndUploadStructure(structure: NativeRoomPlanStructureEvent): Promise<string> {
+    if (!client || !session) throw new Error("Войдите, чтобы сохранить скан.");
+    const { usdzPath, ...roomPlanStructure } = structure;
+    const scan = await client.createScan({
+      workspace_id: session.workspaceId,
+      project_id: projectId ?? null,
+      mode: "scanner",
+      label: `Дом · RoomPlan (${structure.rooms.length} комнат)`,
+      capabilities: {
+        runtime: capabilities.runtime,
+        depth_scan: true,
+        native_depth_module_available: true,
+        subject: subject ?? "home",
+        stylus: capabilities.stylus,
+        capture_source: "apple_roomplan_structure",
+        room_count: structure.rooms.length,
+      },
+    });
+    await client.setScanRoomPlanStructure(scan.id, roomPlanStructure);
+    await uploadRoomCapture(client, scan.id, session.workspaceId, usdzPath);
+    await client.finalizeScan(scan.id, {});
+    return scan.id;
+  }
+
   function continueScanningRooms() {
     setRoomProgress(null);
     setRoomInstruction(null);
@@ -760,8 +794,24 @@ export default function ScanScreen() {
     setError(null);
     try {
       let lastId: string | null = null;
-      for (const entry of chosen) {
-        lastId = await createAndUploadRoom(entry);
+      const latestStructure = capturedRooms.at(-1)?.structure ?? null;
+      const selectedRoomIds = new Set(
+        chosen
+          .map((entry) => entry.roomPlan?.room_id)
+          .filter((roomId): roomId is string => Boolean(roomId)),
+      );
+      const structureRoomIds = new Set(latestStructure?.rooms.map((room) => room.room_id) ?? []);
+      const completeStructure =
+        latestStructure !== null &&
+        selectedRoomIds.size === chosen.length &&
+        structureRoomIds.size === chosen.length &&
+        [...selectedRoomIds].every((roomId) => structureRoomIds.has(roomId));
+      if (completeStructure && latestStructure) {
+        lastId = await createAndUploadStructure(latestStructure);
+      } else {
+        for (const entry of chosen) {
+          lastId = await createAndUploadRoom(entry);
+        }
       }
       if (projectId) router.replace(`/project/${projectId}`);
       else if (lastId) router.replace(`/scan/${lastId}`);
@@ -861,6 +911,9 @@ export default function ScanScreen() {
               <Text style={[styles.warning, { flex: 1 }]}>{lastRoom.trackingWarning}</Text>
             </View>
           )}
+          {lastRoom.structureError && capturedRooms.length > 1 && (
+            <Text style={styles.warning}>{lastRoom.structureError}</Text>
+          )}
           <Text style={styles.muted}>
             При сохранении метрические стены, двери и окна будут проверены сервером и станут
             редактируемым 2D-планом той же версии проекта.
@@ -891,9 +944,9 @@ export default function ScanScreen() {
         <View style={[styles.card, scanStyles.sectionCard]}>
           <Text style={styles.sectionTitle}>Отснятые комнаты · {capturedRooms.length}</Text>
           <Text style={styles.muted}>
-            Отметьте, какие комнаты сохранить как отдельные сканы, или отсканируйте ещё одну.
-            Объединение в один план дома (T-197) пока не реализовано — каждая комната сохраняется
-            отдельным сканом.
+            Все отмеченные комнаты сохраняются одним зданием, когда RoomPlan подтвердил общий
+            координатный кадр. Если снять выбор с комнаты или native merge недоступен, выбранные
+            комнаты честно сохранятся отдельными сканами.
           </Text>
         </View>
         <View style={[styles.row, { flexWrap: "wrap" }]}>
@@ -967,6 +1020,7 @@ export default function ScanScreen() {
           {RoomCaptureView && (
             <RoomCaptureView
               style={{ flex: 1 }}
+              structureSessionId={roomStructureSessionId}
               capturing={capturingRoom}
               onRoomUpdate={(e) => setRoomProgress(e.nativeEvent)}
               onInstruction={(e: { nativeEvent: InstructionEvent }) =>

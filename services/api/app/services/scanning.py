@@ -18,7 +18,14 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.engineering.floor_plan import FloorPlan
-from app.engineering.room_plan import RoomPlanCapture, RoomPlanConversion, floor_plan_from_room_plan
+from app.engineering.room_plan import (
+    RoomPlanCapture,
+    RoomPlanConversion,
+    RoomPlanStructureCapture,
+    RoomPlanStructureConversion,
+    floor_plan_from_room_plan,
+    floor_plan_from_room_plan_structure,
+)
 from app.engineering.room_shell import room_shell_spec
 from app.models.core import WorkspaceRole
 from app.models.execution import Job, JobStatus
@@ -381,6 +388,56 @@ def set_room_plan(
             "warnings": list(converted.warnings),
             "floor_plan": converted.plan.model_dump(mode="json"),
             "room_shell": shell.to_dict() if shell is not None else None,
+        },
+    }
+    db.flush()
+    return converted
+
+
+def set_room_plan_structure(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    capture: RoomPlanStructureCapture,
+) -> RoomPlanStructureConversion:
+    """Attach one Apple-merged multi-room structure to an open metric scanner session."""
+    session = get_session(db, user_id=user_id, session_id=session_id)
+    require_workspace_role(db, user_id, session.workspace_id, WorkspaceRole.editor)
+    if session.status not in OPEN_STATES:
+        raise ConflictError(
+            "RoomPlan structure geometry must be attached before reconstruction starts",
+            {"status": session.status.value},
+        )
+    if session.mode is not ScanMode.scanner:
+        raise ValidationFailedError("RoomPlan structure geometry requires a metric scanner session")
+    if (session.capabilities or {}).get("capture_source") != "apple_roomplan_structure":
+        raise ValidationFailedError(
+            "RoomPlan structure requires the apple_roomplan_structure capture source"
+        )
+    try:
+        converted = floor_plan_from_room_plan_structure(
+            capture,
+            plan_id=f"scan-{session.id}-roomplan-structure",
+            name=session.label or "RoomPlan structure",
+        )
+    except ValueError as exc:
+        raise ValidationFailedError(str(exc)) from exc
+    session.capture_stats = {
+        **session.capture_stats,
+        "room_plan": {
+            "schema_version": capture.schema_version,
+            "source": "apple_roomplan_structure",
+            "structure_id": capture.structure_id,
+            "coordinate_space": capture.coordinate_space,
+            "room_ids": list(converted.room_ids),
+            "room_count": len(converted.room_ids),
+            "floor_height_mm": converted.floor_height_mm,
+            "warnings": list(converted.warnings),
+            "floor_plan": converted.plan.model_dump(mode="json"),
+            # The existing exact shell builder accepts one loop only. Keep the merged
+            # Apple mesh, but do not mislabel per-room shells as one watertight building.
+            "room_shell": None,
         },
     }
     db.flush()

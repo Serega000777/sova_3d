@@ -180,6 +180,8 @@ export type ScanFrameCreate = Schemas["FrameCreate"];
 export type ScanStatus = Schemas["ScanStatus"];
 export type RoomPlanCapture = Schemas["RoomPlanCapture"];
 export type RoomPlanCaptureResult = Schemas["RoomPlanCaptureResult"];
+export type RoomPlanStructureCapture = Schemas["RoomPlanStructureCapture"];
+export type RoomPlanStructureCaptureResult = Schemas["RoomPlanStructureCaptureResult"];
 export type ScanPrintIdeas = Schemas["ScanPrintIdeasOut"];
 export type VersionComparison = Schemas["VersionComparison"];
 /** Self-learning plan step 1 (docs/SELF_LEARNING_PLAN.md): a project's opt-in to training, off
@@ -1072,6 +1074,15 @@ export class PhysicalAiClient {
     return this.request<RoomPlanCaptureResult>("PUT", `/api/v1/scans/${scanId}/room-plan`, {
       body,
     });
+  }
+
+  /** Attach an Apple StructureBuilder result whose rooms share one ARKit world frame. */
+  setScanRoomPlanStructure(scanId: string, body: RoomPlanStructureCapture) {
+    return this.request<RoomPlanStructureCaptureResult>(
+      "PUT",
+      `/api/v1/scans/${scanId}/room-plan-structure`,
+      { body },
+    );
   }
 
   finalizeScan(

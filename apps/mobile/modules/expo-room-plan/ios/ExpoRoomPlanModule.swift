@@ -20,6 +20,10 @@ public class ExpoRoomPlanModule: Module {
     View(ExpoRoomPlanView.self) {
       Events("onRoomUpdate", "onInstruction", "onCaptureFinish", "onCaptureError")
 
+      Prop("structureSessionId") { (view: ExpoRoomPlanView, sessionId: String) in
+        view.setStructureSessionId(sessionId)
+      }
+
       Prop("capturing") { (view: ExpoRoomPlanView, capturing: Bool) in
         view.setCapturing(capturing)
       }

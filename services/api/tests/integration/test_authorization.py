@@ -22,9 +22,44 @@ from app.models.generation import ThreeDGeneration
 from app.models.marketplace import MarketplaceOrder, OrderStatus
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import AssetKind, AssetRole
-from app.services import developer_tokens, jobs, marketplace, printing, projects, scanning
+from app.services import (
+    developer_tokens,
+    jobs,
+    marketplace,
+    printing,
+    projects,
+    scanning,
+    share_links,
+)
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
+
+
+def room_plan_v2(room_id: str, x0: float) -> dict[str, Any]:
+    identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    x1 = x0 + 4
+    walls = [
+        ("south", [x0, 0], [x1, 0], 4),
+        ("east", [x1, 0], [x1, 3], 3),
+        ("north", [x1, 3], [x0, 3], 4),
+        ("west", [x0, 3], [x0, 0], 3),
+    ]
+    return {
+        "schema_version": 2,
+        "room_id": room_id,
+        "floor_elevation_m": 0,
+        "walls": [
+            {
+                "identifier": f"{room_id}-{identifier}",
+                "a_m": a,
+                "b_m": b,
+                "height_m": 2.7,
+                "transform_m": identity,
+                "dimensions_m": [width, 2.7, 0.12],
+            }
+            for identifier, a, b, width in walls
+        ],
+    }
 
 
 @pytest.fixture
@@ -243,6 +278,18 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         label="private integration",
         expires_in_days=30,
     )
+    project_share_link, _ = share_links.create_share_link(
+        db_session,
+        user_id=actor.user.id,
+        project_id=project.id,
+        expires_in_hours=24,
+    )
+    verification_link, _ = share_links.create_verification_link(
+        db_session,
+        user_id=actor.user.id,
+        version_id=version.id,
+        expires_in_hours=24,
+    )
     return {
         "project": str(project.id),
         "version": str(version.id),
@@ -258,6 +305,8 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         "order": str(order.id),
         "collection": str(collection.id),
         "developer_token": str(developer_token.id),
+        "project_share_link": str(project_share_link.id),
+        "verification_link": str(verification_link.id),
         "workspace": str(actor.workspace.id),
         "member": str(actor.user.id),
         # not a real row's id: a plan is identified by a client-chosen string, not a UUID
@@ -578,6 +627,15 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
                 ],
             },
         ),
+        (
+            "PUT",
+            f"/api/v1/scans/{scan}/room-plan-structure",
+            {
+                "structure_id": "private-structure",
+                "coordinate_space": "shared_arkit_world",
+                "rooms": [room_plan_v2("private-a", 0), room_plan_v2("private-b", 4)],
+            },
+        ),
         ("POST", f"/api/v1/scans/{scan}/finalize", {}),
         ("POST", f"/api/v1/scans/{scan}/accept", {}),
         ("POST", f"/api/v1/scans/{scan}/cancel", None),
@@ -612,6 +670,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/models/{version}/fit-tests", None),
         ("POST", f"/api/v1/fit-tests/{ids['fit_test']}/assembly", {}),
         ("POST", f"/api/v1/models/{version}/paint", {"strokes": []}),
+        (
+            "POST",
+            f"/api/v1/models/{version}/paint/reorder-layers",
+            {"layer_order": ["private"]},
+        ),
         (
             "POST",
             f"/api/v1/models/{version}/fastener-fits",
@@ -715,6 +778,28 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         ("DELETE", f"/api/v1/me/collections/{ids['collection']}", None),
         ("DELETE", f"/api/v1/developer-tokens/{ids['developer_token']}", None),
+        (
+            "POST",
+            f"/api/v1/projects/{project}/share-links",
+            {"expires_in_hours": 24},
+        ),
+        ("GET", f"/api/v1/projects/{project}/share-links", None),
+        (
+            "DELETE",
+            f"/api/v1/projects/{project}/share-links/{ids['project_share_link']}",
+            None,
+        ),
+        (
+            "POST",
+            f"/api/v1/models/{version}/verification-links",
+            {"expires_in_hours": 24},
+        ),
+        ("GET", f"/api/v1/models/{version}/verification-links", None),
+        (
+            "DELETE",
+            f"/api/v1/models/{version}/verification-links/{ids['verification_link']}",
+            None,
+        ),
         ("GET", f"/api/v1/workspaces/{ids['workspace']}/members", None),
         (
             "POST",
@@ -781,6 +866,10 @@ PUBLIC = {
     "DELETE /api/v1/creators/{id}/follow",
     # Content-addressed, add-only visual finish tiles contain no workspace data.
     "GET /api/v1/interior-materials/textures/{sha256}.png",
+    # Capability URLs: the secret token is the credential; both are read-only and
+    # independently covered for expiry, revocation and exact-resource scope.
+    "GET /api/v1/share/{id}",
+    "GET /api/v1/verify/{id}",
 }
 
 
@@ -803,9 +892,13 @@ def test_the_owner_is_not_locked_out_by_the_same_checks(
 
     DELETE goes last: it removes the project the other routes address.
     """
-    # deletions go last, and the project's after the printer profile's
+    # Deletions go last, and deleting the project itself goes after every child resource.
     ordered = sorted(
-        routes(owned), key=lambda route: (route[0] == "DELETE", "projects" in route[1])
+        routes(owned),
+        key=lambda route: (
+            route[0] == "DELETE",
+            route[1] == f"/api/v1/projects/{owned['project']}",
+        ),
     )
     for method, path, body in ordered:
         response = api_client.request(method, path, json=body, headers=actor.headers)
@@ -872,6 +965,17 @@ def test_a_viewer_cannot_change_anything(
     )
     assert room_plan.status_code == 403
     assert room_plan.json()["error"]["code"] == "forbidden"
+    room_plan_structure = api_client.put(
+        f"/api/v1/scans/{owned['scan']}/room-plan-structure",
+        json={
+            "structure_id": "viewer-structure",
+            "coordinate_space": "shared_arkit_world",
+            "rooms": [room_plan_v2("viewer-a", 0), room_plan_v2("viewer-b", 4)],
+        },
+        headers=viewer.headers,
+    )
+    assert room_plan_structure.status_code == 403
+    assert room_plan_structure.json()["error"]["code"] == "forbidden"
 
 
 def test_an_id_from_another_workspace_is_never_accepted_as_input(

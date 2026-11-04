@@ -387,7 +387,7 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
 - Создание: сценарии есть на web/desktop/mobile, но desktop — это та же web-оболочка (отдельной проверки в Tauri не было);
   на mobile нет сценария «План этажа»; сценарий «3D-файл» уже доступен через экран импорта.
 - Библиотека: канонические thumbnail-артефакты и карточки web/mobile реализованы; визуальная приёмка экранов на реальном устройстве/browser ещё не выполнена.
-- Дом из комнат: один принятый RoomPlan-скан уже создаёт метрический серверный `/plan`; объединение нескольких независимых RoomPlan-сессий в один дом без общего координатного кадра и проверка T-196 на LiDAR-iPhone не сделаны.
+- Дом из комнат: iOS 17+ сохраняет один ARKit world frame между RoomPlan-комнатами, Apple StructureBuilder выдаёт общий USDZ, а сервер создаёт один метрический multi-room `/plan`. Остаются multi-floor projection, exact multi-loop shell и проверка Swift/signing/T-196/T-197 на LiDAR-iPhone.
 - RoomPlan-результат: web/mobile показывают ведомость обмеров — площади каждого помещения, пола и плоского потолка, высоту/общий габарит, а также длину, высоту, толщину, валовую и чистую площадь каждой стены. Чистая площадь теперь вычитает только проёмы с измеренной высотой и не уходит ниже нуля; legacy/ручные планы без `height_mm` по-прежнему честно показывают чистую площадь равной валовой, без догадок о типовой высоте. Для текущей 2D-модели `ceiling_area_m2` равна площади пола и не учитывает неплоский/сводчатый потолок. Редактирование геометрии стен после скана остаётся отдельным блоком.
 - Комната без LiDAR: bounded four-wall RGB/COLMAP flow реализован с обязательным пользовательским пролётом и server-owned confidence. Остаются комнаты с произвольным числом стен, semantic openings/floor plan, multi-room alignment и physical camera acceptance; photo-room результат не заявляется как RoomPlan-эквивалент или строительное измерение.
 
@@ -412,7 +412,7 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
   follow-up добавил responsive floating-панели; phone-путь ещё не проверен на физическом
   телефоне, tablet-путь — на реальном планшете или simulator profile. Desktop использует
   web Studio.
-- T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
+- T-237: план из одного принятого RoomPlan-скана и bounded single-floor multi-room StructureBuilder сделаны; план из фото и physical-device multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется
   через live-комнату, имеет фото и двусторонние 2D↔3D-точки, фильтры и PDF/PNG-экспорт.
 - Нужно от владельца: EAS development build и проверка RoomPlan v2/source↔shell на iPhone/iPad с LiDAR; Linux gate не компилирует Swift и не проверяет camera/session/device geometry.

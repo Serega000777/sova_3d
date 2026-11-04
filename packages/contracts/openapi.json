@@ -12132,6 +12132,75 @@
         }
       }
     },
+    "/api/v1/scans/{scan_id}/room-plan-structure": {
+      "put": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "Set Room Plan Structure",
+        "operationId": "set_room_plan_structure_api_v1_scans__scan_id__room_plan_structure_put",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomPlanStructureCapture"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPlanStructureCaptureResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans/{scan_id}/finalize": {
       "post": {
         "tags": [
@@ -32344,6 +32413,19 @@
             "minLength": 1,
             "title": "Room Id"
           },
+          "floor_elevation_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": -100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Elevation M"
+          },
           "walls": {
             "items": {
               "$ref": "#/components/schemas/RoomPlanWallSurface"
@@ -32492,6 +32574,88 @@
           "kind"
         ],
         "title": "RoomPlanOpeningSurface"
+      },
+      "RoomPlanStructureCapture": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "structure_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Structure Id"
+          },
+          "coordinate_space": {
+            "type": "string",
+            "const": "shared_arkit_world",
+            "title": "Coordinate Space"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/RoomPlanCapture"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 2,
+            "title": "Rooms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "structure_id",
+          "coordinate_space",
+          "rooms"
+        ],
+        "title": "RoomPlanStructureCapture",
+        "description": "Several RoomPlan rooms that Apple merged in one continuous ARKit world frame."
+      },
+      "RoomPlanStructureCaptureResult": {
+        "properties": {
+          "floor_plan": {
+            "$ref": "#/components/schemas/FloorPlan"
+          },
+          "floor_height_mm": {
+            "type": "number",
+            "title": "Floor Height Mm"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "structure_id": {
+            "type": "string",
+            "title": "Structure Id"
+          },
+          "room_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Room Ids"
+          },
+          "room_count": {
+            "type": "integer",
+            "title": "Room Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "floor_plan",
+          "floor_height_mm",
+          "warnings",
+          "structure_id",
+          "room_ids",
+          "room_count"
+        ],
+        "title": "RoomPlanStructureCaptureResult"
       },
       "RoomPlanWallSurface": {
         "properties": {

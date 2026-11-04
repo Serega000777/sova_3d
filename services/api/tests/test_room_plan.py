@@ -1,6 +1,13 @@
 import pytest
 
-from app.engineering.room_plan import RoomPlanCapture, floor_plan_from_room_plan
+from app.engineering.room_plan import (
+    RoomPlanCapture,
+    RoomPlanStructureCapture,
+    floor_plan_from_room_plan,
+    floor_plan_from_room_plan_structure,
+)
+
+IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
 
 def capture(**updates: object) -> RoomPlanCapture:
@@ -42,6 +49,34 @@ def capture(**updates: object) -> RoomPlanCapture:
     }
     payload.update(updates)
     return RoomPlanCapture.model_validate(payload)
+
+
+def structure_room(room_id: str, x0: float, x1: float) -> RoomPlanCapture:
+    walls = [
+        ("south", (x0, 0), (x1, 0), x1 - x0),
+        ("east", (x1, 0), (x1, 3), 3),
+        ("north", (x1, 3), (x0, 3), x1 - x0),
+        ("west", (x0, 3), (x0, 0), 3),
+    ]
+    return RoomPlanCapture.model_validate(
+        {
+            "schema_version": 2,
+            "room_id": room_id,
+            "floor_elevation_m": 0,
+            "walls": [
+                {
+                    "identifier": f"{room_id}-{identifier}",
+                    "a_m": a,
+                    "b_m": b,
+                    "height_m": 2.7,
+                    "transform_m": IDENTITY,
+                    "dimensions_m": [width, 2.7, 0.12],
+                }
+                for identifier, a, b, width in walls
+            ],
+            "openings": [],
+        }
+    )
 
 
 def test_roomplan_surfaces_become_a_closed_metric_floor_plan() -> None:
@@ -132,3 +167,49 @@ def test_self_intersecting_roomplan_outline_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="self-intersecting"):
         floor_plan_from_room_plan(crossed, plan_id="crossed", name="Crossed")
+
+
+def test_roomplan_structure_preserves_shared_world_offsets() -> None:
+    structure = RoomPlanStructureCapture.model_validate(
+        {
+            "structure_id": "home-1",
+            "coordinate_space": "shared_arkit_world",
+            "rooms": [structure_room("kitchen", 0, 4), structure_room("hall", 4, 7)],
+        }
+    )
+
+    converted = floor_plan_from_room_plan_structure(structure, plan_id="home-plan", name="Home")
+
+    assert converted.room_ids == ("kitchen", "hall")
+    assert len(converted.plan.rooms) == 2
+    assert len(converted.plan.walls) == 8
+    assert min(point[0] for point in converted.plan.rooms[0].outline) == pytest.approx(0)
+    assert max(point[0] for point in converted.plan.rooms[0].outline) == pytest.approx(4_000)
+    assert min(point[0] for point in converted.plan.rooms[1].outline) == pytest.approx(4_000)
+    assert max(point[0] for point in converted.plan.rooms[1].outline) == pytest.approx(7_000)
+
+
+def test_roomplan_structure_rejects_overlapping_rooms() -> None:
+    structure = RoomPlanStructureCapture.model_validate(
+        {
+            "structure_id": "home-1",
+            "coordinate_space": "shared_arkit_world",
+            "rooms": [structure_room("kitchen", 0, 4), structure_room("hall", 3, 7)],
+        }
+    )
+
+    with pytest.raises(ValueError, match="overlap"):
+        floor_plan_from_room_plan_structure(structure, plan_id="home-plan", name="Home")
+
+
+def test_roomplan_structure_rejects_a_second_floor_in_the_single_level_plan() -> None:
+    upper = structure_room("upper", 4, 7).model_copy(update={"floor_elevation_m": 3.0})
+
+    with pytest.raises(ValueError, match="one floor elevation"):
+        RoomPlanStructureCapture.model_validate(
+            {
+                "structure_id": "home-1",
+                "coordinate_space": "shared_arkit_world",
+                "rooms": [structure_room("ground", 0, 4), upper],
+            }
+        )
