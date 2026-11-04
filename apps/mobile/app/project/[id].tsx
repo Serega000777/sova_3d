@@ -125,6 +125,7 @@ import {
 } from "@/src/manufacturing-estimate";
 import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
 import { FacadeDesignVariantsCard } from "@/src/FacadeDesignVariantsCard";
+import { IntegrityVerificationLinksCard } from "@/src/IntegrityVerificationLinksCard";
 import { shouldProposeFacadeCommand } from "@/src/facade-command";
 import { ExactFilletChamferSheet } from "@/src/ExactFilletChamferSheet";
 import { ExactHoleSheet } from "@/src/ExactHoleSheet";
@@ -5538,6 +5539,14 @@ export default function ProjectScreen() {
           </Text>
         </Pressable>
       </View>
+      {client && session && active && activeModelCheck && canManageShareLinks ? (
+        <IntegrityVerificationLinksCard
+          client={client}
+          versionId={active.id}
+          apiBaseUrl={session.baseUrl}
+          language={language}
+        />
+      ) : null}
       <Pressable
         style={[styles.button, !active && { opacity: 0.5 }]}
         disabled={!active || Boolean(busy)}
@@ -6694,6 +6703,10 @@ export default function ProjectScreen() {
           setModelPassportOpen(false);
           setWorkspaceTab("check");
         }}
+        onOpenVerificationLinks={canManageShareLinks ? () => {
+          setModelPassportOpen(false);
+          setWorkspaceTab("check");
+        } : undefined}
         onShareIntegrityPdf={() => void downloadIntegrityPdf()}
       />
       <FitTestSheet

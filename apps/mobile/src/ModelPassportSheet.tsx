@@ -109,6 +109,7 @@ export function ModelPassportSheet({
   busy,
   onClose,
   onOpenCheck,
+  onOpenVerificationLinks,
   onShareIntegrityPdf,
 }: {
   visible: boolean;
@@ -120,6 +121,7 @@ export function ModelPassportSheet({
   busy: boolean;
   onClose: () => void;
   onOpenCheck: () => void;
+  onOpenVerificationLinks?: () => void;
   onShareIntegrityPdf: () => void;
 }) {
   const ru = language === "ru";
@@ -222,6 +224,11 @@ export function ModelPassportSheet({
               >
                 <Text style={styles.buttonText}>{ru ? "Поделиться PDF проверки" : "Share integrity PDF"}</Text>
               </Pressable>
+              {onOpenVerificationLinks ? (
+                <Pressable accessibilityRole="button" style={styles.button} onPress={onOpenVerificationLinks}>
+                  <Text style={styles.buttonText}>{ru ? "Публичная ссылка проверки" : "Public verification link"}</Text>
+                </Pressable>
+              ) : null}
             </View>
           )}
           <Pressable
