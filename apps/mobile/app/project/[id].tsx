@@ -15,6 +15,7 @@ import type {
   ExactMirrorSpec,
   ExactShellSpec,
   FacadeEdit,
+  FacadeVariant,
   FacadeCommandProposal,
   FitTestReport,
   FloorPlan,
@@ -123,6 +124,7 @@ import {
   verifiedPrintAnalysisJob,
 } from "@/src/manufacturing-estimate";
 import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
+import { FacadeDesignVariantsCard } from "@/src/FacadeDesignVariantsCard";
 import { shouldProposeFacadeCommand } from "@/src/facade-command";
 import { ExactFilletChamferSheet } from "@/src/ExactFilletChamferSheet";
 import { ExactHoleSheet } from "@/src/ExactHoleSheet";
@@ -4823,14 +4825,32 @@ export default function ProjectScreen() {
         <Text style={styles.buttonText}>{ru ? "Паспорт 3D-модели" : "3D model passport"}</Text>
       </Pressable>
       {canEditRoof && (
-        <Pressable
-          accessibilityRole="button"
-          style={[styles.button, styles.buttonPrimary]}
-          disabled={Boolean(busy)}
-          onPress={() => setRoofEditorOpen(true)}
-        >
-          <Text style={styles.buttonText}>{ru ? "Конструктор крыши" : "Roof builder"}</Text>
-        </Pressable>
+        <>
+          <Pressable
+            accessibilityRole="button"
+            style={[styles.button, styles.buttonPrimary]}
+            disabled={Boolean(busy)}
+            onPress={() => setRoofEditorOpen(true)}
+          >
+            <Text style={styles.buttonText}>{ru ? "Конструктор крыши" : "Roof builder"}</Text>
+          </Pressable>
+          {client && project && active && activeFacade?.request ? (
+            <FacadeDesignVariantsCard
+              client={client}
+              projectId={project.id}
+              activeVersionId={active.id}
+              request={activeFacade.request}
+              language={language}
+              onApplied={(version, variant: FacadeVariant, sourceVersionId) => {
+                if (activeIdRef.current === sourceVersionId) setActive(version);
+                void refresh();
+                setNotice(ru
+                  ? `Вариант «${variant.name}» применён к фасаду.`
+                  : `Variant “${variant.name}” was applied to the facade.`);
+              }}
+            />
+          ) : null}
+        </>
       )}
       <View style={[styles.card, { borderColor: liveConnected ? colors.green : colors.yellow }]}>
         <View style={[styles.row, { justifyContent: "space-between" }]}>
