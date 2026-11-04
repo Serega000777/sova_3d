@@ -461,6 +461,13 @@ export default function PlanPage() {
         if (!active) return;
         setFurniture(
           scene.nodes
+            .filter(
+              (node) =>
+                Math.abs(
+                  (node.world_transform[2]?.[3] ?? Number.NaN)
+                  - (activeFloor?.elevation_mm ?? 0),
+                ) <= 1e-6,
+            )
             .map(planFootprintFromNode)
             .filter((item): item is PlanFootprint => item !== null),
         );
@@ -471,7 +478,7 @@ export default function PlanPage() {
     return () => {
       active = false;
     };
-  }, [client, baseVersionId]);
+  }, [client, baseVersionId, activeFloor?.elevation_mm]);
 
   const change = useCallback((next: Annotation[]) => dispatch({ type: "commit", next }), []);
   const selected = annotations.find((a) => a.id === selectedId) ?? null;
@@ -660,7 +667,7 @@ export default function PlanPage() {
         partition_thickness_mm: 120,
         door_width_mm: 900,
         room_requirements: requirements,
-        auto_furnish: typedLayout && autoFurnish && !multiFloor,
+        auto_furnish: typedLayout && autoFurnish,
       });
       const parsed = parseFloorPlan(result.floor_plan);
       if (!parsed) throw new Error("invalid floor plan");
@@ -711,14 +718,6 @@ export default function PlanPage() {
   const placeFurnitureOnPlan = useCallback(
     async (kind: string, at: [number, number]) => {
       if (!client || !projectId || !baseVersionId || furnitureBusy) return;
-      if (multiFloor) {
-        setMessage(
-          ru
-            ? "Размещение мебели на конкретной высоте этажа будет отдельным инкрементом."
-            : "Floor-elevation-aware furniture placement is a separate increment.",
-        );
-        return;
-      }
       const item = furnitureCatalog.find((entry) => entry.kind === kind);
       if (!item) {
         setMessage(ru ? "Неизвестный предмет мебели." : "Unknown furniture item.");
@@ -756,7 +755,7 @@ export default function PlanPage() {
           kind: item.kind,
           x_mm: at[0],
           y_mm: at[1],
-          z_mm: 0,
+          z_mm: activeFloor?.elevation_mm ?? 0,
           rotation_deg: furnitureRotation,
           width_mm: dimensions.width,
           depth_mm: dimensions.depth,
@@ -797,7 +796,7 @@ export default function PlanPage() {
       furnitureKind,
       furnitureRotation,
       furnitureSize,
-      multiFloor,
+      activeFloor?.elevation_mm,
       plan.id,
       projectId,
       ru,
@@ -946,8 +945,7 @@ export default function PlanPage() {
                     <label className="plan-field">
                       <input
                         type="checkbox"
-                        checked={autoFurnish && !multiFloor}
-                        disabled={multiFloor}
+                        checked={autoFurnish}
                         onChange={(event) => setAutoFurnish(event.target.checked)}
                       />
                       {ru ? "Сразу расставить мебель" : "Place furniture automatically"}
@@ -956,8 +954,8 @@ export default function PlanPage() {
                   {multiFloor && (
                     <span className="muted">
                       {ru
-                        ? "Комнаты будут созданы только на выбранном этаже; лестница и остальные этажи сохранятся. Автомеблировка по высоте этажа пока недоступна."
-                        : "Rooms will be created only on the selected floor; the stair and other floors stay unchanged. Floor-elevation-aware auto-furnishing is not available yet."}
+                        ? `Комнаты и автомеблировка относятся только к выбранному этажу (${activeFloor?.elevation_mm.toFixed(0) ?? 0} мм); лестница и остальные этажи сохранятся.`
+                        : `Rooms and auto-furnishing affect only the selected floor (${activeFloor?.elevation_mm.toFixed(0) ?? 0} mm); the stair and other floors stay unchanged.`}
                     </span>
                   )}
                   {roomComposition.map((room, index) => (
@@ -1083,7 +1081,7 @@ export default function PlanPage() {
             underlay={underlay}
             furniture={furniture}
             onFurnitureDrop={placeFurnitureOnPlan}
-            furnitureDropDisabled={!projectId || !baseVersionId || furnitureBusy || multiFloor}
+            furnitureDropDisabled={!projectId || !baseVersionId || furnitureBusy}
             showGrid={showGrid}
             fitRevision={fitRevision}
             language={language}
@@ -1098,26 +1096,22 @@ export default function PlanPage() {
               <span className="chip">2D → 3D</span>
             </div>
             <p className="muted">
-              {multiFloor
+              {projectId && baseVersionId
                 ? ru
-                  ? "Расстановка мебели с высотой конкретного этажа будет отдельным инкрементом."
-                  : "Floor-elevation-aware furniture placement is a separate increment."
-                : projectId && baseVersionId
-                  ? ru
-                    ? "Перетащите предмет на план. Позиция и зазор проверяются сервером."
-                    : "Drag an item onto the plan. Position and clearance are checked by the server."
-                  : ru
-                    ? "Откройте проект с готовым 2D-планом, чтобы расставлять мебель."
-                    : "Open a project with a ready 2D plan to place furniture."}
+                  ? `Перетащите предмет на выбранный этаж (${activeFloor?.elevation_mm.toFixed(0) ?? 0} мм). Позиция и зазор проверяются сервером.`
+                  : `Drag an item onto the selected floor (${activeFloor?.elevation_mm.toFixed(0) ?? 0} mm). Position and clearance are checked by the server.`
+                : ru
+                  ? "Откройте проект с готовым 2D-планом, чтобы расставлять мебель."
+                  : "Open a project with a ready 2D plan to place furniture."}
             </p>
             <div className="plan-furniture-catalogue">
               {furnitureCatalog.map((item) => (
                 <button
                   key={item.kind}
                   type="button"
-                  draggable={!!projectId && !!baseVersionId && !furnitureBusy && !multiFloor}
+                  draggable={!!projectId && !!baseVersionId && !furnitureBusy}
                   className={`plan-furniture-item${furnitureKind === item.kind ? " active" : ""}`}
-                  disabled={!projectId || !baseVersionId || furnitureBusy || multiFloor}
+                  disabled={!projectId || !baseVersionId || furnitureBusy}
                   onClick={() => chooseFurniture(item)}
                   onDragStart={(event) => {
                     if (furnitureKind !== item.kind) chooseFurniture(item);
