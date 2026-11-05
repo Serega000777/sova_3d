@@ -410,19 +410,17 @@ export default function SlicerPage() {
   const refresh = useCallback(async () => {
     if (!client || !session) return;
     try {
-      const [all, profiles, availableMaterials, printerBridge, account] = await Promise.all([
+      const [all, profiles, availableMaterials, printerBridge] = await Promise.all([
         client.listProjects(session.workspaceId),
         client.listPrinterProfiles(session.workspaceId),
         client.listMaterials(),
         client.getPrinterBridge(),
-        client.me(),
       ]);
       const withModel = all.filter((project) => project.head_version_id);
       setProjects(withModel);
       setPrinters(profiles);
       setMaterials(availableMaterials);
       setBridge(printerBridge);
-      setMe(account);
       setBatchPrinterIds((current) => current.length > 0 ? current : profiles.map((profile) => profile.id));
       if (!printerId && profiles[0]) setPrinterId(profiles[0].id);
       if (!projectId && withModel[0]) setProjectId(withModel[0].id);
@@ -444,6 +442,13 @@ export default function SlicerPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!client) return;
+    void client.me()
+      .then((result) => setMe(result))
+      .catch(() => setMe(null));
+  }, [client]);
 
   useEffect(() => {
     if (!client || !session) return;
