@@ -97,6 +97,7 @@ import { ProLockBadge, ProModal, ProOverlay, proLockLabel } from "@/components/P
 import { ProvenanceGraph } from "@/components/ProvenanceGraph";
 import { PublishCard } from "@/components/PublishCard";
 import { PartsCard } from "@/components/PartsCard";
+import { PhysicalComparisonPanel } from "@/components/PhysicalComparisonPanel";
 import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
@@ -553,6 +554,7 @@ type Tool =
   | "repair"
   | "engineer"
   | "fit"
+  | "metrology"
   | "parts"
   | "print"
   | "integrity"
@@ -3847,6 +3849,7 @@ export default function ProjectPage() {
     { id: "repair", label: ru ? "Исправить скан" : "Repair scan", icon: "repair", hint: ru ? "Ещё раз закрыть отверстия и исправить сетку" : "Close holes and repair the mesh again" },
     { id: "engineer", label: ru ? "Инженер" : "Engineer", icon: "engineer", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
     { id: "fit", label: ru ? "Посадка" : "Fit", icon: "fit", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
+    { id: "metrology", label: ru ? "После печати" : "Post-print", icon: "measure", hint: ru ? "Сравнить с принятым метрическим сканом" : "Compare with an accepted metric scan" },
     { id: "parts", label: ru ? "Части" : "Parts", icon: "parts", hint: ru ? "Нарезать на части, другие тела" : "Cut into parts, other bodies" },
     { id: "print", label: ru ? "Печать" : "Print", icon: "print", hint: ru ? "Проверка печати и ориентация" : "Print check and orientation" },
     { id: "integrity", label: ru ? "Проверка модели" : "Model check", icon: "check", hint: ru ? "Целостность обычного GLB для точной версии" : "Ordinary GLB integrity for the exact version" },
@@ -6729,6 +6732,21 @@ export default function ProjectPage() {
           />
 
 
+            )}
+            {tool === "metrology" && (
+              client && session && activeVersion ? (
+                <PhysicalComparisonPanel
+                  client={client}
+                  workspaceId={session.workspaceId}
+                  versionId={activeVersion.id}
+                  designModelUrl={modelUrl}
+                  designModelFormat={modelFormat}
+                  canRun={canEditProject}
+                  language={language}
+                />
+              ) : (
+                <span className="muted">{ru ? "Сначала откройте версию модели." : "Open a model version first."}</span>
+              )
             )}
             {tool === "parts" && (
               <div className="stack">
