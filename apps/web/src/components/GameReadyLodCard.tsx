@@ -3,7 +3,7 @@
 import { GAME_BUDGETS } from "@physical-ai/contracts";
 import { useEffect, useState } from "react";
 
-import { parseLodShares, type VerifiedGameReadyObject, type VerifiedGameLod } from "../lib/game-ready-lod";
+import { parseLodShares, type VerifiedGameReadyObject, type VerifiedGameLod, type VerifiedUvAtlas } from "../lib/game-ready-lod";
 import { ModelViewer, type ViewerScenePart } from "./ModelViewer";
 
 export interface GameReadyLodResult {
@@ -14,6 +14,8 @@ export interface GameReadyLodResult {
   lods: VerifiedGameLod[] | null;
   /** Present only for an explicit-scene export: every effectively-visible object's own LODs. */
   objects: VerifiedGameReadyObject[] | null;
+  /** Present only for a single-object export: one verified UV atlas report per LOD. */
+  uvAtlases: VerifiedUvAtlas[] | null;
 }
 
 interface GameReadyLodCardProps {
@@ -32,10 +34,12 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
   const [lod2Percent, setLod2Percent] = useState("20");
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
   const [previewLodIndex, setPreviewLodIndex] = useState(0);
+  const [previewAppearance, setPreviewAppearance] = useState<"source" | "uv_checker">("source");
 
   useEffect(() => {
     setPreviewNodeId(null);
     setPreviewLodIndex(0);
+    setPreviewAppearance("source");
   }, [result]);
 
   const selectedBudget = GAME_BUDGETS.find((item) => item.triangles === budget) ?? GAME_BUDGETS[1]!;
@@ -54,7 +58,12 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
   const previewLods: VerifiedGameLod[] = previewWholeScene
     ? result?.objects?.[0]?.lods ?? []
     : previewObject?.lods ?? result?.lods ?? [];
+  const previewUvAtlases: VerifiedUvAtlas[] = previewWholeScene
+    ? result?.objects?.[0]?.uvAtlases ?? []
+    : previewObject?.uvAtlases ?? result?.uvAtlases ?? [];
+  const previewAtlas = previewUvAtlases[previewLodIndex] ?? null;
 
+  const debugAppearance = previewAppearance === "uv_checker" ? "uv_checker" as const : null;
   const previewSceneParts: ViewerScenePart[] | undefined = (() => {
     if (!result) return undefined;
     if (previewWholeScene && result.objects) {
@@ -163,7 +172,7 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                   role="radio"
                   aria-checked={previewWholeScene}
                   className={`chip ${previewWholeScene ? "active" : ""}`}
-                  onClick={() => { setPreviewNodeId(null); setPreviewLodIndex(0); }}
+                  onClick={() => { setPreviewNodeId(null); setPreviewLodIndex(0); setPreviewAppearance("source"); }}
                 >
                   {ru ? "Вся сцена" : "Whole scene"}
                 </button>
@@ -174,7 +183,7 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                     role="radio"
                     aria-checked={previewObject?.nodeId === entry.nodeId && !previewWholeScene}
                     className={`chip ${previewObject?.nodeId === entry.nodeId && !previewWholeScene ? "active" : ""}`}
-                    onClick={() => { setPreviewNodeId(entry.nodeId); setPreviewLodIndex(0); }}
+                    onClick={() => { setPreviewNodeId(entry.nodeId); setPreviewLodIndex(0); setPreviewAppearance("source"); }}
                   >
                     {entry.name}
                   </button>
@@ -184,6 +193,9 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                 {result.objects.map((entry) => (
                   <span key={entry.nodeId} className="mono" style={{ fontSize: 12 }}>
                     {entry.name} · {entry.trianglesIn.toLocaleString()} → {entry.lods[0]?.triangles.toLocaleString() ?? "—"} {ru ? "треуг." : "tris"}
+                    {entry.uvAtlases[0]
+                      ? ` · UV ${entry.uvAtlases[0].triangleAreaPct.toFixed(2)}% · ${ru ? "вырожд." : "degen."} ${entry.uvAtlases[0].degenerateTriangles} · ${ru ? "вне атласа" : "oob"} ${entry.uvAtlases[0].outOfBoundsVertices}`
+                      : ""}
                   </span>
                 ))}
               </div>
@@ -194,6 +206,9 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                 <span key={lod.name} className="mono" style={{ fontSize: 12 }}>
                   LOD{index} · {lod.triangles.toLocaleString()} {ru ? "треуг." : "tris"}
                   {index > 0 ? ` · ${ru ? "отклонение ≤" : "deviation ≤"} ${lod.max_deviation_mm.toFixed(3)} ${ru ? "мм" : "mm"}` : ""}
+                  {result.uvAtlases?.[index]
+                    ? ` · UV ${result.uvAtlases[index]!.triangleAreaPct.toFixed(2)}% · ${ru ? "вырожд." : "degen."} ${result.uvAtlases[index]!.degenerateTriangles} · ${ru ? "вне атласа" : "oob"} ${result.uvAtlases[index]!.outOfBoundsVertices}`
+                    : ""}
                 </span>
               ))}
             </div>
@@ -209,12 +224,38 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                     role="radio"
                     aria-checked={previewLodIndex === index}
                     className={`chip ${previewLodIndex === index ? "active" : ""}`}
-                    onClick={() => setPreviewLodIndex(index)}
+                    onClick={() => { setPreviewLodIndex(index); setPreviewAppearance("source"); }}
                   >
                     LOD{index}
                   </button>
                 ))}
               </div>
+              {previewAtlas ? (
+                <span className="mono" style={{ fontSize: 12 }}>
+                  UV LOD{previewLodIndex} · {ru ? "площадь треугольников" : "triangle area"} {previewAtlas.triangleAreaPct.toFixed(2)}%
+                  {` · ${ru ? "вне атласа" : "out of bounds"} ${previewAtlas.outOfBoundsVertices}`}
+                  {` · ${ru ? "вырожденных" : "degenerate"} ${previewAtlas.degenerateTriangles}`}
+                </span>
+              ) : null}
+              {previewUvAtlases.length > 0 ? (
+                <div className="row" role="radiogroup" aria-label={ru ? "Материал или UV-сетка" : "Material or UV checker"}>
+                  {([
+                    { value: "source" as const, label: ru ? "Материал" : "Material" },
+                    { value: "uv_checker" as const, label: ru ? "UV-сетка" : "UV checker" },
+                  ]).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={previewAppearance === option.value}
+                      className={`chip ${previewAppearance === option.value ? "active" : ""}`}
+                      onClick={() => setPreviewAppearance(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {previewReady ? (
                 <div style={{ height: 240 }}>
                   <ModelViewer
@@ -226,11 +267,16 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                     onSelect={() => undefined}
                     showGrid={false}
                     language={language}
+                    debugAppearance={debugAppearance}
                   />
                 </div>
               ) : null}
               <span className="muted" style={{ fontSize: 12 }}>
-                {previewWholeScene
+                {previewAppearance === "uv_checker"
+                  ? (ru
+                      ? "UV-сетка рисуется по координатам выбранного узла из готового GLB. Она помогает увидеть швы и растяжение, но не является оценкой упаковки или редактором развёртки."
+                      : "The checker uses the selected node's UV coordinates from the exported GLB. It helps inspect seams and stretching, but is not a packing score or unwrap editor.")
+                  : previewWholeScene
                   ? (ru
                       ? `Показан LOD${previewLodIndex} каждого проверенного объекта с сохранённым взаимным положением. Это ручное сравнение всей сборки, а не автоматическое переключение по расстоянию движка.`
                       : `LOD${previewLodIndex} is shown for every verified object with relative placement preserved. This is a manual whole-assembly comparison, not an engine's automatic distance switch.`)

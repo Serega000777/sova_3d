@@ -1,6 +1,6 @@
-/** Reference 83: web parity for mobile's game-ready LOD0-LOD2 preparation and preview.
- * Scoped to LOD density only — UV/PBR atlases (84), colliders (86), mechanism animation (87)
- * and the full multi-feature export (88) are separate scenarios and are not validated here. */
+/** Reference 83/84: web parity for mobile's game-ready LOD0-LOD2 preparation/preview and its
+ * per-object UV atlas evidence. Colliders (86), mechanism animation (87) and the full
+ * multi-feature export (88) are separate scenarios and are not validated here. */
 
 export type LodShareInput =
   | { ok: true; ratios: [number, number] }
@@ -62,6 +62,59 @@ export function gameReadyLodsMatchRequest(
   });
 }
 
+export interface VerifiedUvAtlas {
+  lod: string;
+  triangleAreaPct: number;
+  degenerateTriangles: number;
+  outOfBoundsVertices: number;
+}
+
+/** UV evidence must cover the exact verified LOD set, one atlas per LOD matched by name and
+ * index. The summed triangle area is a measured percentage, not an overlap-aware packing or
+ * distortion score, so it is only required to be finite and positive; degenerate/out-of-bounds
+ * counts are non-negative integers. Returns null (fail closed) on any mismatch, or an empty
+ * array when UV was not requested. */
+export function gameReadyUvAtlasesMatchLods(
+  reportValue: unknown,
+  lods: VerifiedGameLod[],
+  uvRequested: boolean,
+): VerifiedUvAtlas[] | null {
+  if (!reportValue || typeof reportValue !== "object") return null;
+  const report = reportValue as { uv?: unknown; uv_atlases?: unknown };
+  if (report.uv !== uvRequested) return null;
+  if (!uvRequested) return [];
+  if (!Array.isArray(report.uv_atlases) || report.uv_atlases.length !== lods.length) return null;
+
+  const verified: VerifiedUvAtlas[] = [];
+  for (let index = 0; index < lods.length; index += 1) {
+    const candidate = report.uv_atlases[index];
+    if (!candidate || typeof candidate !== "object") return null;
+    const atlas = candidate as Partial<{
+      lod: unknown;
+      triangle_area_pct: unknown;
+      degenerate_triangles: unknown;
+      out_of_bounds_vertices: unknown;
+    }>;
+    const lod = lods[index]!;
+    if (
+      atlas.lod !== lod.name
+      || !Number.isFinite(atlas.triangle_area_pct)
+      || (atlas.triangle_area_pct as number) <= 0
+      || !Number.isInteger(atlas.degenerate_triangles)
+      || (atlas.degenerate_triangles as number) < 0
+      || !Number.isInteger(atlas.out_of_bounds_vertices)
+      || (atlas.out_of_bounds_vertices as number) < 0
+    ) return null;
+    verified.push({
+      lod: atlas.lod as string,
+      triangleAreaPct: atlas.triangle_area_pct as number,
+      degenerateTriangles: atlas.degenerate_triangles as number,
+      outOfBoundsVertices: atlas.out_of_bounds_vertices as number,
+    });
+  }
+  return verified;
+}
+
 /** A single-object export is trustworthy only when the envelope proves the requested pivot
  * and exact file size, and LOD0 is itself drawn from the same measured source triangle count. */
 export function gameReadyEnvelopeMatchesRequest(
@@ -99,18 +152,20 @@ export interface VerifiedGameReadyObject {
   engineName: string;
   trianglesIn: number;
   lods: VerifiedGameLod[];
+  uvAtlases: VerifiedUvAtlas[];
 }
 
-/** A scene's aggregate LOD report is trustworthy only when every visible object's own LOD set
- * independently passes the same per-object checks a single-object export must pass, every
- * object id in the report is unique, and the summed source triangles match the reported total —
- * so one object's evidence cannot be silently dropped or substituted. */
+/** A scene's aggregate LOD report is trustworthy only when every visible object's own LOD and
+ * UV atlas evidence independently passes the same per-object checks a single-object export
+ * must pass, every object id in the report is unique, and the summed source triangles match
+ * the reported total — so one object's evidence cannot be silently dropped or substituted. */
 export function gameReadySceneReportMatchesRequest(
   reportValue: unknown,
   byteSize: unknown,
   requestedPivot: "base" | "centre" | "keep",
   maxTriangles: number,
   requestedLighterLevels: number,
+  uvRequested: boolean,
 ): VerifiedGameReadyObject[] | null {
   if (!reportValue || typeof reportValue !== "object") return null;
   const report = reportValue as {
@@ -151,13 +206,17 @@ export function gameReadySceneReportMatchesRequest(
     if (!Number.isInteger(objectReport!.triangles_in) || (objectReport!.triangles_in as number) <= 0) {
       return null;
     }
+    const objectLods = objectReport!.lods as VerifiedGameLod[];
+    const uvAtlases = gameReadyUvAtlasesMatchLods(entry.report, objectLods, uvRequested);
+    if (!uvAtlases) return null;
     triangleSum += objectReport!.triangles_in as number;
     verified.push({
       nodeId: entry.node_id,
       name: entry.source_name,
       engineName: entry.name,
       trianglesIn: objectReport!.triangles_in as number,
-      lods: objectReport!.lods as VerifiedGameLod[],
+      lods: objectLods,
+      uvAtlases,
     });
   }
   if (triangleSum !== report.triangles_in) return null;

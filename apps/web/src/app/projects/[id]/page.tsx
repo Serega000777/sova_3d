@@ -155,6 +155,7 @@ import {
   gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
   gameReadySceneReportMatchesRequest,
+  gameReadyUvAtlasesMatchLods,
   type VerifiedGameLod,
 } from "@/lib/game-ready-lod";
 import { useSession } from "@/lib/session";
@@ -4418,9 +4419,9 @@ export default function ProjectPage() {
     }
   }
 
-  /** Reference 83: web parity for mobile's game-ready LOD0-LOD2 preparation. Scoped to LOD
-   *  density only; UV/PBR (84), colliders (86) and mechanism animation (87) stay out of this
-   *  request so the aggregate report only has to prove LOD evidence. */
+  /** Reference 83/84: web parity for mobile's game-ready LOD0-LOD2 preparation and its UV
+   *  atlas evidence. Colliders (86) and mechanism animation (87) stay out of this request so
+   *  the aggregate report only has to prove LOD and UV evidence. */
   async function runGameReadyLod(options: { maxTriangles: number; lodRatios: [number, number] }) {
     if (!client || !activeVersion) return;
     const versionId = activeVersion.id;
@@ -4437,7 +4438,7 @@ export default function ProjectPage() {
           max_triangles: options.maxTriangles,
           collider: "none",
           lod_ratios: options.lodRatios,
-          uv: false,
+          uv: true,
           pivot: "base",
         },
       });
@@ -4460,6 +4461,7 @@ export default function ProjectPage() {
       }
       let objects: ReturnType<typeof gameReadySceneReportMatchesRequest> = null;
       let lods: VerifiedGameLod[] | null = null;
+      let uvAtlases: ReturnType<typeof gameReadyUvAtlasesMatchLods> = null;
       if (hasExplicitScene) {
         objects = gameReadySceneReportMatchesRequest(
           result.report,
@@ -4467,6 +4469,7 @@ export default function ProjectPage() {
           "base",
           options.maxTriangles,
           options.lodRatios.length,
+          true,
         );
         if (!objects) {
           throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
@@ -4480,6 +4483,10 @@ export default function ProjectPage() {
           throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
         }
         lods = reportLods as VerifiedGameLod[];
+        uvAtlases = gameReadyUvAtlasesMatchLods(result.report, lods, true);
+        if (!uvAtlases) {
+          throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
+        }
       }
       const download = await client.download(result.asset_id);
       if (activeVersionIdRef.current !== versionId || gameReadyLodRevision.current !== revision) return;
@@ -4489,6 +4496,7 @@ export default function ProjectPage() {
         maxTriangles: options.maxTriangles,
         lods: objects ? null : lods,
         objects,
+        uvAtlases: objects ? null : uvAtlases,
       });
       setNotice(ru ? "LOD0–LOD2 готовы к скачиванию." : "LOD0-LOD2 are ready to download.");
     } catch (reason) {

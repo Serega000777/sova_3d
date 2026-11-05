@@ -213,6 +213,13 @@ export interface ModelViewerProps {
    * measurement click that misses.
    */
   onViewportDrop?: (payload: string, point: [number, number, number]) => void;
+  /**
+   * Reference 84: render every body with a 16×16 UV-space checker instead of its normal
+   * material, to inspect the loaded node's own stored UV coordinates. Purely a render-time
+   * material swap (mirrors mobile's `uv_checker` appearance) — it does not reload geometry
+   * or affect the normal textured/painted preview's `appearance`/`texture`.
+   */
+  debugAppearance?: "uv_checker" | null;
 }
 
 function ReferencePlane({ image, position }: {
@@ -296,6 +303,26 @@ const HINTS: Record<PointerKind, string> = {
 const LONG_PRESS_MS = 480;
 const LONG_PRESS_SLOP_PX = 12; // past this, a held finger is orbiting, not holding still
 
+/** Reference 84: a 16×16 checker over the mesh's own UV coordinates, shared with mobile's
+ * `uv_checker` appearance so both clients render the same seam/stretch debug view. */
+const UV_CHECKER_VERTEX_SHADER = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const UV_CHECKER_FRAGMENT_SHADER = `
+  varying vec2 vUv;
+  void main() {
+    vec2 cell = floor(vUv * 16.0);
+    float checker = mod(cell.x + cell.y, 2.0);
+    vec3 dark = vec3(0.09, 0.11, 0.15);
+    vec3 light = vec3(0.93, 0.48, 0.16);
+    gl_FragColor = vec4(mix(dark, light, checker), 1.0);
+  }
+`;
+
 function Body({
   body,
   selected,
@@ -308,6 +335,7 @@ function Body({
   onMeasurePoint,
   onSurfaceClick,
   onHover,
+  debugAppearance,
 }: {
   body: ViewerBody;
   selected: boolean;
@@ -316,6 +344,7 @@ function Body({
   displayMode: "solid" | "solidwire" | "wire" | "xray";
   centre: THREE.Vector3;
   componentPick?: (faceIndex: number, point: [number, number, number], event: MouseEvent) => void;
+  debugAppearance?: "uv_checker" | null;
   measurementMode: boolean;
   onMeasurePoint?: (point: [number, number, number]) => void;
   onSurfaceClick?: (clientX: number, clientY: number) => void;
@@ -404,23 +433,31 @@ function Body({
         onQuickEdit?.(body.id, e.nativeEvent.clientX, e.nativeEvent.clientY);
       }}
     >
-      <meshStandardMaterial
-        color={color}
-        emissive={selected ? "#31558a" : hovered ? "#1c2f4a" : "#000000"}
-        emissiveIntensity={selected || hovered ? 0.45 : 0}
-        map={body.texture ?? null}
-        vertexColors={!body.appearance && body.coloured}
-        metalness={body.appearance ? 0 : 0.05}
-        roughness={body.appearance?.roughness ?? 0.6}
-        wireframe={displayMode === "wire"}
-        transparent={displayMode === "xray"}
-        opacity={displayMode === "xray" ? 0.34 : 1}
-        depthWrite={displayMode !== "xray"}
-        // the edge overlay is drawn over the surface; keep it from z-fighting with it
-        polygonOffset={displayMode === "solidwire"}
-        polygonOffsetFactor={1}
-        polygonOffsetUnits={1}
-      />
+      {debugAppearance === "uv_checker" ? (
+        <shaderMaterial
+          vertexShader={UV_CHECKER_VERTEX_SHADER}
+          fragmentShader={UV_CHECKER_FRAGMENT_SHADER}
+          side={THREE.DoubleSide}
+        />
+      ) : (
+        <meshStandardMaterial
+          color={color}
+          emissive={selected ? "#31558a" : hovered ? "#1c2f4a" : "#000000"}
+          emissiveIntensity={selected || hovered ? 0.45 : 0}
+          map={body.texture ?? null}
+          vertexColors={!body.appearance && body.coloured}
+          metalness={body.appearance ? 0 : 0.05}
+          roughness={body.appearance?.roughness ?? 0.6}
+          wireframe={displayMode === "wire"}
+          transparent={displayMode === "xray"}
+          opacity={displayMode === "xray" ? 0.34 : 1}
+          depthWrite={displayMode !== "xray"}
+          // the edge overlay is drawn over the surface; keep it from z-fighting with it
+          polygonOffset={displayMode === "solidwire"}
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+        />
+      )}
     </mesh>
   );
 }
@@ -587,6 +624,7 @@ export function ModelViewer({
   onHoverPoint,
   markers = [],
   onViewportDrop,
+  debugAppearance = null,
 }: ModelViewerProps) {
   const [bodies, setBodies] = useState<ViewerBody[]>([]);
   const picker = useRef<RegionPicker | null>(null);
@@ -980,6 +1018,7 @@ export function ModelViewer({
               onMeasurePoint={(point) => onMeasurePoint?.(grid ? snapPoint(point, grid) : point)}
               onSurfaceClick={onViewportPick ? handleSurfaceClick : undefined}
               onHover={onHoverPoint}
+              debugAppearance={debugAppearance}
             />
           ))}
           {markers.map((marker) => (
