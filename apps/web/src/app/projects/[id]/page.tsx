@@ -149,6 +149,7 @@ import {
   type SceneMechanism,
 } from "@/lib/mechanism";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
+import { interiorMaterialResultMatches } from "@/lib/interior-material";
 import { useSession } from "@/lib/session";
 import { DEFAULT_SITE_PLAN, sitePlanFromProvenance } from "@/lib/site-plan";
 import {
@@ -2162,14 +2163,39 @@ export default function ProjectPage() {
 
   async function applyInteriorMaterial(materialId: string | null) {
     if (!client || !activeVersionId || selected.length !== 1) return;
+    const sourceVersionId = activeVersionId;
+    const sceneNodeId = selected[0]!;
+    const material = materialId === null
+      ? null
+      : interiorMaterials.find((item) => item.id === materialId) ?? null;
+    if (materialId !== null && material === null) {
+      setError(ru ? "Материал отсутствует в текущем каталоге." : "The material is absent from the current catalogue.");
+      return;
+    }
     setSceneSaving(true);
     setError(null);
     try {
-      const made = await client.assignInteriorMaterial(activeVersionId, {
-        scene_node_id: selected[0]!,
+      const made = await client.assignInteriorMaterial(sourceVersionId, {
+        scene_node_id: sceneNodeId,
         catalog_material_id: materialId,
         label: ru ? "Материал интерьера" : "Interior material",
       });
+      if (!interiorMaterialResultMatches(made, sourceVersionId, sceneNodeId, material)) {
+        throw new Error(
+          ru
+            ? "Сервер вернул материал, не связанный с выбранным объектом и версией."
+            : "The server returned a material not bound to the selected object and version.",
+        );
+      }
+      if (activeVersionId !== sourceVersionId || selected.length !== 1 || selected[0] !== sceneNodeId) {
+        setNotice(
+          ru
+            ? "Материал сохранён в новой версии, но выбор изменился — обновите сцену, чтобы увидеть его."
+            : "Material saved in a new version, but the selection changed — refresh the scene to see it.",
+        );
+        await refresh();
+        return;
+      }
       setSceneGraph(made);
       setActiveVersion(await client.getVersion(made.version_id));
       await refresh();
@@ -4695,6 +4721,9 @@ export default function ProjectPage() {
     height: facadeCropSize,
   };
   const sceneBodies = sceneProvenance.bodies ?? [];
+  const selectedInteriorAppearance = selected.length === 1
+    ? sceneGraph?.nodes.find((node) => node.id === selected[0])?.appearance ?? null
+    : null;
   const floorGroups = (sceneGraph?.nodes ?? [])
     .map((node) => ({ node, match: /^floor_(\d+)_group$/.exec(node.id) }))
     .filter((item): item is { node: SceneGraph["nodes"][number]; match: RegExpExecArray } => item.match !== null)
@@ -6957,6 +6986,25 @@ export default function ProjectPage() {
                       <span className="muted">
                         {ru ? "Материал применяется ко всему выбранному объекту." : "The material applies to the whole selected object."}
                       </span>
+                      {selectedInteriorAppearance && (
+                        <div className="interior-material-evidence" aria-label={ru ? "Параметры применённого материала" : "Applied material parameters"}>
+                          <div className="row">
+                            <strong>{ru ? selectedInteriorAppearance.name_ru : selectedInteriorAppearance.name}</strong>
+                            <span className="chip status-green">{ru ? "Применён" : "Applied"}</span>
+                          </div>
+                          <span className="mono muted">
+                            {ru ? "Цвет" : "Base colour"} {selectedInteriorAppearance.base_color}
+                            {` · ${ru ? "шероховатость" : "roughness"} ${Math.round(selectedInteriorAppearance.roughness * 100)}%`}
+                            {` · ${ru ? "глянец" : "gloss"} ${selectedInteriorAppearance.gloss_pct}%`}
+                          </span>
+                          <span className="mono muted">
+                            {selectedInteriorAppearance.texture_sha256
+                              ? `${ru ? "Карта цвета" : "Colour map"} · ${selectedInteriorAppearance.texture_tile_size_mm ?? "—"} ${ru ? "мм/тайл" : "mm/tile"}`
+                              : ru ? "Однотонный цвет · без карты" : "Solid colour · no map"}
+                            {` · ${ru ? "металличность" : "metalness"} ${Math.round(selectedInteriorAppearance.metallic * 100)}%`}
+                          </span>
+                        </div>
+                      )}
                       <div className="row material-tabs">
                         {(["wall", "floor", "furniture", "tile"] as const).map((tab) => (
                           <button key={tab} type="button" className={`chip ${interiorMaterialTab === tab ? "selected" : ""}`} onClick={() => setInteriorMaterialTab(tab)}>

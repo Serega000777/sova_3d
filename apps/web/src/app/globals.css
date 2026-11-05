@@ -1661,6 +1661,15 @@ summary {
   opacity: 0.5;
 }
 
+.interior-material-evidence {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
 .material-swatch {
   display: block;
   width: 100%;
