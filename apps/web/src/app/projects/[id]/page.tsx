@@ -26,6 +26,7 @@ import type {
   ListingBody,
   MarketplaceFacets,
   Material,
+  ManufacturingEstimate,
   Me,
   MeshModifierStack,
   ModelComment,
@@ -96,6 +97,7 @@ import { FastenerPanel } from "@/components/FastenerPanel";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { ManufacturingEstimateCard } from "@/components/ManufacturingEstimateCard";
 import { ProLockBadge, ProModal, ProOverlay, proLockLabel } from "@/components/ProLock";
 import { ProvenanceGraph } from "@/components/ProvenanceGraph";
 import { PublishCard } from "@/components/PublishCard";
@@ -118,6 +120,10 @@ import { VersionImageComparison } from "@/components/VersionImageComparison";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
+import {
+  analysisMatchesManufacturingContext,
+  restoredManufacturingEstimate,
+} from "@/lib/manufacturing-estimate";
 import {
   hingedLidTransform,
   mechanismAssemblyGuide,
@@ -770,6 +776,11 @@ export default function ProjectPage() {
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
+  const [manufacturingEstimate, setManufacturingEstimate] = useState<ManufacturingEstimate | null>(null);
+  const [manufacturingEstimateLoading, setManufacturingEstimateLoading] = useState(false);
+  const [manufacturingEstimateSaving, setManufacturingEstimateSaving] = useState(false);
+  const manufacturingEstimateRevision = useRef(0);
+  const manufacturingEstimateContextRef = useRef("");
   const [engineeringHistory, setEngineeringHistory] = useState<EngineeringReport[]>([]);
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
@@ -1605,7 +1616,64 @@ export default function ProjectPage() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeVersionId = activeVersion?.id ?? null;
+  const estimateAnalysis = analysisMatchesManufacturingContext(
+    analysis,
+    activeVersionId,
+    printProfileId,
+    printMaterialId,
+  ) ? analysis : null;
+  const manufacturingEstimateContext = [
+    activeVersionId ?? "",
+    printProfileId,
+    printMaterialId,
+    estimateAnalysis?.id ?? "",
+  ].join("|");
+  manufacturingEstimateContextRef.current = manufacturingEstimateContext;
   useEffect(() => setCommandProposal(null), [activeVersionId]);
+  useEffect(() => {
+    const revision = manufacturingEstimateRevision.current + 1;
+    manufacturingEstimateRevision.current = revision;
+    const context = manufacturingEstimateContext;
+    setManufacturingEstimate(null);
+    setManufacturingEstimateLoading(Boolean(client && estimateAnalysis && activeVersionId));
+    setManufacturingEstimateSaving(false);
+    if (!client || !estimateAnalysis || !activeVersionId) return;
+    let cancelled = false;
+    void client
+      .listManufacturingEstimates(estimateAnalysis.id)
+      .then((rows) => {
+        if (
+          cancelled
+          || manufacturingEstimateRevision.current !== revision
+          || manufacturingEstimateContextRef.current !== context
+        ) return;
+        const restored = rows.find((row) => restoredManufacturingEstimate(
+          row,
+          estimateAnalysis,
+          activeVersionId,
+          printProfileId,
+          printMaterialId,
+        ));
+        setManufacturingEstimate(restored ?? null);
+      })
+      .catch(() => {
+        if (
+          !cancelled
+          && manufacturingEstimateRevision.current === revision
+          && manufacturingEstimateContextRef.current === context
+        ) setManufacturingEstimate(null);
+      })
+      .finally(() => {
+        if (
+          !cancelled
+          && manufacturingEstimateRevision.current === revision
+          && manufacturingEstimateContextRef.current === context
+        ) setManufacturingEstimateLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, estimateAnalysis, activeVersionId, printProfileId, printMaterialId, manufacturingEstimateContext]);
   useEffect(() => {
     setEngineeringHistory([]);
     if (!client || !activeVersionId) return;
@@ -2714,6 +2782,7 @@ export default function ProjectPage() {
   async function analyze() {
     if (!client || !activeVersion) return;
     setError(null);
+    setAnalysis(null);
     const accepted = await client.analyzePrint(activeVersion.id, {
       printer_profile_id: printProfileId || null,
       material_id: printMaterialId || null,
@@ -2721,6 +2790,54 @@ export default function ProjectPage() {
     const job = await trackJob(ru ? "Проверяем пригодность к печати" : "Checking printability", accepted.job_id);
     if (job.status === "failed") setError((job.error as { message?: string })?.message ?? "failed");
     setAnalysis((await client.listPrintAnalyses(activeVersion.id))[0] ?? null);
+  }
+
+  async function createManufacturingEstimate(input: Schemas["ManufacturingEstimateBody"]) {
+    if (!client || !activeVersionId || !estimateAnalysis || !canEditProject) return;
+    const revision = manufacturingEstimateRevision.current;
+    const context = manufacturingEstimateContext;
+    const sourceAnalysis = estimateAnalysis;
+    setError(null);
+    setManufacturingEstimateSaving(true);
+    try {
+      const saved = await client.createManufacturingEstimate(sourceAnalysis.id, input);
+      if (
+        manufacturingEstimateRevision.current !== revision
+        || manufacturingEstimateContextRef.current !== context
+      ) return;
+      if (!restoredManufacturingEstimate(
+        saved,
+        sourceAnalysis,
+        activeVersionId,
+        printProfileId,
+        printMaterialId,
+      )) {
+        throw new Error(
+          ru
+            ? "Сервер вернул смету, не совпадающую с выбранным анализом."
+            : "The saved estimate does not match the selected analysis.",
+        );
+      }
+      setManufacturingEstimate(saved);
+      setNotice(
+        ru
+          ? "Смета сохранена для этой версии, профиля и материала."
+          : "Estimate saved for this version, printer profile, and material.",
+      );
+    } catch (reason) {
+      if (
+        manufacturingEstimateRevision.current === revision
+        && manufacturingEstimateContextRef.current === context
+      ) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+      throw reason;
+    } finally {
+      if (
+        manufacturingEstimateRevision.current === revision
+        && manufacturingEstimateContextRef.current === context
+      ) setManufacturingEstimateSaving(false);
+    }
   }
 
   async function repairScan(
@@ -6929,6 +7046,23 @@ export default function ProjectPage() {
                     {report.metrics.mass_g != null && `${report.metrics.mass_g.toFixed(0)} g`}
                     {report.metrics.print_time_min != null && ` · ~${Math.round(report.metrics.print_time_min)} min`}
                     {report.metrics.total_cost != null && ` · ${report.metrics.total_cost.toFixed(2)} ${report.metrics.currency ?? ""}`}
+                  </div>
+                )}
+                {estimateAnalysis ? (
+                  <ManufacturingEstimateCard
+                    analysis={estimateAnalysis}
+                    savedEstimate={manufacturingEstimate}
+                    loading={manufacturingEstimateLoading}
+                    saving={manufacturingEstimateSaving}
+                    canCreate={canEditProject}
+                    language={language}
+                    onCreate={createManufacturingEstimate}
+                  />
+                ) : (
+                  <div className="muted">
+                    {analysis
+                      ? (ru ? "Для выбранных профиля и материала запустите новую проверку." : "Run a new check for the selected profile and material.")
+                      : (ru ? "Проверка ещё не запускалась." : "The check has not run yet.")}
                   </div>
                 )}
                 {report.recommended && (
