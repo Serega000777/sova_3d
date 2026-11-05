@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { PrintDoctorPanel } from "@/components/PrintDoctorPanel";
 import {
   buildMaterialSlotsUpdate,
   buildPrinterProfileCreatePayload,
@@ -593,6 +594,15 @@ export default function PrintersPage() {
             disabled={busy === profile.id}
             onSave={(readings) => saveReadings(profile, readings)}
           />
+          {client && (
+            <PrintDoctorPanel
+              client={client}
+              workspaceId={session.workspaceId}
+              profile={profile}
+              materials={materials}
+              onApplied={refresh}
+            />
+          )}
           <RaftDensityForm
             profile={profile}
             materials={materials}
