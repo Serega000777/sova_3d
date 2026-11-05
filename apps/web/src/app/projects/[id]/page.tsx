@@ -90,6 +90,7 @@ import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useM
 import { EngineerCard } from "@/components/EngineerCard";
 import { ExactCadPanel, type ExactCadOperation } from "@/components/ExactCadPanel";
 import { FeedbackButtons } from "@/components/FeedbackButtons";
+import { FastenerPanel } from "@/components/FastenerPanel";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -554,6 +555,7 @@ type Tool =
   | "repair"
   | "engineer"
   | "fit"
+  | "fastener"
   | "metrology"
   | "parts"
   | "print"
@@ -3849,6 +3851,7 @@ export default function ProjectPage() {
     { id: "repair", label: ru ? "Исправить скан" : "Repair scan", icon: "repair", hint: ru ? "Ещё раз закрыть отверстия и исправить сетку" : "Close holes and repair the mesh again" },
     { id: "engineer", label: ru ? "Инженер" : "Engineer", icon: "engineer", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
     { id: "fit", label: ru ? "Посадка" : "Fit", icon: "fit", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
+    { id: "fastener", label: ru ? "Крепёж" : "Fastener", icon: "fit", hint: ru ? "Построить точный крепёж и проверить в CAD-отверстии" : "Build an exact fastener and check one CAD hole" },
     { id: "metrology", label: ru ? "После печати" : "Post-print", icon: "measure", hint: ru ? "Сравнить с принятым метрическим сканом" : "Compare with an accepted metric scan" },
     { id: "parts", label: ru ? "Части" : "Parts", icon: "parts", hint: ru ? "Нарезать на части, другие тела" : "Cut into parts, other bodies" },
     { id: "print", label: ru ? "Печать" : "Print", icon: "print", hint: ru ? "Проверка печати и ориентация" : "Print check and orientation" },
@@ -6743,6 +6746,27 @@ export default function ProjectPage() {
                   designModelFormat={modelFormat}
                   canRun={canEditProject}
                   language={language}
+                />
+              ) : (
+                <span className="muted">{ru ? "Сначала откройте версию модели." : "Open a model version first."}</span>
+              )
+            )}
+            {tool === "fastener" && (
+              client && project && activeVersion ? (
+                <FastenerPanel
+                  client={client}
+                  workspaceId={project.workspace_id}
+                  versionId={activeVersion.id}
+                  canRun={canEditProject}
+                  language={language}
+                  onCreatedAssembly={async (scene) => {
+                    setSceneGraph(scene);
+                    setActiveVersion(await client.getVersion(scene.version_id));
+                    await refresh();
+                    setNotice(ru
+                      ? "Измеренный крепёж сохранён отдельным узлом новой неизменяемой сборки."
+                      : "The measured fastener was saved as its own node in a new immutable assembly.");
+                  }}
                 />
               ) : (
                 <span className="muted">{ru ? "Сначала откройте версию модели." : "Open a model version first."}</span>
