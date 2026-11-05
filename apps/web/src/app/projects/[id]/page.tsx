@@ -110,6 +110,7 @@ import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
 import { IntegrityCheckPanel } from "@/components/IntegrityCheckPanel";
+import { VerificationLinksCard } from "@/components/VerificationLinksCard";
 import type { ComponentSelectionInfo, ViewerScenePart } from "@/components/ModelViewer";
 import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
 import { MeshModifierStackPanel } from "@/components/MeshModifierStackPanel";
@@ -919,6 +920,7 @@ export default function ProjectPage() {
   const [createdShareLink, setCreatedShareLink] = useState<{ id: string; url: string } | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
   const [verificationLinks, setVerificationLinks] = useState<Schemas["VerificationLinkOut"][]>([]);
+  const verificationLinkRevision = useRef(0);
   const [verifyExpiresHours, setVerifyExpiresHours] = useState(24 * 30);
   const [createdVerificationLink, setCreatedVerificationLink] = useState<{ id: string; url: string } | null>(null);
   const [verifyBusy, setVerifyBusy] = useState(false);
@@ -1090,16 +1092,6 @@ export default function ProjectPage() {
     void loadShareLinks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, project?.id]);
-
-  useEffect(() => {
-    setCreatedVerificationLink(null);
-    if (!client || !activeVersion) {
-      setVerificationLinks([]);
-      return;
-    }
-    void loadVerificationLinks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, activeVersion?.id]);
 
   useEffect(() => {
     let active = true;
@@ -1496,6 +1488,20 @@ export default function ProjectPage() {
     me?.workspaces.find((w) => w.id === project?.workspace_id)?.role === "owner";
   const projectRole = me?.workspaces.find((w) => w.id === project?.workspace_id)?.role;
   const canEditProject = projectRole === "owner" || projectRole === "admin" || projectRole === "editor";
+
+  useEffect(() => {
+    const request = ++verificationLinkRevision.current;
+    setCreatedVerificationLink(null);
+    setVerificationLinks([]);
+    setVerifyBusy(false);
+    if (!client || !activeVersion || !isProjectOwner) return;
+    void loadVerificationLinks(activeVersion.id, request);
+    return () => {
+      verificationLinkRevision.current += 1;
+    };
+    // The loader is deliberately revision-bound to this exact immutable version.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, activeVersion?.id, isProjectOwner]);
 
   useEffect(() => {
     if (tool !== "transfer" || !client || !activeVersion || !isProjectOwner) return;
@@ -4189,47 +4195,54 @@ export default function ProjectPage() {
 
   /** References 90/97: a revocable, expiring public link to this version's latest already-
    *  persisted integrity report — the same facts the authenticated PDF carries, no signature. */
-  async function loadVerificationLinks() {
-    if (!client || !activeVersion) return;
+  async function loadVerificationLinks(versionId: string, request = verificationLinkRevision.current) {
+    if (!client) return;
     try {
-      setVerificationLinks(await client.listVerificationLinks(activeVersion.id));
+      const links = await client.listVerificationLinks(versionId);
+      if (verificationLinkRevision.current === request) setVerificationLinks(links);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (verificationLinkRevision.current === request) setError(err instanceof Error ? err.message : String(err));
     }
   }
 
   async function createVerificationLink() {
     if (!client || !activeVersion || verifyBusy) return;
+    const versionId = activeVersion.id;
+    const request = verificationLinkRevision.current;
     setVerifyBusy(true);
     setError(null);
     try {
-      const created = await client.createVerificationLink(activeVersion.id, {
+      const created = await client.createVerificationLink(versionId, {
         expires_in_hours: verifyExpiresHours,
       });
+      if (verificationLinkRevision.current !== request) return;
       setCreatedVerificationLink({
         id: created.id,
         url: `${window.location.origin}/verify/${created.token}`,
       });
-      await loadVerificationLinks();
+      await loadVerificationLinks(versionId, request);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (verificationLinkRevision.current === request) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setVerifyBusy(false);
+      if (verificationLinkRevision.current === request) setVerifyBusy(false);
     }
   }
 
   async function revokeVerificationLink(linkId: string) {
     if (!client || !activeVersion || verifyBusy) return;
+    const versionId = activeVersion.id;
+    const request = verificationLinkRevision.current;
     setVerifyBusy(true);
     setError(null);
     try {
-      await client.revokeVerificationLink(activeVersion.id, linkId);
+      await client.revokeVerificationLink(versionId, linkId);
+      if (verificationLinkRevision.current !== request) return;
       if (createdVerificationLink?.id === linkId) setCreatedVerificationLink(null);
-      await loadVerificationLinks();
+      await loadVerificationLinks(versionId, request);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (verificationLinkRevision.current === request) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setVerifyBusy(false);
+      if (verificationLinkRevision.current === request) setVerifyBusy(false);
     }
   }
 
@@ -7611,12 +7624,27 @@ export default function ProjectPage() {
 
             )}
             {tool === "integrity" && (
-              client && activeVersion ? (
+              client && project && activeVersion ? (
                 <IntegrityCheckPanel
                   client={client}
                   versionId={activeVersion.id}
+                  project={project}
+                  version={activeVersion}
+                  history={versionHistory.find((item) => item.id === activeVersion.id) ?? null}
                   canRun={canEditProject}
                   language={language}
+                  verificationLinksCard={isProjectOwner ? (
+                    <VerificationLinksCard
+                      links={verificationLinks}
+                      createdLink={createdVerificationLink}
+                      expiresHours={verifyExpiresHours}
+                      busy={verifyBusy}
+                      language={language}
+                      onExpiresHoursChange={setVerifyExpiresHours}
+                      onCreate={() => void createVerificationLink()}
+                      onRevoke={(linkId) => void revokeVerificationLink(linkId)}
+                    />
+                  ) : undefined}
                 />
               ) : (
                 <span className="muted">{ru ? "Сначала откройте версию модели." : "Open a model version first."}</span>
@@ -7809,71 +7837,6 @@ export default function ProjectPage() {
                           type="button"
                           onClick={() => void revokeShareLink(link.id)}
                           disabled={shareBusy}
-                        >
-                          {ru ? "Отозвать" : "Revoke"}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <strong>{ru ? "Ссылка для проверки отчёта" : "Report verification link"}</strong>
-            <span className="muted" style={{ fontSize: 12 }}>
-              {ru
-                ? "Публичная ссылка на уже сохранённый отчёт проверки этой версии — те же факты, что в PDF, без аккаунта и без цифровой подписи. Отзывается в любой момент."
-                : "A public link to this version's already-persisted integrity report — the same facts the PDF carries, no account and no cryptographic signature. It can be revoked at any time."}
-            </span>
-            <div className="row">
-              <select
-                className="input"
-                value={verifyExpiresHours}
-                onChange={(event) => setVerifyExpiresHours(Number(event.target.value))}
-                disabled={verifyBusy}
-              >
-                <option value={24}>{ru ? "1 день" : "1 day"}</option>
-                <option value={24 * 7}>{ru ? "7 дней" : "7 days"}</option>
-                <option value={24 * 30}>{ru ? "30 дней" : "30 days"}</option>
-              </select>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => void createVerificationLink()}
-                disabled={!activeVersion || verifyBusy}
-              >
-                {verifyBusy ? (ru ? "Создаём…" : "Creating…") : (ru ? "Создать ссылку" : "Create link")}
-              </button>
-            </div>
-            {createdVerificationLink && (
-              <div className="stack" style={{ padding: 10, borderRadius: 8, background: "var(--panel-2)" }}>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  {ru ? "Скопируйте сейчас — повторно показать её нельзя:" : "Copy it now — it cannot be shown again:"}
-                </span>
-                <code style={{ wordBreak: "break-all" }}>{createdVerificationLink.url}</code>
-              </div>
-            )}
-            {verificationLinks.length > 0 && (
-              <div className="stack">
-                {verificationLinks.map((link) => {
-                  const expired = new Date(link.expires_at).getTime() <= Date.now();
-                  const status = link.revoked_at
-                    ? (ru ? "отозвана" : "revoked")
-                    : expired
-                      ? (ru ? "истекла" : "expired")
-                      : (ru ? "активна" : "active");
-                  return (
-                    <div key={link.id} className="row">
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        {new Date(link.created_at).toLocaleDateString(ru ? "ru-RU" : "en-US")} ·{" "}
-                        {ru ? "до" : "until"} {new Date(link.expires_at).toLocaleDateString(ru ? "ru-RU" : "en-US")} · {status}
-                      </span>
-                      <span className="spacer" />
-                      {!link.revoked_at && (
-                        <button
-                          className="btn"
-                          type="button"
-                          onClick={() => void revokeVerificationLink(link.id)}
-                          disabled={verifyBusy}
                         >
                           {ru ? "Отозвать" : "Revoke"}
                         </button>

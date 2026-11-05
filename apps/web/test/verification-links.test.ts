@@ -12,11 +12,12 @@ const verifyPage = readFileSync(
 );
 
 test("references 90/97: the project studio can create, list and revoke a verification link", () => {
-  assert.match(projectPage, /client\.createVerificationLink\(activeVersion\.id, \{/);
-  assert.match(projectPage, /\.listVerificationLinks\(activeVersion\.id\)/);
-  assert.match(projectPage, /client\.revokeVerificationLink\(activeVersion\.id, linkId\)/);
+  assert.match(projectPage, /client\.createVerificationLink\(versionId, \{/);
+  assert.match(projectPage, /\.listVerificationLinks\(versionId\)/);
+  assert.match(projectPage, /client\.revokeVerificationLink\(versionId, linkId\)/);
   assert.match(projectPage, /expires_in_hours: verifyExpiresHours/);
   assert.match(projectPage, /window\.location\.origin\}\/verify\/\$\{created\.token\}/);
+  assert.match(projectPage, /verificationLinkRevision\.current === request/);
 });
 
 test("references 90/97: the public verification page needs no bearer token", () => {

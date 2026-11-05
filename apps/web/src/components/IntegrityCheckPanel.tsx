@@ -4,8 +4,13 @@ import {
   ApiError,
   type IntegrityReport,
   type PhysicalAiClient,
+  type ProjectSummary,
+  type Version,
+  type VersionHistoryItem,
 } from "@physical-ai/contracts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+
+import { ModelPassportCard } from "@/components/ModelPassportCard";
 
 import {
   MODEL_CHECK_GROUPS,
@@ -18,8 +23,12 @@ import {
 type Props = {
   client: PhysicalAiClient;
   versionId: string;
+  project: ProjectSummary;
+  version: Version;
+  history: VersionHistoryItem | null;
   canRun: boolean;
   language: "ru" | "en";
+  verificationLinksCard?: ReactNode;
 };
 
 function message(reason: unknown): string {
@@ -34,10 +43,20 @@ function tone(status: ModelCheckGroupStatus): string {
       : "var(--warning, #fbbf24)";
 }
 
-export function IntegrityCheckPanel({ client, versionId, canRun, language }: Props) {
+export function IntegrityCheckPanel({
+  client,
+  versionId,
+  project,
+  version,
+  history,
+  canRun,
+  language,
+  verificationLinksCard,
+}: Props) {
   const ru = language === "ru";
   const revision = useRef(0);
   const [report, setReport] = useState<IntegrityReport | null>(null);
+  const [reportVersionId, setReportVersionId] = useState(versionId);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -46,6 +65,7 @@ export function IntegrityCheckPanel({ client, versionId, canRun, language }: Pro
 
   useEffect(() => {
     const request = ++revision.current;
+    setReportVersionId(versionId);
     setReport(null);
     setCheckedAt(null);
     setError(null);
@@ -58,6 +78,7 @@ export function IntegrityCheckPanel({ client, versionId, canRun, language }: Pro
         if (revision.current !== request) return;
         const parsed = verifiedPersistedModelCheck(record);
         if (!parsed) throw new Error(ru ? "Сохранённый отчёт повреждён." : "The persisted report is invalid.");
+        setReportVersionId(versionId);
         setReport(parsed);
         setCheckedAt(record.checked_at);
       })
@@ -73,12 +94,17 @@ export function IntegrityCheckPanel({ client, versionId, canRun, language }: Pro
     };
   }, [client, versionId, ru]);
 
-  const groups = useMemo(() => report ? {
-    geometry: modelCheckGroupStatus(report, MODEL_CHECK_GROUPS.geometry),
-    scene: modelCheckGroupStatus(report, MODEL_CHECK_GROUPS.scene),
-    appearance: modelCheckGroupStatus(report, MODEL_CHECK_GROUPS.appearance),
-    scale: modelCheckGroupStatus(report, MODEL_CHECK_GROUPS.scale),
-  } : null, [report]);
+  // A report kept by React for the previous render must never appear under a newly selected version.
+  const visibleReport = reportVersionId === versionId ? report : null;
+  const visibleLoading = reportVersionId === versionId ? loading : true;
+  const visibleRunning = reportVersionId === versionId ? running : false;
+
+  const groups = useMemo(() => visibleReport ? {
+    geometry: modelCheckGroupStatus(visibleReport, MODEL_CHECK_GROUPS.geometry),
+    scene: modelCheckGroupStatus(visibleReport, MODEL_CHECK_GROUPS.scene),
+    appearance: modelCheckGroupStatus(visibleReport, MODEL_CHECK_GROUPS.appearance),
+    scale: modelCheckGroupStatus(visibleReport, MODEL_CHECK_GROUPS.scale),
+  } : null, [visibleReport]);
 
   async function runCheck() {
     const request = ++revision.current;
@@ -110,6 +136,7 @@ export function IntegrityCheckPanel({ client, versionId, canRun, language }: Pro
       if (!savedReport) {
         throw new Error(ru ? "Сохранённый отчёт не совпал с завершённой проверкой." : "The persisted report did not match the completed check.");
       }
+      setReportVersionId(versionId);
       setReport(savedReport);
       setCheckedAt(persisted.checked_at);
       setProgress(100);
@@ -138,22 +165,22 @@ export function IntegrityCheckPanel({ client, versionId, canRun, language }: Pro
     }
   }
 
-  const headlineStatus = !report || !groups
+  const headlineStatus = !visibleReport || !groups
     ? "unknown"
-    : report.status === "fail"
+    : visibleReport.status === "fail"
       ? "fail"
-      : report.status === "warn" || groups.appearance === "unknown"
+      : visibleReport.status === "warn" || groups.appearance === "unknown"
         ? "warn"
         : "pass";
 
-  const rows = report && groups ? [
+  const rows = visibleReport && groups ? [
     {
       key: "geometry",
       label: ru ? "Геометрия" : "Geometry",
       status: groups.geometry,
-      detail: report.output.faces === null
+      detail: visibleReport.output.faces === null
         ? (ru ? "Проверена целостность преобразования" : "Conversion integrity checked")
-        : `${report.output.faces.toLocaleString()} ${ru ? "треугольников" : "triangles"}${report.output.watertight === null ? "" : report.output.watertight ? (ru ? " · замкнута" : " · watertight") : (ru ? " · есть открытые края" : " · open edges")}`,
+        : `${visibleReport.output.faces.toLocaleString()} ${ru ? "треугольников" : "triangles"}${visibleReport.output.watertight === null ? "" : visibleReport.output.watertight ? (ru ? " · замкнута" : " · watertight") : (ru ? " · есть открытые края" : " · open edges")}`,
     },
     {
       key: "scene",
@@ -161,7 +188,7 @@ export function IntegrityCheckPanel({ client, versionId, canRun, language }: Pro
       status: groups.scene,
       detail: groups.scene === "unknown"
         ? (ru ? "Источник не содержит проверяемой сцены" : "The source has no verifiable scene")
-        : `${ru ? "Узлов" : "Nodes"}: ${report.output.nodeCount ?? 0} · mesh: ${report.output.meshCount ?? 0} · ${ru ? "анимаций" : "animations"}: ${report.output.animationCount ?? 0}`,
+        : `${ru ? "Узлов" : "Nodes"}: ${visibleReport.output.nodeCount ?? 0} · mesh: ${visibleReport.output.meshCount ?? 0} · ${ru ? "анимаций" : "animations"}: ${visibleReport.output.animationCount ?? 0}`,
     },
     {
       key: "appearance",
@@ -169,20 +196,30 @@ export function IntegrityCheckPanel({ client, versionId, canRun, language }: Pro
       status: groups.appearance,
       detail: groups.appearance === "unknown"
         ? (ru ? "Формат источника не содержит проверяемых данных" : "The source format has no verifiable appearance data")
-        : `${ru ? "Материалов" : "Materials"}: ${report.output.materialCount ?? 0} · ${ru ? "текстур" : "textures"}: ${report.output.textureCount ?? 0}`,
+        : `${ru ? "Материалов" : "Materials"}: ${visibleReport.output.materialCount ?? 0} · ${ru ? "текстур" : "textures"}: ${visibleReport.output.textureCount ?? 0}`,
     },
     {
       key: "scale",
       label: ru ? "Масштаб" : "Scale",
       status: groups.scale,
-      detail: report.output.bboxSizeMm
-        ? `${report.output.bboxSizeMm.map((value) => Math.round(value * 100) / 100).join(" × ")} ${ru ? "мм" : "mm"}`
+      detail: visibleReport.output.bboxSizeMm
+        ? `${visibleReport.output.bboxSizeMm.map((value) => Math.round(value * 100) / 100).join(" × ")} ${ru ? "мм" : "mm"}`
         : (ru ? "Габариты недоступны" : "Dimensions unavailable"),
     },
   ] : [];
 
   return (
     <div className="stack" data-testid="integrity-check-panel" data-version-id={versionId}>
+      <ModelPassportCard
+        project={project}
+        version={version}
+        history={history}
+        report={visibleReport}
+        loading={visibleLoading}
+        language={language}
+        onDownloadPdf={() => void downloadPdf()}
+        onOpenVerificationLinks={verificationLinksCard ? () => document.getElementById("model-verification-links")?.scrollIntoView({ behavior: "smooth", block: "start" }) : undefined}
+      />
       <span className="muted" style={{ fontSize: 12 }}>
         {ru
           ? "Сервер повторно собирает обычный GLB и сверяет геометрию, сцену, материалы, текстуры и единицы. Исходная версия не изменяется."
@@ -193,15 +230,15 @@ export function IntegrityCheckPanel({ client, versionId, canRun, language }: Pro
           ? "Это проверка целостности преобразования, а не расчёт прочности, цифровая подпись или нормативная сертификация."
           : "This checks conversion integrity; it is not structural analysis, a digital signature, or regulatory certification."}
       </span>
-      {loading && <span className="muted">{ru ? "Загружаем последний отчёт…" : "Loading the latest report…"}</span>}
-      {running && (
+      {visibleLoading && <span className="muted">{ru ? "Загружаем последний отчёт…" : "Loading the latest report…"}</span>}
+      {visibleRunning && (
         <div className="stack" aria-label={ru ? "Ход серверной проверки модели" : "Server model-check progress"}>
           <div className="row"><span>{ru ? "Проверяем модель" : "Checking model"}</span><span className="spacer" /><span>{progress}%</span></div>
           <progress aria-label={ru ? "Прогресс проверки" : "Check progress"} value={progress} max={100} style={{ width: "100%" }} />
           <span className="muted" style={{ fontSize: 12 }}>{ru ? "Процент сообщает серверный job." : "Progress is reported by the server job."}</span>
         </div>
       )}
-      {report && groups ? (
+      {visibleReport && groups ? (
         <div className="stack">
           <strong style={{ color: tone(headlineStatus) }}>
             {headlineStatus === "fail"
@@ -217,24 +254,25 @@ export function IntegrityCheckPanel({ client, versionId, canRun, language }: Pro
               <div className="stack" style={{ gap: 2 }}><span>{row.label}</span><span className="muted" style={{ fontSize: 12 }}>{row.detail}</span></div>
             </div>
           ))}
-          {report.checks.filter((check) => check.status !== "pass").map((check) => (
+          {visibleReport.checks.filter((check) => check.status !== "pass").map((check) => (
             <span key={check.id} style={{ color: tone(check.status) }}>• {check.message}</span>
           ))}
-          <button className="btn" type="button" onClick={() => void downloadPdf()} disabled={running}>
+          <button className="btn" type="button" onClick={() => void downloadPdf()} disabled={visibleRunning}>
             {ru ? "Скачать PDF-отчёт" : "Download PDF report"}
           </button>
         </div>
-      ) : !loading && !running ? (
+      ) : !visibleLoading && !visibleRunning ? (
         <span className="muted">{ru ? "Эта версия ещё не проверялась." : "This version has not been checked yet."}</span>
       ) : null}
       {error && <span className="error" role="alert">{error}</span>}
       {canRun ? (
-        <button className="btn primary" type="button" onClick={() => void runCheck()} disabled={running || loading}>
-          {running ? (ru ? "Проверяем…" : "Checking…") : report ? (ru ? "Проверить ещё раз" : "Check again") : (ru ? "Проверить модель" : "Check model")}
+        <button className="btn primary" type="button" onClick={() => void runCheck()} disabled={visibleRunning || visibleLoading}>
+          {visibleRunning ? (ru ? "Проверяем…" : "Checking…") : visibleReport ? (ru ? "Проверить ещё раз" : "Check again") : (ru ? "Проверить модель" : "Check model")}
         </button>
       ) : (
         <span className="muted" style={{ fontSize: 12 }}>{ru ? "Запуск доступен редактору; последний сохранённый отчёт доступен для просмотра." : "Editors can run the check; the latest persisted report remains viewable."}</span>
       )}
+      {visibleReport && verificationLinksCard}
     </div>
   );
 }
