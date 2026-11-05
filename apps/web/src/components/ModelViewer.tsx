@@ -72,6 +72,9 @@ export interface ViewerScenePart {
   /** Row-major affine matrix in platform millimetres, exactly as the scene API stores it. */
   worldTransform: number[][];
   appearance?: ViewerAppearance | null;
+  /** For a multi-node GLB (e.g. a game-ready LOD export): load exactly this named mesh
+   * instead of the file's first mesh. Required when the file carries more than one node. */
+  glbMeshName?: string | null;
 }
 
 export interface ComponentSelectionInfo {
@@ -659,9 +662,13 @@ export function ModelViewer({
               gltf.scene.traverse((child) => {
                 if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
               });
-              const first = meshes[0];
+              const first = source.glbMeshName != null
+                ? meshes.find((mesh) => mesh.name === source.glbMeshName)
+                : meshes[0];
               if (!first) {
-                reject(new Error("the file has no mesh"));
+                reject(new Error(
+                  source.glbMeshName != null ? `named mesh "${source.glbMeshName}" not found` : "the file has no mesh",
+                ));
                 return;
               }
               const geometry = first.geometry.clone();

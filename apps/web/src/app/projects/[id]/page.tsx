@@ -96,6 +96,7 @@ import { ExactCadPanel, type ExactCadOperation } from "@/components/ExactCadPane
 import { FeedbackButtons } from "@/components/FeedbackButtons";
 import { FastenerPanel } from "@/components/FastenerPanel";
 import { FitTestCard } from "@/components/FitTestCard";
+import { GameReadyLodCard, type GameReadyLodResult } from "@/components/GameReadyLodCard";
 import { LicenceCard } from "@/components/LicenceCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { ManufacturingEstimateCard } from "@/components/ManufacturingEstimateCard";
@@ -150,6 +151,12 @@ import {
 } from "@/lib/mechanism";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { interiorMaterialResultMatches } from "@/lib/interior-material";
+import {
+  gameReadyEnvelopeMatchesRequest,
+  gameReadyLodsMatchRequest,
+  gameReadySceneReportMatchesRequest,
+  type VerifiedGameLod,
+} from "@/lib/game-ready-lod";
 import { useSession } from "@/lib/session";
 import { DEFAULT_SITE_PLAN, sitePlanFromProvenance } from "@/lib/site-plan";
 import {
@@ -912,6 +919,9 @@ export default function ProjectPage() {
   const [noteText, setNoteText] = useState("");
   const [gameBudget, setGameBudget] = useState(projectGoal?.id === "game_environment" ? 100000 : 20000);
   const [gameCollider, setGameCollider] = useState<"convex" | "box" | "none">("convex");
+  const [gameReadyLodResult, setGameReadyLodResult] = useState<GameReadyLodResult | null>(null);
+  const [gameReadyLodBusy, setGameReadyLodBusy] = useState(false);
+  const gameReadyLodRevision = useRef(0);
   const exchangeExportRevision = useRef(0);
   const [exportFormat, setExportFormat] = useState<WebExportFormat>(
     () => (WEB_EXPORTABLE_FORMATS.some((item) => item.id === preferredFormat) ? (preferredFormat as WebExportFormat) : "3mf"),
@@ -1751,6 +1761,11 @@ export default function ProjectPage() {
   useEffect(() => {
     exchangeExportRevision.current += 1;
     setExchangePreview(null);
+  }, [activeVersionId]);
+  useEffect(() => {
+    gameReadyLodRevision.current += 1;
+    setGameReadyLodResult(null);
+    setGameReadyLodBusy(false);
   }, [activeVersionId]);
   useEffect(() => {
     const revision = manufacturingEstimateRevision.current + 1;
@@ -4400,6 +4415,88 @@ export default function ProjectPage() {
         activeVersionIdRef.current === versionId
         && exchangeExportRevision.current === requestRevision
       ) setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  /** Reference 83: web parity for mobile's game-ready LOD0-LOD2 preparation. Scoped to LOD
+   *  density only; UV/PBR (84), colliders (86) and mechanism animation (87) stay out of this
+   *  request so the aggregate report only has to prove LOD evidence. */
+  async function runGameReadyLod(options: { maxTriangles: number; lodRatios: [number, number] }) {
+    if (!client || !activeVersion) return;
+    const versionId = activeVersion.id;
+    const modelName = "SovaModel";
+    const revision = ++gameReadyLodRevision.current;
+    setError(null);
+    setGameReadyLodResult(null);
+    setGameReadyLodBusy(true);
+    try {
+      const accepted = await client.exportModel(versionId, {
+        format: "glb",
+        game: {
+          name: modelName,
+          max_triangles: options.maxTriangles,
+          collider: "none",
+          lod_ratios: options.lodRatios,
+          uv: false,
+          pivot: "base",
+        },
+      });
+      const job = await trackJob(
+        ru ? "Готовим LOD0–LOD2" : "Preparing LOD0-LOD2",
+        accepted.job_id,
+        8 * 60_000,
+      );
+      if (activeVersionIdRef.current !== versionId || gameReadyLodRevision.current !== revision) return;
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message
+          ?? (ru ? "Не удалось подготовить LOD0–LOD2." : "LOD0-LOD2 could not be prepared."),
+        );
+        return;
+      }
+      const result = job.result as { asset_id?: string; byte_size?: number; report?: unknown } | null;
+      if (!result?.asset_id || !Number.isFinite(result.byte_size) || (result.byte_size ?? 0) <= 0) {
+        throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
+      }
+      let objects: ReturnType<typeof gameReadySceneReportMatchesRequest> = null;
+      let lods: VerifiedGameLod[] | null = null;
+      if (hasExplicitScene) {
+        objects = gameReadySceneReportMatchesRequest(
+          result.report,
+          result.byte_size,
+          "base",
+          options.maxTriangles,
+          options.lodRatios.length,
+        );
+        if (!objects) {
+          throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
+        }
+      } else {
+        const reportLods = (result.report as { lods?: unknown } | null)?.lods;
+        if (
+          !gameReadyLodsMatchRequest(reportLods, modelName, options.maxTriangles, options.lodRatios.length)
+          || !gameReadyEnvelopeMatchesRequest(result.report, result.byte_size, "base")
+        ) {
+          throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
+        }
+        lods = reportLods as VerifiedGameLod[];
+      }
+      const download = await client.download(result.asset_id);
+      if (activeVersionIdRef.current !== versionId || gameReadyLodRevision.current !== revision) return;
+      setGameReadyLodResult({
+        downloadUrl: download.url,
+        byteSize: result.byte_size as number,
+        maxTriangles: options.maxTriangles,
+        lods: objects ? null : lods,
+        objects,
+      });
+      setNotice(ru ? "LOD0–LOD2 готовы к скачиванию." : "LOD0-LOD2 are ready to download.");
+    } catch (reason) {
+      if (activeVersionIdRef.current === versionId && gameReadyLodRevision.current === revision) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      if (gameReadyLodRevision.current === revision) setGameReadyLodBusy(false);
     }
   }
 
@@ -7937,6 +8034,16 @@ export default function ProjectPage() {
                 ? "Метры и ось Y вверх, пивот в основании, LOD0–LOD2, UV-развёртка, PBR-материал и коллайдер UCX_ — Unity, Unreal, Godot."
                 : "Metres and +Y up, pivot at the base, LOD0-LOD2, UVs, a PBR material and a UCX_ collider — Unity, Unreal, Godot."}
             </span>
+            </ProOverlay>
+            <ProOverlay locked={!isPro} onRequest={requestPro} ru={ru}>
+              <GameReadyLodCard
+                disabled={!activeVersion}
+                busy={gameReadyLodBusy}
+                hasExplicitScene={hasExplicitScene}
+                result={gameReadyLodResult}
+                language={language}
+                onRun={runGameReadyLod}
+              />
             </ProOverlay>
             {downloads.map((d) => d.format === "usdz" ? (
               <a key={d.url} href={d.url} rel="ar" className="btn primary">
