@@ -100,6 +100,7 @@ import { PartsCard } from "@/components/PartsCard";
 import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
+import { IntegrityCheckPanel } from "@/components/IntegrityCheckPanel";
 import type { ComponentSelectionInfo, ViewerScenePart } from "@/components/ModelViewer";
 import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
 import { MeshModifierStackPanel } from "@/components/MeshModifierStackPanel";
@@ -554,6 +555,7 @@ type Tool =
   | "fit"
   | "parts"
   | "print"
+  | "integrity"
   | "export"
   | "versions"
   | "history"
@@ -3847,6 +3849,7 @@ export default function ProjectPage() {
     { id: "fit", label: ru ? "Посадка" : "Fit", icon: "fit", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
     { id: "parts", label: ru ? "Части" : "Parts", icon: "parts", hint: ru ? "Нарезать на части, другие тела" : "Cut into parts, other bodies" },
     { id: "print", label: ru ? "Печать" : "Print", icon: "print", hint: ru ? "Проверка печати и ориентация" : "Print check and orientation" },
+    { id: "integrity", label: ru ? "Проверка модели" : "Model check", icon: "check", hint: ru ? "Целостность обычного GLB для точной версии" : "Ordinary GLB integrity for the exact version" },
     { id: "export", label: ru ? "Экспорт" : "Export", icon: "export", hint: "STL · 3MF · GLB · STEP · IGES", section: ru ? "Проект" : "Project" },
     { id: "versions", label: ru ? "Версии" : "Versions", icon: "versions", hint: ru ? "История версий и откат" : "Version history and rollback" },
     { id: "history", label: ru ? "Команды" : "Commands", icon: "history", hint: ru ? "История команд ИИ" : "AI command history", advanced: true },
@@ -6855,6 +6858,18 @@ export default function ProjectPage() {
           </div>
 
 
+            )}
+            {tool === "integrity" && (
+              client && activeVersion ? (
+                <IntegrityCheckPanel
+                  client={client}
+                  versionId={activeVersion.id}
+                  canRun={canEditProject}
+                  language={language}
+                />
+              ) : (
+                <span className="muted">{ru ? "Сначала откройте версию модели." : "Open a model version first."}</span>
+              )
             )}
             {tool === "export" && (
           <div className="stack">

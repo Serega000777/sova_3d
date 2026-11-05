@@ -4,7 +4,7 @@ export type StudioToolIconName =
   | "catalog" | "chat" | "shape" | "cad" | "detail" | "transform" | "scene"
   | "furniture" | "mechanism" | "site" | "facade" | "photo" | "region" | "paint"
   | "size" | "measure" | "reverse" | "repair" | "engineer" | "fit" | "parts"
-  | "print" | "export" | "versions" | "history" | "origin" | "licence" | "market"
+  | "print" | "check" | "export" | "versions" | "history" | "origin" | "licence" | "market"
   | "transfer" | "training" | "more";
 
 const paths: Record<StudioToolIconName, ReactNode> = {
@@ -30,6 +30,7 @@ const paths: Record<StudioToolIconName, ReactNode> = {
   fit: <><rect x="3" y="5" width="11" height="11" rx="2"/><rect x="10" y="8" width="11" height="11" rx="2"/></>,
   parts: <><circle cx="6" cy="7" r="2"/><circle cx="6" cy="17" r="2"/><path d="m8 8 11 8M8 16 19 8"/></>,
   print: <><path d="M6 9V3h12v6M6 18H4V9h16v9h-2"/><rect x="7" y="14" width="10" height="7"/></>,
+  check: <><path d="m5 12 4 4L19 6"/><circle cx="12" cy="12" r="9"/></>,
   export: <><path d="M12 15V3M7 8l5-5 5 5M5 13v7h14v-7"/></>,
   versions: <><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5"/><path d="M4 4v4.5h4.5M12 8v5l3 2"/></>,
   history: <><path d="M7 6h13M7 12h13M7 18h13"/><circle cx="3.5" cy="6" r=".8" fill="currentColor"/><circle cx="3.5" cy="12" r=".8" fill="currentColor"/><circle cx="3.5" cy="18" r=".8" fill="currentColor"/></>,
