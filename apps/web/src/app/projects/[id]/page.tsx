@@ -99,6 +99,7 @@ import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { ManufacturingEstimateCard } from "@/components/ManufacturingEstimateCard";
+import { OptimizeCard, type OptimizationDraft } from "@/components/OptimizeCard";
 import { SizeFamilyCard } from "@/components/SizeFamilyCard";
 import { ProLockBadge, ProModal, ProOverlay, proLockLabel } from "@/components/ProLock";
 import { ProvenanceGraph } from "@/components/ProvenanceGraph";
@@ -866,6 +867,10 @@ export default function ProjectPage() {
   const [manufacturingEstimateSaving, setManufacturingEstimateSaving] = useState(false);
   const manufacturingEstimateRevision = useRef(0);
   const manufacturingEstimateContextRef = useRef("");
+  const [optimizationDraft, setOptimizationDraft] = useState<OptimizationDraft | null>(null);
+  const [optimizationDeciding, setOptimizationDeciding] = useState(false);
+  const optimizationRevision = useRef(0);
+  const optimizationContextRef = useRef("");
   const [sizeFamily, setSizeFamily] = useState<SizeFamily | null>(null);
   const [sizeFamilyLoading, setSizeFamilyLoading] = useState(false);
   const [sizeFamilySaving, setSizeFamilySaving] = useState(false);
@@ -1731,6 +1736,8 @@ export default function ProjectPage() {
     estimateAnalysis?.id ?? "",
   ].join("|");
   manufacturingEstimateContextRef.current = manufacturingEstimateContext;
+  const optimizationContext = [activeVersionId ?? "", printProfileId, printMaterialId].join("|");
+  optimizationContextRef.current = optimizationContext;
   const sizeFamilyContext = [projectId, activeVersionId ?? ""].join("|");
   sizeFamilyContextRef.current = sizeFamilyContext;
   useEffect(() => setCommandProposal(null), [activeVersionId]);
@@ -1782,6 +1789,11 @@ export default function ProjectPage() {
       cancelled = true;
     };
   }, [client, estimateAnalysis, activeVersionId, printProfileId, printMaterialId, manufacturingEstimateContext]);
+  useEffect(() => {
+    optimizationRevision.current += 1;
+    setOptimizationDraft(null);
+    setOptimizationDeciding(false);
+  }, [activeVersionId, printProfileId, printMaterialId, optimizationContext]);
   useEffect(() => {
     const revision = sizeFamilyRevision.current + 1;
     sizeFamilyRevision.current = revision;
@@ -3721,6 +3733,147 @@ export default function ProjectPage() {
       await showResult(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Reference 82: exact material-aware hollowing stays a separate draft until approval. */
+  async function optimizeGeometry() {
+    if (!client || !activeVersion || !canEditProject) return;
+    if (operationStackStatus !== "present") {
+      setError(
+        operationStackStatus === "absent"
+          ? (ru
+              ? "Импортированный mesh без истории операций нельзя облегчить этим точным инструментом."
+              : "An imported mesh without operation history cannot use this exact hollowing tool.")
+          : (ru
+              ? "Историю CAD-операций не удалось безопасно проверить."
+              : "CAD operation history could not be checked safely."),
+      );
+      return;
+    }
+    const sourceVersion = activeVersion;
+    const revision = optimizationRevision.current;
+    const context = optimizationContext;
+    const requestIsCurrent = () =>
+      optimizationRevision.current === revision
+      && optimizationContextRef.current === context;
+    setError(null);
+    try {
+      const started = await client.optimizeModel(sourceVersion.id, {
+        goal: "lighter",
+        material_id: printMaterialId || null,
+        printer_profile_id: printProfileId || null,
+        load: "structural",
+        opening: "bottom",
+        language,
+        preview: true,
+      });
+      const report = started.report as {
+        changes?: string[];
+        skipped?: string[];
+        mass_before_g?: number;
+        density_g_cm3?: number;
+      };
+      const job = await trackJob(
+        ru ? "Строим облегчённый draft" : "Building lighter draft",
+        started.job.job_id,
+      );
+      const result = job.result as {
+        preview?: boolean;
+        version_id?: string;
+        bodies?: { volume_mm3?: number }[];
+      } | null;
+      if (!requestIsCurrent()) {
+        if (result?.preview && result.version_id) {
+          await client.discardVersion(result.version_id).catch(() => undefined);
+        }
+        return;
+      }
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message
+          ?? (ru ? "Не удалось облегчить параметрическую деталь." : "The parametric part could not be lightened."),
+        );
+        return;
+      }
+      if (!result?.preview || !result.version_id) {
+        setError(
+          ru
+            ? "Сервер не вернул проверяемый draft оптимизации."
+            : "The server did not return a verifiable optimization draft.",
+        );
+        return;
+      }
+      const version = await client.getVersion(result.version_id);
+      const diff = await client.compareVersion(version.id);
+      if (!requestIsCurrent()) {
+        await client.discardVersion(version.id).catch(() => undefined);
+        return;
+      }
+      if (diff.before?.version_id !== sourceVersion.id || diff.after.version_id !== version.id) {
+        await client.discardVersion(version.id).catch(() => undefined);
+        setError(
+          ru
+            ? "Draft не соответствует выбранной исходной версии и был удалён."
+            : "The draft did not match the selected source version and was discarded.",
+        );
+        return;
+      }
+      const [beforeUrls, afterUrls] = await Promise.all([
+        client.versionThumbnailUrls(sourceVersion.id, sourceVersion.assets).catch(() => ({})),
+        client.versionThumbnailUrls(version.id, version.assets).catch(() => ({})),
+      ]);
+      if (!requestIsCurrent()) {
+        await client.discardVersion(version.id).catch(() => undefined);
+        return;
+      }
+      const volumeAfter = diff.after.volume_mm3
+        ?? result.bodies?.[result.bodies.length - 1]?.volume_mm3;
+      const afterMassG =
+        Number.isFinite(volumeAfter) && Number.isFinite(report.density_g_cm3)
+          ? Math.round((((volumeAfter as number) / 1000) * (report.density_g_cm3 as number)) * 10) / 10
+          : undefined;
+      setOptimizationDraft({
+        version,
+        diff,
+        beforeUrls,
+        afterUrls,
+        beforeMassG: report.mass_before_g,
+        afterMassG,
+        materialName: materials.find((item) => item.id === printMaterialId)?.name,
+        description: [...(report.changes ?? []), ...(report.skipped ?? [])].join(" · "),
+      });
+      setNotice(
+        ru
+          ? "Облегчённая геометрия готова как отдельный draft. Сравните её и явно оставьте или удалите."
+          : "The lighter geometry is ready as a separate draft. Compare it, then explicitly keep or discard it.",
+      );
+    } catch (reason) {
+      if (requestIsCurrent()) setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function decideOptimizationDraft(keep: boolean) {
+    if (!client || !optimizationDraft || optimizationDeciding || !canEditProject) return;
+    const draft = optimizationDraft;
+    setError(null);
+    setOptimizationDeciding(true);
+    try {
+      if (keep) await client.acceptVersion(draft.version.id);
+      else await client.discardVersion(draft.version.id);
+      setOptimizationDraft(null);
+      await refresh();
+      const summary = await client.getProject(projectId);
+      setActiveVersion(summary.head_version ?? null);
+      setNotice(
+        keep
+          ? (ru ? "Оптимизация сохранена новой immutable-версией." : "The optimization was saved as a new immutable version.")
+          : (ru ? "Draft удалён; исходная версия не изменилась." : "The draft was discarded; the source version is unchanged."),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setOptimizationDeciding(false);
     }
   }
 
@@ -7397,35 +7550,25 @@ export default function ProjectPage() {
                 </div>
               </div>
             )}
-            <label>
-              {ru ? "Профиль принтера" : "Printer profile"}
-              <select
-                value={printProfileId}
-                onChange={(event) => {
-                  const id = event.target.value;
-                  setPrintProfileId(id);
-                  const profile = printers.find((item) => item.id === id);
-                  if (profile?.default_material_id) setPrintMaterialId(profile.default_material_id);
-                }}
-              >
-                {printers.length === 0 ? (
-                  <option value="">{ru ? "Профиль не настроен" : "No configured profile"}</option>
-                ) : null}
-                {printers.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}{profile.is_default ? (ru ? " · по умолчанию" : " · default") : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {ru ? "Материал" : "Material"}
-              <select value={printMaterialId} onChange={(event) => setPrintMaterialId(event.target.value)}>
-                {materials.map((material) => (
-                  <option key={material.id} value={material.id}>{material.name}</option>
-                ))}
-              </select>
-            </label>
+            <OptimizeCard
+              printers={printers}
+              materials={materials}
+              printerProfileId={printProfileId}
+              materialId={printMaterialId}
+              operationStackStatus={operationStackStatus}
+              draft={optimizationDraft}
+              disabled={!activeVersion || !!busy || !canEditProject}
+              deciding={optimizationDeciding}
+              language={language}
+              onPrinterProfileChange={(id) => {
+                setPrintProfileId(id);
+                const profile = printers.find((item) => item.id === id);
+                if (profile?.default_material_id) setPrintMaterialId(profile.default_material_id);
+              }}
+              onMaterialChange={setPrintMaterialId}
+              onOptimize={optimizeGeometry}
+              onDecide={decideOptimizationDraft}
+            />
             {selectedPrintProfile ? (
               <div className="muted">
                 {selectedPrinterModel ? `${selectedPrinterModel.vendor} ${selectedPrinterModel.model} · ` : ""}
