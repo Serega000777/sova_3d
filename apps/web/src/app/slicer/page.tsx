@@ -9,6 +9,7 @@
 import type {
   Job,
   Material,
+  Me,
   PrintDiagnosis,
   PrintDispatch,
   PrintFarmPlan,
@@ -25,6 +26,15 @@ import { useCallback, useEffect, useState } from "react";
 
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { shrinkPhoto } from "@/lib/photo";
+import {
+  isPrintQueueConflict,
+  loadPrintQueueSnapshot,
+  parsePrintFarmPlan,
+  printQueueStorageKey,
+  reorderPrintQueuePlate,
+  savePrintQueueSnapshot,
+  type LoadedPrintQueue,
+} from "@/lib/print-queue-snapshot";
 import {
   assignableProcessMaterialSlots,
   sanitizeProcessMaterialAssignments,
@@ -310,6 +320,7 @@ function describeTuning(tuning: Record<string, number> | undefined): string {
 export default function SlicerPage() {
   const { session, ready, client } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [me, setMe] = useState<Me | null>(null);
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [printerId, setPrinterId] = useState<string>("");
@@ -390,21 +401,28 @@ export default function SlicerPage() {
   const [batchPrinterIds, setBatchPrinterIds] = useState<string[]>([]);
   const [batchMaterialId, setBatchMaterialId] = useState("pla");
   const [batchPlan, setBatchPlan] = useState<PrintFarmPlan | null>(null);
+  const [batchQueueRevision, setBatchQueueRevision] = useState(0);
+  const [batchQueueSavedAt, setBatchQueueSavedAt] = useState<string | null>(null);
+  const [batchPlanSaved, setBatchPlanSaved] = useState(false);
+  const [batchQueueLoading, setBatchQueueLoading] = useState(false);
+  const [batchQueueMessage, setBatchQueueMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
     try {
-      const [all, profiles, availableMaterials, printerBridge] = await Promise.all([
+      const [all, profiles, availableMaterials, printerBridge, account] = await Promise.all([
         client.listProjects(session.workspaceId),
         client.listPrinterProfiles(session.workspaceId),
         client.listMaterials(),
         client.getPrinterBridge(),
+        client.me(),
       ]);
       const withModel = all.filter((project) => project.head_version_id);
       setProjects(withModel);
       setPrinters(profiles);
       setMaterials(availableMaterials);
       setBridge(printerBridge);
+      setMe(account);
       setBatchPrinterIds((current) => current.length > 0 ? current : profiles.map((profile) => profile.id));
       if (!printerId && profiles[0]) setPrinterId(profiles[0].id);
       if (!projectId && withModel[0]) setProjectId(withModel[0].id);
@@ -426,6 +444,40 @@ export default function SlicerPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!client || !session) return;
+    let cancelled = false;
+    setBatchQueueLoading(true);
+    setBatchQueueMessage(null);
+    void loadPrintQueueSnapshot(client, window.localStorage, session.workspaceId)
+      .then((loaded) => {
+        if (cancelled) return;
+        if (!loaded) {
+          setBatchPlan(null);
+          setBatchQueueRevision(0);
+          setBatchQueueSavedAt(null);
+          setBatchPlanSaved(false);
+          return;
+        }
+        setBatchPlan(loaded.plan);
+        setBatchQueueRevision(loaded.revision);
+        setBatchQueueSavedAt(loaded.savedAt);
+        setBatchPlanSaved(true);
+        if (loaded.source === "cache") {
+          setBatchQueueMessage("Показана проверенная локальная копия; сервер сейчас недоступен.");
+        }
+      })
+      .catch((reason) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => {
+        if (!cancelled) setBatchQueueLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, session?.workspaceId]);
 
   useEffect(() => {
     setReport(null);
@@ -554,9 +606,10 @@ export default function SlicerPage() {
     });
     if (items.length === 0 || batchPrinterIds.length === 0) return;
     setError(null);
+    setBatchQueueMessage(null);
     setBusy("Планируем партию");
     try {
-      setBatchPlan(await client.planPrintFarm({
+      const response = await client.planPrintFarm({
         workspace_id: session.workspaceId,
         items,
         printer_profile_ids: batchPrinterIds,
@@ -565,9 +618,94 @@ export default function SlicerPage() {
         wall_count: wallCount,
         margin_mm: bedMarginMm,
         gap_mm: partGapMm,
-      }));
+      });
+      const verified = parsePrintFarmPlan(response, session.workspaceId);
+      if (!verified) throw new Error("Сервер вернул несогласованный план очереди.");
+      setBatchPlan(verified);
+      setBatchPlanSaved(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function applyLoadedPrintQueue(loaded: LoadedPrintQueue) {
+    setBatchPlan(loaded.plan);
+    setBatchQueueRevision(loaded.revision);
+    setBatchQueueSavedAt(loaded.savedAt);
+    setBatchPlanSaved(true);
+  }
+
+  function moveBatchPlate(printerProfileId: string, plateIndex: number, direction: -1 | 1) {
+    if (!canEditPrintQueue) return;
+    setBatchPlan((current) => current
+      ? reorderPrintQueuePlate(current, printerProfileId, plateIndex, direction)
+      : current);
+    setBatchPlanSaved(false);
+    setBatchQueueMessage("Порядок платформ изменён. Сохраните план, чтобы поделиться новой ревизией.");
+  }
+
+  async function saveBatchQueue() {
+    if (!client || !session || !batchPlan || !canEditPrintQueue || busy) return;
+    setError(null);
+    setBatchQueueMessage(null);
+    setBusy("Сохраняем план партии");
+    try {
+      const saved = await savePrintQueueSnapshot(
+        client,
+        window.localStorage,
+        session.workspaceId,
+        batchPlan,
+        batchQueueRevision,
+      );
+      applyLoadedPrintQueue(saved);
+      setBatchQueueMessage(saved.status === "conflict"
+        ? "План уже изменён на другом устройстве. Загружена актуальная серверная ревизия; ваши несохранённые изменения не применены."
+        : `План сохранён как общая ревизия ${saved.revision}.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteBatchQueue() {
+    if (!client || !session || !canEditPrintQueue || busy || batchQueueRevision < 1) return;
+    setError(null);
+    setBatchQueueMessage(null);
+    setBusy("Удаляем сохранённый план");
+    try {
+      await client.deletePrintQueue(session.workspaceId, batchQueueRevision);
+      try {
+        window.localStorage.removeItem(printQueueStorageKey(session.workspaceId));
+      } catch {
+        // The server remains canonical when local storage is unavailable.
+      }
+      setBatchPlan(null);
+      setBatchQueueRevision(0);
+      setBatchQueueSavedAt(null);
+      setBatchPlanSaved(false);
+      setBatchQueueMessage("Сохранённый план удалён.");
+    } catch (reason) {
+      if (isPrintQueueConflict(reason)) {
+        try {
+          const canonical = await loadPrintQueueSnapshot(
+            client,
+            window.localStorage,
+            session.workspaceId,
+          );
+          if (!canonical || canonical.source !== "server") {
+            throw new Error("Не удалось загрузить актуальную серверную ревизию плана.");
+          }
+          applyLoadedPrintQueue(canonical);
+          setBatchQueueMessage("План уже изменён на другом устройстве. Загружена актуальная серверная ревизия; удаление отменено.");
+        } catch (reloadReason) {
+          setError(reloadReason instanceof Error ? reloadReason.message : String(reloadReason));
+        }
+      } else {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
     } finally {
       setBusy(null);
     }
@@ -817,6 +955,10 @@ export default function SlicerPage() {
   }
 
   const project = projects.find((p) => p.id === projectId);
+  const workspaceRole = me?.workspaces.find((workspace) => workspace.id === session.workspaceId)?.role;
+  const canEditPrintQueue = workspaceRole === "owner"
+    || workspaceRole === "admin"
+    || workspaceRole === "editor";
   const selectedRaftDensity = selectedPrinter?.raft_density_profiles[materialId];
 
   const materialSummary = gcode
@@ -893,6 +1035,16 @@ export default function SlicerPage() {
             физическая отправка на принтеры выполняется отдельно после подготовки G-code.
           </div>
         </div>
+        {batchQueueLoading && <div className="muted">Загружаем общий снимок плана…</div>}
+        {batchQueueMessage && <div className="card muted" role="status">{batchQueueMessage}</div>}
+        {batchQueueSavedAt && (
+          <div className="muted">
+            Общая ревизия {batchQueueRevision || "локальная копия"} · сохранена {new Date(batchQueueSavedAt).toLocaleString("ru-RU")}
+          </div>
+        )}
+        {!canEditPrintQueue && workspaceRole === "viewer" && (
+          <div className="muted">Доступ только для просмотра: сохранять, менять порядок и удалять общий план могут редакторы.</div>
+        )}
         <div className="grid">
           <div className="stack">
             <strong>Модели и тираж</strong>
@@ -911,6 +1063,7 @@ export default function SlicerPage() {
                     const quantity = Math.max(0, Math.min(50, Number(event.target.value) || 0));
                     setBatchQuantities((current) => ({ ...current, [candidate.id]: quantity }));
                     setBatchPlan(null);
+                    setBatchPlanSaved(false);
                   }}
                 />
               </label>
@@ -928,6 +1081,7 @@ export default function SlicerPage() {
                       ? [...current, profile.id]
                       : current.filter((id) => id !== profile.id));
                     setBatchPlan(null);
+                    setBatchPlanSaved(false);
                   }}
                 />
                 <span>{profile.name}</span>
@@ -941,6 +1095,7 @@ export default function SlicerPage() {
                 onChange={(event) => {
                   setBatchMaterialId(event.target.value);
                   setBatchPlan(null);
+                  setBatchPlanSaved(false);
                 }}
               >
                 {materials.map((material) => (
@@ -967,6 +1122,22 @@ export default function SlicerPage() {
         {batchPlan && (
           <div className="stack">
             <div className="row" style={{ flexWrap: "wrap" }}>
+              {canEditPrintQueue && (
+                <button
+                  className="btn primary"
+                  disabled={!!busy || batchPlanSaved}
+                  onClick={() => void saveBatchQueue()}
+                >
+                  {batchPlanSaved ? "План сохранён" : "Сохранить план"}
+                </button>
+              )}
+              {canEditPrintQueue && batchQueueRevision > 0 && (
+                <button className="btn" disabled={!!busy} onClick={() => void deleteBatchQueue()}>
+                  Удалить сохранённый план
+                </button>
+              )}
+            </div>
+            <div className="row" style={{ flexWrap: "wrap" }}>
               <span className="chip">{batchPlan.item_count} шт.</span>
               <span className="chip">{batchPlan.plate_count} платформ</span>
               <span className="chip">~{Math.ceil(batchPlan.estimated_makespan_minutes / 60)} ч до завершения</span>
@@ -979,9 +1150,31 @@ export default function SlicerPage() {
                 <span className="muted">
                   Стол {assignment.bed_mm.map((value) => Math.round(value)).join(" × ")} мм · ~{Math.ceil(assignment.estimated_minutes / 60)} ч
                 </span>
-                {assignment.plates.map((plate) => (
+                {assignment.plates.map((plate, plateIndex) => (
                   <div key={plate.number}>
-                    <strong>Платформа {plate.number}</strong>
+                    <div className="row" style={{ flexWrap: "wrap" }}>
+                      <strong>Платформа {plate.number}</strong>
+                      {canEditPrintQueue && (
+                        <>
+                          <button
+                            className="btn"
+                            disabled={!!busy || plateIndex === 0}
+                            aria-label={`Переместить платформу ${plate.number} вверх`}
+                            onClick={() => moveBatchPlate(assignment.printer_profile_id, plateIndex, -1)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            className="btn"
+                            disabled={!!busy || plateIndex === assignment.plates.length - 1}
+                            aria-label={`Переместить платформу ${plate.number} вниз`}
+                            onClick={() => moveBatchPlate(assignment.printer_profile_id, plateIndex, 1)}
+                          >
+                            ↓
+                          </button>
+                        </>
+                      )}
+                    </div>
                     <ul className="list">
                       {plate.placements.map((placement) => (
                         <li key={`${placement.version_id}-${placement.copy_number}`}>
