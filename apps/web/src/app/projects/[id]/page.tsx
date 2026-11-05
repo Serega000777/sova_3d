@@ -88,6 +88,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
+import { AssemblyInspectionPanel } from "@/components/AssemblyInspectionPanel";
 import { ExactCadPanel, type ExactCadOperation } from "@/components/ExactCadPanel";
 import { FeedbackButtons } from "@/components/FeedbackButtons";
 import { FastenerPanel } from "@/components/FastenerPanel";
@@ -128,6 +129,11 @@ import {
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
 import { DEFAULT_SITE_PLAN, sitePlanFromProvenance } from "@/lib/site-plan";
+import {
+  applyExplodedPreview,
+  verifiedAssemblyInspection,
+  type ExplodedPreview,
+} from "@/lib/assembly-inspection";
 import {
   addressFacadeOpeningToFloor,
   convertToArchitecturalOpening,
@@ -698,6 +704,7 @@ export default function ProjectPage() {
   const [meshModifierStack, setMeshModifierStack] = useState<MeshModifierStack | null>(null);
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [assemblyInspection, setAssemblyInspection] = useState<AssemblyInspection | null>(null);
+  const [explodedPreview, setExplodedPreview] = useState<ExplodedPreview | null>(null);
   const [sceneParts, setSceneParts] = useState<ViewerScenePart[]>([]);
   const [sceneSaving, setSceneSaving] = useState(false);
   const [interiorMaterials, setInteriorMaterials] = useState<InteriorMaterial[]>([]);
@@ -1649,6 +1656,7 @@ export default function ProjectPage() {
       setOperationStackStatus("absent");
       setSceneGraph(null);
       setAssemblyInspection(null);
+      setExplodedPreview(null);
       return;
     }
     let cancelled = false;
@@ -1675,14 +1683,19 @@ export default function ProjectPage() {
       .then((value) => !cancelled && setSceneGraph(value))
       .catch(() => !cancelled && setSceneGraph(null));
     setAssemblyInspection(null);
+    setExplodedPreview(null);
     void client
       .inspectAssembly(activeVersionId)
-      .then((value) => !cancelled && setAssemblyInspection(value))
+      .then((value) => !cancelled && setAssemblyInspection(verifiedAssemblyInspection(value, activeVersionId)))
       .catch(() => !cancelled && setAssemblyInspection(null));
     return () => {
       cancelled = true;
     };
   }, [activeVersionId, client, ru]);
+
+  useEffect(() => {
+    if (tool !== "scene") setExplodedPreview(null);
+  }, [tool]);
 
   useEffect(() => {
     if (!client || furniture.length) return;
@@ -3943,7 +3956,7 @@ export default function ProjectPage() {
     assemblyInspection?.bom ?? [],
   );
   const mechanismConflict = sceneProvenance.build_hinged_lid != null && sceneProvenance.build_sliding_lid != null;
-  const animatedSceneParts = mechanism
+  const mechanismSceneParts = mechanism
     ? sceneParts.map((part) => part.id !== mechanism.nodeId
       ? part
       : {
@@ -3958,6 +3971,7 @@ export default function ProjectPage() {
             : slidingLidTransform(part.worldTransform, mechanismTravel, mechanism.minTravelMm, mechanism.maxTravelMm),
         })
     : sceneParts;
+  const animatedSceneParts = applyExplodedPreview(mechanismSceneParts, explodedPreview);
   const facadePickHouse = facadeHouse?.length_mm != null
     && facadeHouse.width_mm != null
     && facadeHouse.floors != null
@@ -6244,6 +6258,21 @@ export default function ProjectPage() {
                       }}
                       onSave={saveScene}
                     />
+                    {client && project && assemblyInspection && (
+                      <AssemblyInspectionPanel
+                        client={client}
+                        workspaceId={project.workspace_id}
+                        versionId={activeVersion.id}
+                        inspection={assemblyInspection}
+                        selectedNodeId={selected.length === 1 ? selected[0] : null}
+                        language={language}
+                        onSelectNode={(nodeId) => {
+                          setSelected([nodeId]);
+                          setClearRevision((value) => value + 1);
+                        }}
+                        onPreviewChange={setExplodedPreview}
+                      />
+                    )}
                     <div className="stack interior-material-panel">
                       <div className="row">
                         <strong>{ru ? "Материалы интерьера" : "Interior materials"}</strong>
