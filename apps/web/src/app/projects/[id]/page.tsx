@@ -6,6 +6,7 @@ import type {
   AnimationCommandProposal,
   EditBody,
   EngineeringAnswer,
+  EngineeringReport,
   EditableOperationParameter,
   FacadeCommandProposal,
   FacadeEdit,
@@ -769,6 +770,7 @@ export default function ProjectPage() {
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
+  const [engineeringHistory, setEngineeringHistory] = useState<EngineeringReport[]>([]);
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
@@ -1604,6 +1606,22 @@ export default function ProjectPage() {
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeVersionId = activeVersion?.id ?? null;
   useEffect(() => setCommandProposal(null), [activeVersionId]);
+  useEffect(() => {
+    setEngineeringHistory([]);
+    if (!client || !activeVersionId) return;
+    let cancelled = false;
+    void client
+      .listEngineeringReports(activeVersionId)
+      .then((rows) => {
+        if (!cancelled) setEngineeringHistory(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setEngineeringHistory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, activeVersionId]);
   const currentVersion = project?.head_version ?? versions[0] ?? null;
   const comparisonVersion =
     activeVersion && activeVersion.id !== currentVersion?.id
@@ -3300,6 +3318,8 @@ export default function ProjectPage() {
         setError((job.error as { message?: string })?.message ?? "the engineer could not answer");
         return null;
       }
+      setEngineeringHistory([]);
+      setEngineeringHistory(await client.listEngineeringReports(activeVersion.id).catch(() => []));
       return job;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -3457,6 +3477,8 @@ export default function ProjectPage() {
         setError((job.error as { message?: string })?.message ?? "the fix failed");
         return;
       }
+      setEngineeringHistory([]);
+      setEngineeringHistory(await client.listEngineeringReports(activeVersion.id).catch(() => []));
       await refresh();
       if (await showPreviewIfDraft(job)) return;
       await showResult(job);
@@ -6739,6 +6761,7 @@ export default function ProjectPage() {
           <EngineerCard
             disabled={!activeVersion || !!busy}
             hasRegion={region !== null}
+            history={engineeringHistory}
             onAsk={askEngineer}
             onApplyFix={applyFix}
             onShowRiskRegion={(next) => {

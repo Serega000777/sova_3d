@@ -7,7 +7,13 @@
  * with the measured numbers, the reasons, a recommendation and, when the fix is a number
  * the kernel understands, a button that applies it as an ordinary edit.
  */
-import type { EngineeringAnswer, EngineeringReportBody, Job, RegionSelection } from "@physical-ai/contracts";
+import type {
+  EngineeringAnswer,
+  EngineeringReport,
+  EngineeringReportBody,
+  Job,
+  RegionSelection,
+} from "@physical-ai/contracts";
 import { type FormEvent, useState } from "react";
 
 const EXAMPLES = [
@@ -30,6 +36,7 @@ export interface EngineerCardProps {
   disabled: boolean;
   /** The area the question is about, when one is outlined. */
   hasRegion: boolean;
+  history: EngineeringReport[];
   onAsk: (body: {
     question: string | null;
     purpose: string | null;
@@ -41,6 +48,16 @@ export interface EngineerCardProps {
   onAdapt?: (materialId: string) => Promise<void>;
   /** F-007: hollow the part to the material's wall — a preview with the mass before/after. */
   onLighten?: (materialId: string) => Promise<void>;
+}
+
+function storedAnswer(row: EngineeringReport): EngineeringAnswer | null {
+  const report = row.report;
+  if (!report || typeof report !== "object") return null;
+  const answer = (report as Record<string, unknown>).answer;
+  if (!answer || typeof answer !== "object") return null;
+  const record = answer as Record<string, unknown>;
+  if (typeof record.summary !== "string" || typeof record.intent !== "string") return null;
+  return answer as unknown as EngineeringAnswer;
 }
 
 function verdictClass(answer: EngineeringAnswer): string {
@@ -118,6 +135,7 @@ function AnswerView({
 export function EngineerCard({
   disabled,
   hasRegion,
+  history,
   onAsk,
   onApplyFix,
   onShowRiskRegion,
@@ -268,6 +286,43 @@ export function EngineerCard({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div className="stack" aria-label="Engineering history">
+          <strong>Previous checks</strong>
+          <span className="muted">
+            Stored by the server for this version. These are FDM heuristics, not certified load
+            results.
+          </span>
+          <ul className="list">
+            {history.slice(0, 5).map((item) => {
+              const answer = storedAnswer(item);
+              return (
+                <li
+                  key={item.id}
+                  className="stack"
+                  style={{ gap: 6, paddingLeft: 10, borderLeft: "2px solid var(--border)" }}
+                >
+                  <span>{item.question?.trim() || "General part review"}</span>
+                  {answer && (
+                    <AnswerView
+                      answer={answer}
+                      onApplyFix={onApplyFix}
+                      onShowRiskRegion={onShowRiskRegion}
+                      disabled={disabled}
+                    />
+                  )}
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {new Date(item.created_at).toLocaleString()}
+                    {item.material_id ? ` · ${item.material_id.toUpperCase()}` : ""}
+                    {item.region ? " · selected region" : ""}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
     </div>
