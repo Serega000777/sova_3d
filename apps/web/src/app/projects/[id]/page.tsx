@@ -3697,45 +3697,6 @@ export default function ProjectPage() {
     }
   }
 
-  /** F-007: hollow the part — a preview; the notice says what it weighs before and after. */
-  async function lighten(materialId: string) {
-    if (!client || !activeVersion) return;
-    setError(null);
-    try {
-      const started = await client.optimizeModel(activeVersion.id, {
-        goal: "lighter",
-        material_id: materialId,
-        language,
-        preview: true,
-      });
-      const report = started.report as {
-        changes?: string[];
-        skipped?: string[];
-        mass_before_g?: number;
-        density_g_cm3?: number;
-      };
-      const job = await trackJob("Hollowing", started.job.job_id);
-      if (job.status !== "succeeded") {
-        setError((job.error as { message?: string })?.message ?? "the part could not be hollowed");
-        return;
-      }
-      const bodies = (job.result as { bodies?: { volume_mm3?: number }[] } | null)?.bodies ?? [];
-      const after = bodies[bodies.length - 1]?.volume_mm3;
-      const mass =
-        after !== undefined && report.density_g_cm3 && report.mass_before_g !== undefined
-          ? `${report.mass_before_g} g → ${((after / 1000) * report.density_g_cm3).toFixed(1)} g`
-          : null;
-      setNotice(
-        [mass, ...(report.changes ?? []), ...(report.skipped ?? [])].filter(Boolean).join(" · "),
-      );
-      await refresh();
-      if (await showPreviewIfDraft(job)) return;
-      await showResult(job);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
   /** Reference 82: exact material-aware hollowing stays a separate draft until approval. */
   async function optimizeGeometry() {
     if (!client || !activeVersion || !canEditProject) return;
@@ -4558,7 +4519,7 @@ export default function ProjectPage() {
     { id: "comments", label: ru ? "Обсуждение" : "Discussion", icon: "chat", hint: ru ? "Ветки комментариев в точках точной версии" : "Point threads on the exact version" },
     { id: "reverse", label: ru ? "В CAD" : "To CAD", icon: "reverse", hint: ru ? "Распознать геометрию и сделать редактируемой" : "Recognize geometry and make it editable" },
     { id: "repair", label: ru ? "Исправить скан" : "Repair scan", icon: "repair", hint: ru ? "Ещё раз закрыть отверстия и исправить сетку" : "Close holes and repair the mesh again" },
-    { id: "engineer", label: ru ? "Инженер" : "Engineer", icon: "engineer", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
+    { id: "engineer", label: ru ? "Инженер" : "Engineer", icon: "engineer", hint: ru ? "Спросить инженера, выбрать материал, адаптировать" : "Ask the engineer, choose a material, adapt" },
     { id: "fit", label: ru ? "Посадка" : "Fit", icon: "fit", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
     { id: "fastener", label: ru ? "Крепёж" : "Fastener", icon: "fit", hint: ru ? "Построить точный крепёж и проверить в CAD-отверстии" : "Build an exact fastener and check one CAD hole" },
     { id: "metrology", label: ru ? "После печати" : "Post-print", icon: "measure", hint: ru ? "Сравнить с принятым метрическим сканом" : "Compare with an accepted metric scan" },
@@ -7461,7 +7422,6 @@ export default function ProjectPage() {
               }
             }}
             onAdapt={adaptMaterial}
-            onLighten={lighten}
           />
 
 
