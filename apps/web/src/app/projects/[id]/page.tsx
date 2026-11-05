@@ -133,6 +133,11 @@ import {
   restoredManufacturingEstimate,
 } from "@/lib/manufacturing-estimate";
 import {
+  verifiedExchangeConversion,
+  verifiedExchangeDownload,
+  type VerifiedExchangeDownload,
+} from "@/lib/format-conversion";
+import {
   hingedLidTransform,
   mechanismAssemblyGuide,
   mechanismPlaybackValue,
@@ -167,6 +172,78 @@ const ModelViewer = dynamic(
 
 type Busy = { label: string; job?: Job } | null;
 type FacadeSurfaceAssignment = NonNullable<FacadeEdit["surface_assignments"]>[number];
+type WebExportFormat = "stl" | "3mf" | "glb" | "obj" | "ply" | "dae" | "fbx" | "usdz" | "x3d" | "wrl" | "step" | "iges";
+type WebExportFormatInfo = {
+  id: WebExportFormat;
+  title: string;
+  best: { ru: string; en: string };
+  textured: boolean;
+  unitNote?: { ru: string; en: string };
+};
+
+function sharedExportFormat(id: WebExportFormat): WebExportFormatInfo {
+  const format = EXPORTABLE_FORMATS.find((item) => item.id === id);
+  if (!format) throw new Error(`missing shared export format ${id}`);
+  return { ...format, id };
+}
+
+/** Web keeps CAD exports at the end while matching mobile's complete mesh-conversion order. */
+const WEB_EXPORTABLE_FORMATS: readonly WebExportFormatInfo[] = [
+  sharedExportFormat("3mf"),
+  sharedExportFormat("stl"),
+  sharedExportFormat("glb"),
+  {
+    id: "obj",
+    title: "OBJ",
+    best: {
+      ru: "Открытая полигональная сетка для широкого обмена; цвет и сцена могут быть потеряны.",
+      en: "Open polygon mesh for broad exchange; colour and scene data may be lost.",
+    },
+    textured: true,
+    unitNote: { ru: "OBJ не может объявлять единицы в файле.", en: "OBJ cannot declare units in the file." },
+  },
+  {
+    id: "ply",
+    title: "PLY",
+    best: { ru: "Полигональная сетка с поддержкой цвета вершин.", en: "Polygon mesh with vertex colours." },
+    textured: true,
+    unitNote: { ru: "PLY не может объявлять единицы в файле.", en: "PLY cannot declare units in the file." },
+  },
+  {
+    id: "dae",
+    title: "DAE",
+    best: {
+      ru: "COLLADA с явными единицами для совместимых CAD/DCC-приложений.",
+      en: "COLLADA with explicit units for compatible CAD/DCC applications.",
+    },
+    textured: true,
+    unitNote: { ru: "DAE/COLLADA объявляет единицы явно.", en: "DAE/COLLADA declares units explicitly." },
+  },
+  sharedExportFormat("fbx"),
+  sharedExportFormat("usdz"),
+  {
+    id: "x3d",
+    title: "X3D",
+    best: {
+      ru: "Открытый Web3D XML: метры и ось Y вверх заданы стандартом.",
+      en: "Open Web3D XML: metres and +Y up are defined by the standard.",
+    },
+    textured: true,
+    unitNote: { ru: "Стандарт: метры, ось Y вверх.", en: "Standard convention: metres, +Y up." },
+  },
+  {
+    id: "wrl",
+    title: "VRML97",
+    best: {
+      ru: "Классический Web3D-обмен в метрах и с осью Y вверх.",
+      en: "Classic Web3D exchange in metres with +Y up.",
+    },
+    textured: true,
+    unitNote: { ru: "Стандарт: метры, ось Y вверх.", en: "Standard convention: metres, +Y up." },
+  },
+  sharedExportFormat("step"),
+  sharedExportFormat("iges"),
+];
 
 const MODEL_UPLOAD_MIME: Record<string, string> = {
   stl: "model/stl",
@@ -828,8 +905,9 @@ export default function ProjectPage() {
   const [noteText, setNoteText] = useState("");
   const [gameBudget, setGameBudget] = useState(projectGoal?.id === "game_environment" ? 100000 : 20000);
   const [gameCollider, setGameCollider] = useState<"convex" | "box" | "none">("convex");
-  const [exportFormat, setExportFormat] = useState<"stl" | "3mf" | "glb" | "fbx" | "usdz" | "step" | "iges">(
-    () => (EXPORTABLE_FORMATS.some((item) => item.id === preferredFormat) ? (preferredFormat as "stl") : "3mf"),
+  const exchangeExportRevision = useRef(0);
+  const [exportFormat, setExportFormat] = useState<WebExportFormat>(
+    () => (WEB_EXPORTABLE_FORMATS.some((item) => item.id === preferredFormat) ? (preferredFormat as WebExportFormat) : "3mf"),
   );
   const [shareLinks, setShareLinks] = useState<Schemas["ShareLinkOut"][]>([]);
   const [shareExpiresHours, setShareExpiresHours] = useState(24 * 7);
@@ -951,6 +1029,13 @@ export default function ProjectPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [downloads, setDownloads] = useState<{ format: string; url: string }[]>([]);
+  const [exchangePreview, setExchangePreview] = useState<{
+    versionId: string;
+    requestRevision: number;
+    download: VerifiedExchangeDownload & { format: "stl" | "glb" };
+    boundsMm: [number, number, number] | null;
+    status: "pass" | "warn";
+  } | null>(null);
   const [turntableVideo, setTurntableVideo] = useState<{
     versionId: string;
     url: string;
@@ -1629,6 +1714,10 @@ export default function ProjectPage() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeVersionId = activeVersion?.id ?? null;
+  const activeVersionIdRef = useRef<string | null>(activeVersionId);
+  activeVersionIdRef.current = activeVersionId;
+  const currentExchangePreview = exchangePreview?.versionId === activeVersionId ? exchangePreview : null;
+  const selectedExportTitle = WEB_EXPORTABLE_FORMATS.find((item) => item.id === exportFormat)?.title ?? exportFormat.toUpperCase();
   const estimateAnalysis = analysisMatchesManufacturingContext(
     analysis,
     activeVersionId,
@@ -1645,6 +1734,10 @@ export default function ProjectPage() {
   const sizeFamilyContext = [projectId, activeVersionId ?? ""].join("|");
   sizeFamilyContextRef.current = sizeFamilyContext;
   useEffect(() => setCommandProposal(null), [activeVersionId]);
+  useEffect(() => {
+    exchangeExportRevision.current += 1;
+    setExchangePreview(null);
+  }, [activeVersionId]);
   useEffect(() => {
     const revision = manufacturingEstimateRevision.current + 1;
     manufacturingEstimateRevision.current = revision;
@@ -4026,16 +4119,53 @@ export default function ProjectPage() {
     }
   }
 
-  async function exportModel(format: "stl" | "3mf" | "glb" | "fbx" | "usdz" | "step" | "iges", forGames = false) {
-    if (!client || !activeVersion) return;
+  async function openExchangeConversion(preview: NonNullable<typeof exchangePreview>) {
+    if (
+      !client
+      || activeVersionIdRef.current !== preview.versionId
+      || exchangeExportRevision.current !== preview.requestRevision
+    ) return;
     setError(null);
+    try {
+      const refreshed = verifiedExchangeDownload(
+        preview.download,
+        await client.download(preview.download.assetId),
+      );
+      if (
+        !refreshed
+        || activeVersionIdRef.current !== preview.versionId
+        || exchangeExportRevision.current !== preview.requestRevision
+      ) {
+        throw new Error(
+          ru
+            ? "Ссылка скачивания больше не совпадает с проверенным файлом."
+            : "The download no longer matches the verified file.",
+        );
+      }
+      const link = document.createElement("a");
+      link.href = refreshed.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.download = "";
+      link.click();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function exportModel(format: "stl" | "3mf" | "glb" | "obj" | "ply" | "dae" | "fbx" | "usdz" | "x3d" | "wrl" | "step" | "iges", forGames = false) {
+    if (!client || !activeVersion) return;
+    const versionId = activeVersion.id;
+    const requestRevision = ++exchangeExportRevision.current;
+    setError(null);
+    setExchangePreview(null);
     const printable = !forGames && (format === "stl" || format === "3mf");
     const game = forGames
       ? { name: "Model", max_triangles: gameBudget, collider: gameCollider, lod_ratios: [0.5, 0.2] }
       : null;
     let accepted;
     try {
-      accepted = await client.exportModel(activeVersion.id, { format, printable, game });
+      accepted = await client.exportModel(versionId, { format, printable, game });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return;
@@ -4046,16 +4176,77 @@ export default function ProjectPage() {
       setError((job.error as { message?: string })?.message ?? "export failed");
       return;
     }
-    const result = job.result as {
-      asset_id: string;
-      report?: { lods?: { name: string; triangles: number; max_deviation_mm: number }[]; collider?: { triangles: number } | null };
-    };
-    const download = await client.download(result.asset_id);
-    setDownloads((d) => [{ format: forGames ? "game glb" : format, url: download.url }, ...d]);
-    if (forGames && result.report?.lods) {
-      const lods = result.report.lods.map((lod) => `${lod.name}: ${lod.triangles} ▲ (±${lod.max_deviation_mm} мм)`).join(", ");
-      const collider = result.report.collider ? ` · ${ru ? "коллайдер" : "collider"} ${result.report.collider.triangles} ▲` : "";
-      setNotice(lods + collider);
+
+    // Keep the existing exact-CAD and game-ready handoff unchanged. Scenario 89's
+    // integrity-bound mesh conversion path applies only to the generic mesh formats.
+    if (forGames || format === "step" || format === "iges") {
+      const result = job.result as {
+        asset_id: string;
+        report?: { lods?: { name: string; triangles: number; max_deviation_mm: number }[]; collider?: { triangles: number } | null };
+      };
+      const download = await client.download(result.asset_id);
+      setDownloads((d) => [{ format: forGames ? "game glb" : format, url: download.url }, ...d]);
+      if (forGames && result.report?.lods) {
+        const lods = result.report.lods.map((lod) => `${lod.name}: ${lod.triangles} ▲ (±${lod.max_deviation_mm} мм)`).join(", ");
+        const collider = result.report.collider ? ` · ${ru ? "коллайдер" : "collider"} ${result.report.collider.triangles} ▲` : "";
+        setNotice(lods + collider);
+      }
+      return;
+    }
+
+    try {
+      const result = verifiedExchangeConversion(job, versionId, format, printable);
+      if (!result) {
+        throw new Error(
+          ru
+            ? "Экспорт завершился без согласованного файла и отчёта конвертации."
+            : "The export completed without a consistent file and conversion report.",
+        );
+      }
+      const download = verifiedExchangeDownload(result, await client.download(result.assetId));
+      if (!download) {
+        throw new Error(
+          ru
+            ? "Ссылка скачивания не совпадает с проверенным файлом конвертации."
+            : "The download does not match the verified conversion file.",
+        );
+      }
+      if (
+        activeVersionIdRef.current !== versionId
+        || exchangeExportRevision.current !== requestRevision
+      ) return;
+
+      if (format === "stl" || format === "glb") {
+        setExchangePreview({
+          versionId,
+          requestRevision,
+          download: { ...download, format },
+          boundsMm: result.report.output.bboxSizeMm,
+          status: result.report.status === "pass" ? "pass" : "warn",
+        });
+        setNotice(
+          ru
+            ? `${format.toUpperCase()} проверен сервером и готов к визуальному сравнению перед открытием.`
+            : `${format.toUpperCase()} was verified and is ready for visual comparison before opening.`,
+        );
+        return;
+      }
+
+      setDownloads((current) => [{ format, url: download.url }, ...current]);
+      const bounds = result.report.output.bboxSizeMm;
+      const verified = bounds
+        ? `${bounds.map((value) => Number(value.toFixed(2))).join(" × ")} ${ru ? "мм" : "mm"}`
+        : ru ? "габариты не применимы" : "dimensions not applicable";
+      setNotice(
+        ru
+          ? `${format.toUpperCase()} проверен сервером: ${result.report.status}, ${verified}.`
+          : `${format.toUpperCase()} was verified by the server: ${result.report.status}, ${verified}.`,
+      );
+    } catch (reason) {
+      if (
+        activeVersionIdRef.current === versionId
+        && exchangeExportRevision.current === requestRevision
+      ) setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -7331,8 +7522,45 @@ export default function ProjectPage() {
             {tool === "export" && (
           <div className="stack">
             <strong>{ru ? "Экспорт" : "Export"}</strong>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {ru
+                ? "Сервер конвертирует выбранную неизменяемую версию и проверяет готовый файл. Геометрия хранится в миллиметрах; ручная смена масштаба и осей при экспорте пока недоступна."
+                : "The server converts the selected immutable version and verifies the output file. Geometry is stored in millimetres; manual unit and up-axis controls are not available yet."}
+            </span>
+            {currentExchangePreview && (
+              <div className="stack" data-testid="verified-exchange-comparison">
+                <strong>
+                  {ru ? "Результат конвертации" : "Converted result"} · {currentExchangePreview.download.format.toUpperCase()}
+                </strong>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {ru
+                    ? "Исходная неизменяемая версия остаётся в основном viewport; ниже загружен точный проверенный output asset. Сравните геометрию перед открытием файла."
+                    : "The immutable source remains in the main viewport; the viewer below loads the exact verified output asset. Compare the geometry before opening the file."}
+                </span>
+                <div style={{ height: 260 }}>
+                  <ModelViewer
+                    url={currentExchangePreview.download.url}
+                    format={currentExchangePreview.download.format}
+                    bodyId={`exchange-preview-${currentExchangePreview.download.assetId}`}
+                    selected={[]}
+                    onSelect={() => undefined}
+                    showGrid
+                    language={language}
+                  />
+                </div>
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {currentExchangePreview.status.toUpperCase()} · {currentExchangePreview.download.byteSize.toLocaleString(ru ? "ru-RU" : "en-US")} {ru ? "байт" : "bytes"}
+                  {currentExchangePreview.boundsMm
+                    ? ` · ${currentExchangePreview.boundsMm.map((value) => Number(value.toFixed(2))).join(" × ")} ${ru ? "мм" : "mm"}`
+                    : ""}
+                </span>
+                <button className="btn primary" type="button" onClick={() => void openExchangeConversion(currentExchangePreview)}>
+                  {ru ? "Открыть / скачать проверенный файл" : "Open / download verified file"}
+                </button>
+              </div>
+            )}
             <div className="export-formats" role="radiogroup" aria-label={ru ? "Формат файла" : "File format"}>
-              {EXPORTABLE_FORMATS.map((info) => {
+              {WEB_EXPORTABLE_FORMATS.map((info) => {
                 const locked = !isPro && (info.id === "step" || info.id === "iges");
                 return (
                   <button
@@ -7348,6 +7576,7 @@ export default function ProjectPage() {
                       {locked && <ProLockBadge ru={ru} />}
                     </strong>
                     <small>{info.best[language]}</small>
+                    {info.unitNote && <small data-unit-declaration={info.id}>{info.unitNote[language]}</small>}
                   </button>
                 );
               })}
@@ -7369,7 +7598,7 @@ export default function ProjectPage() {
                     : undefined
               }
             >
-              {ru ? `Скачать ${exportFormat.toUpperCase()}` : `Download ${exportFormat.toUpperCase()}`}
+              {ru ? `Скачать ${selectedExportTitle}` : `Download ${selectedExportTitle}`}
               {(exportFormat === "step" || exportFormat === "iges") && !isPro && <ProLockBadge ru={ru} />}
             </button>
             <span className="muted" style={{ fontSize: 12 }}>
