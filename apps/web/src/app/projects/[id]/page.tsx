@@ -42,6 +42,7 @@ import type {
   RegionSelection,
   SceneGraph,
   SceneGraphEdit,
+  SizeFamily,
   SitePlan,
   SplitBody,
   ThumbnailAngle,
@@ -98,6 +99,7 @@ import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { ManufacturingEstimateCard } from "@/components/ManufacturingEstimateCard";
+import { SizeFamilyCard } from "@/components/SizeFamilyCard";
 import { ProLockBadge, ProModal, ProOverlay, proLockLabel } from "@/components/ProLock";
 import { ProvenanceGraph } from "@/components/ProvenanceGraph";
 import { PublishCard } from "@/components/PublishCard";
@@ -120,6 +122,12 @@ import { VersionImageComparison } from "@/components/VersionImageComparison";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
+import {
+  matchingSizeFamily,
+  sizeFamilyOutputMatches,
+  type SizeFamilyLabel,
+  type SizeFamilyPreset,
+} from "@/lib/size-family";
 import {
   analysisMatchesManufacturingContext,
   restoredManufacturingEstimate,
@@ -781,6 +789,11 @@ export default function ProjectPage() {
   const [manufacturingEstimateSaving, setManufacturingEstimateSaving] = useState(false);
   const manufacturingEstimateRevision = useRef(0);
   const manufacturingEstimateContextRef = useRef("");
+  const [sizeFamily, setSizeFamily] = useState<SizeFamily | null>(null);
+  const [sizeFamilyLoading, setSizeFamilyLoading] = useState(false);
+  const [sizeFamilySaving, setSizeFamilySaving] = useState(false);
+  const sizeFamilyRevision = useRef(0);
+  const sizeFamilyContextRef = useRef("");
   const [engineeringHistory, setEngineeringHistory] = useState<EngineeringReport[]>([]);
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
@@ -1629,6 +1642,8 @@ export default function ProjectPage() {
     estimateAnalysis?.id ?? "",
   ].join("|");
   manufacturingEstimateContextRef.current = manufacturingEstimateContext;
+  const sizeFamilyContext = [projectId, activeVersionId ?? ""].join("|");
+  sizeFamilyContextRef.current = sizeFamilyContext;
   useEffect(() => setCommandProposal(null), [activeVersionId]);
   useEffect(() => {
     const revision = manufacturingEstimateRevision.current + 1;
@@ -1674,6 +1689,43 @@ export default function ProjectPage() {
       cancelled = true;
     };
   }, [client, estimateAnalysis, activeVersionId, printProfileId, printMaterialId, manufacturingEstimateContext]);
+  useEffect(() => {
+    const revision = sizeFamilyRevision.current + 1;
+    sizeFamilyRevision.current = revision;
+    const context = sizeFamilyContext;
+    setSizeFamily(null);
+    setSizeFamilyLoading(Boolean(client));
+    setSizeFamilySaving(false);
+    if (!client) return;
+    let cancelled = false;
+    void client
+      .listSizeFamilies(projectId)
+      .then((families) => {
+        if (
+          cancelled
+          || sizeFamilyRevision.current !== revision
+          || sizeFamilyContextRef.current !== context
+        ) return;
+        setSizeFamily(families[0] ?? null);
+      })
+      .catch(() => {
+        if (
+          !cancelled
+          && sizeFamilyRevision.current === revision
+          && sizeFamilyContextRef.current === context
+        ) setSizeFamily(null);
+      })
+      .finally(() => {
+        if (
+          !cancelled
+          && sizeFamilyRevision.current === revision
+          && sizeFamilyContextRef.current === context
+        ) setSizeFamilyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, projectId, activeVersionId, sizeFamilyContext]);
   useEffect(() => {
     setEngineeringHistory([]);
     if (!client || !activeVersionId) return;
@@ -3601,6 +3653,167 @@ export default function ProjectPage() {
       await showResult(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Reference 81: build three exact previews from one immutable source, then persist them atomically. */
+  async function buildSizeFamily(presets: SizeFamilyPreset[]) {
+    if (!client || !activeVersion || !canEditProject || hasExplicitScene) return;
+    const source = activeVersion;
+    const revision = sizeFamilyRevision.current;
+    const context = sizeFamilyContext;
+    const completed: { label: SizeFamilyLabel; versionId: string }[] = [];
+    const draftVersionIds = new Set<string>();
+    let persisted: SizeFamily | null = null;
+    setError(null);
+    setSizeFamilySaving(true);
+    setBusy({ label: ru ? "Строим семейство S/M/L" : "Building S/M/L family" });
+    try {
+      for (const preset of presets) {
+        const accepted = await client.createEdit(source.id, {
+          operations: [{
+            type: "set_dimensions",
+            target: bodyOf(source),
+            width_mm: preset.widthMm,
+            depth_mm: preset.depthMm,
+            height_mm: preset.heightMm,
+          }],
+          label: `Size ${preset.label}`,
+          preview: true,
+        });
+        const job = await client.waitForJob(accepted.job_id, {
+          onProgress: (progress) => setBusy({
+            label: ru ? `Строим размер ${preset.label}` : `Building size ${preset.label}`,
+            job: progress,
+          }),
+        });
+        const result = job.result as {
+          preview?: boolean;
+          version_id?: string;
+          bodies?: { bbox_mm?: { size?: number[] } }[];
+        } | null;
+        if (result?.version_id) draftVersionIds.add(result.version_id);
+        const measured = result?.bodies?.[result.bodies.length - 1]?.bbox_mm?.size;
+        if (
+          job.status !== "succeeded"
+          || result?.preview !== true
+          || !result.version_id
+          || !measured
+          || !sizeFamilyOutputMatches(measured, preset)
+        ) {
+          throw new Error(
+            ru
+              ? "Сервер не построил все три проверяемых размера; неполное семейство удалено."
+              : "The server did not build all three verified sizes; the incomplete family was discarded.",
+          );
+        }
+        completed.push({ label: preset.label, versionId: result.version_id });
+      }
+
+      const members = completed.map((item) => ({ label: item.label, version_id: item.versionId }));
+      const body = {
+        source_version_id: source.id,
+        selected_label: "M" as const,
+        members,
+      };
+      try {
+        persisted = await client.createSizeFamily(projectId, body);
+      } catch (firstReason) {
+        const recovered = matchingSizeFamily(
+          await client.listSizeFamilies(projectId).catch(() => []),
+          source.id,
+          members,
+        );
+        // If the first POST reached the server but its response was lost, use that exact
+        // record. Otherwise retry the identical request; the endpoint is idempotent.
+        persisted = recovered ?? await client.createSizeFamily(projectId, body).catch(() => {
+          throw firstReason;
+        });
+      }
+
+      const selectedLabel = persisted.selected_label ?? "M";
+      const selectedMember = persisted.members.find((member) => member.label === selectedLabel);
+      if (!selectedMember) throw new Error(ru ? "Сервер вернул неполное семейство." : "The server returned an incomplete family.");
+      await refresh();
+      const selectedVersion = await client.getVersion(selectedMember.version_id);
+      if (
+        sizeFamilyRevision.current === revision
+        && sizeFamilyContextRef.current === context
+      ) {
+        setSizeFamily(persisted);
+        setActiveVersion(selectedVersion);
+        setNotice(
+          ru
+            ? "S/M/L сохранены как одно точное семейство; размер M выбран текущим."
+            : "S/M/L were saved as one exact family; size M is now current.",
+        );
+      }
+    } catch (reason) {
+      if (!persisted) {
+        await Promise.allSettled([...draftVersionIds].map((versionId) => client.discardVersion(versionId)));
+        await refresh().catch(() => undefined);
+      }
+      if (
+        sizeFamilyRevision.current === revision
+        && sizeFamilyContextRef.current === context
+      ) setError(reason instanceof Error ? reason.message : String(reason));
+      throw reason;
+    } finally {
+      setBusy(null);
+      if (
+        sizeFamilyRevision.current === revision
+        && sizeFamilyContextRef.current === context
+      ) setSizeFamilySaving(false);
+    }
+  }
+
+  function inspectSizeFamilyVersion(versionId: string) {
+    const known = versions.find((version) => version.id === versionId);
+    if (known) {
+      setActiveVersion(known);
+      return;
+    }
+    void client?.getVersion(versionId)
+      .then(setActiveVersion)
+      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+  }
+
+  async function selectSizeFamilyMember(label: SizeFamilyLabel) {
+    if (!client || !sizeFamily || !canEditProject) return;
+    const family = sizeFamily;
+    const revision = sizeFamilyRevision.current;
+    const context = sizeFamilyContext;
+    setError(null);
+    setSizeFamilySaving(true);
+    try {
+      const selected = await client.selectSizeFamilyMember(projectId, family.id, label);
+      const member = selected.members.find((item) => item.label === label);
+      if (!member) throw new Error(ru ? "В семействе нет выбранного размера." : "The selected size is missing from the family.");
+      const version = await client.getVersion(member.version_id);
+      await refresh();
+      if (
+        sizeFamilyRevision.current === revision
+        && sizeFamilyContextRef.current === context
+      ) {
+        setSizeFamily(selected);
+        setActiveVersion(version);
+        setNotice(
+          ru
+            ? `Размер ${label} выбран; остальные варианты сохранены.`
+            : `Size ${label} is current; the other variants remain saved.`,
+        );
+      }
+    } catch (reason) {
+      if (
+        sizeFamilyRevision.current === revision
+        && sizeFamilyContextRef.current === context
+      ) setError(reason instanceof Error ? reason.message : String(reason));
+      throw reason;
+    } finally {
+      if (
+        sizeFamilyRevision.current === revision
+        && sizeFamilyContextRef.current === context
+      ) setSizeFamilySaving(false);
     }
   }
 
@@ -6605,12 +6818,28 @@ export default function ProjectPage() {
 
             )}
             {tool === "size" && (
-          <Inspector
-            size={size}
-            target={activeVersion ? bodyOf(activeVersion) : null}
-            disabled={!activeVersion || !!busy}
-            onApply={applyDimensions}
-          />
+          <>
+            <Inspector
+              size={size}
+              target={activeVersion ? bodyOf(activeVersion) : null}
+              disabled={!activeVersion || !!busy}
+              onApply={applyDimensions}
+            />
+            <SizeFamilyCard
+              size={size}
+              family={sizeFamily}
+              activeVersionId={activeVersionId}
+              headVersionId={project?.head_version?.id ?? null}
+              loading={sizeFamilyLoading}
+              saving={sizeFamilySaving || !!busy}
+              canBuild={canEditProject && !hasExplicitScene}
+              canSelect={canEditProject}
+              language={language}
+              onBuild={buildSizeFamily}
+              onInspect={inspectSizeFamilyVersion}
+              onSelect={selectSizeFamilyMember}
+            />
+          </>
 
 
             )}
