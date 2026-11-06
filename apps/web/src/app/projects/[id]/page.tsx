@@ -4421,9 +4421,10 @@ export default function ProjectPage() {
     }
   }
 
-  /** Reference 83/84/86: web parity for mobile's game-ready LOD0-LOD2 preparation, its UV
-   *  atlas evidence and its per-object convex/box collider (UCX) evidence. Mechanism animation
-   *  (87) stays out of this request. */
+  /** Reference 83/84/86/87: web parity for mobile's game-ready LOD0-LOD2 preparation, its UV
+   *  atlas evidence, its per-object convex/box collider (UCX) evidence and its scene-wide rigid
+   *  mechanism animation evidence. No new request parameter is needed: the worker already
+   *  carries any trusted joint through the explicit-scene export when one exists. */
   async function runGameReadyLod(options: { maxTriangles: number; lodRatios: [number, number]; collider: GameColliderOption }) {
     if (!client || !activeVersion) return;
     const versionId = activeVersion.id;

@@ -322,6 +322,68 @@ test("aggregate scene report fails closed when a visible object's collider evide
   assert.equal(gameReadySceneReportMatchesRequest(base, 5000, "base", 10_000, 2, true, "none"), null);
 });
 
+test("aggregate scene report's rigid mechanism animation binds to exactly one verified object and fails closed on malformed or conflicting joint evidence", () => {
+  const objectA = makeObject("node-a", "Base", "Base", 10_000);
+  const objectB = makeObject("node-b", "Lid", "Lid", 6_000);
+  const base = {
+    ok: true,
+    pivot: "base",
+    file_bytes: 5000,
+    objects: 2,
+    triangles_in: 16_000,
+    per_object: [objectA, objectB],
+  };
+
+  // No animation on the scene at all: every verified object is unanimated.
+  const unanimated = gameReadySceneReportMatchesRequest(base, 5000, "base", 10_000, 2, true, "none");
+  assert.ok(unanimated);
+  assert.deepEqual(unanimated!.map((entry) => entry.animated), [false, false]);
+
+  // A trusted revolute joint bound to the lid: only that object is flagged animated.
+  const hinged = { ...base, animations: 1, animated_node_id: "node-b", animation_kind: "revolute" };
+  const verifiedHinged = gameReadySceneReportMatchesRequest(hinged, 5000, "base", 10_000, 2, true, "none");
+  assert.ok(verifiedHinged);
+  assert.deepEqual(verifiedHinged!.map((entry) => entry.animated), [false, true]);
+
+  // A trusted prismatic joint bound to the base: only that object is flagged animated.
+  const sliding = { ...base, animations: 1, animated_node_id: "node-a", animation_kind: "prismatic" };
+  const verifiedSliding = gameReadySceneReportMatchesRequest(sliding, 5000, "base", 10_000, 2, true, "none");
+  assert.ok(verifiedSliding);
+  assert.deepEqual(verifiedSliding!.map((entry) => entry.animated), [true, false]);
+
+  // An animation count outside 0/1 fails closed instead of guessing.
+  assert.equal(
+    gameReadySceneReportMatchesRequest({ ...base, animations: 2, animated_node_id: "node-a", animation_kind: "revolute" }, 5000, "base", 10_000, 2, true, "none"),
+    null,
+  );
+  // Claims one animation but omits the bound node id: fail closed.
+  assert.equal(
+    gameReadySceneReportMatchesRequest({ ...base, animations: 1, animation_kind: "revolute" }, 5000, "base", 10_000, 2, true, "none"),
+    null,
+  );
+  // Claims one animation with an unrecognized joint kind: fail closed.
+  assert.equal(
+    gameReadySceneReportMatchesRequest({ ...base, animations: 1, animated_node_id: "node-a", animation_kind: "hinge" }, 5000, "base", 10_000, 2, true, "none"),
+    null,
+  );
+  // Claims no animation but still carries a node id or joint kind: fail closed instead of
+  // silently ignoring the conflicting evidence.
+  assert.equal(
+    gameReadySceneReportMatchesRequest({ ...base, animated_node_id: "node-a" }, 5000, "base", 10_000, 2, true, "none"),
+    null,
+  );
+  assert.equal(
+    gameReadySceneReportMatchesRequest({ ...base, animation_kind: "revolute" }, 5000, "base", 10_000, 2, true, "none"),
+    null,
+  );
+  // The bound node id must reference one of the verified objects in this exact report, not a
+  // transformed or substituted id from elsewhere.
+  assert.equal(
+    gameReadySceneReportMatchesRequest({ ...base, animations: 1, animated_node_id: "node-c", animation_kind: "revolute" }, 5000, "base", 10_000, 2, true, "none"),
+    null,
+  );
+});
+
 test("web wires the LOD card through the existing export job and fail-closed validators", () => {
   assert.match(studio, /import \{\s*gameReadyColliderMatchesRequest,\s*gameReadyEnvelopeMatchesRequest,\s*gameReadyLodsMatchRequest,\s*gameReadySceneReportMatchesRequest,\s*gameReadyUvAtlasesMatchLods,/);
   assert.match(studio, /async function runGameReadyLod/);
@@ -380,6 +442,12 @@ test("the collider option is requested, validated per-object and exposed as an i
   // The preview is rendered as a wire-mesh (ModelViewer's existing wireframe display mode),
   // isolated to only the selected UCX node via `glbMeshName`.
   assert.match(card, /displayMode=\{isColliderPreview \? "wire" : "solid"\}/);
+});
+
+test("the whole-scene per-object list surfaces the trusted rigid mechanism animation without inventing one for an unanimated scene", () => {
+  assert.match(card, /\{entry\.animated \? ` · \$\{ru \? "rigid-анимация" : "rigid animation"\}` : ""\}/);
+  assert.match(card, /result\.objects\.some\(\(entry\) => entry\.animated\)/);
+  assert.match(card, /This scene has no single trusted rigid animation\./);
 });
 
 test("ModelViewer can load a named mesh from a multi-node GLB instead of always taking the first mesh", () => {

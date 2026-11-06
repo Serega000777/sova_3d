@@ -1,7 +1,7 @@
-/** Reference 83/84/86: web parity for mobile's game-ready LOD0-LOD2 preparation/preview, its
- * per-object UV atlas evidence and its per-object convex/box collider (UCX) evidence. Mechanism
- * animation (87) and the full multi-feature export (88) are separate scenarios and are not
- * validated here. */
+/** Reference 83/84/86/87: web parity for mobile's game-ready LOD0-LOD2 preparation/preview, its
+ * per-object UV atlas evidence, its per-object convex/box collider (UCX) evidence and its
+ * scene-wide rigid mechanism animation evidence. The full multi-feature export (88) is a
+ * separate scenario and is not validated here. */
 
 export type LodShareInput =
   | { ok: true; ratios: [number, number] }
@@ -228,12 +228,16 @@ export interface VerifiedGameReadyObject {
   lods: VerifiedGameLod[];
   uvAtlases: VerifiedUvAtlas[];
   collider: VerifiedGameCollider | null;
+  /** True only when the worker binds the one trusted rigid mechanism animation to this node id. */
+  animated: boolean;
 }
 
 /** A scene's aggregate LOD report is trustworthy only when every visible object's own LOD, UV
  * atlas and collider evidence independently passes the same per-object checks a single-object
  * export must pass, every object id in the report is unique, and the summed source triangles
- * match the reported total — so one object's evidence cannot be silently dropped or substituted. */
+ * match the reported total — so one object's evidence cannot be silently dropped or substituted.
+ * The scene-wide rigid mechanism animation, when present, must bind to exactly one of those
+ * same verified object ids; a conflicting, transformed or malformed joint record fails closed. */
 export function gameReadySceneReportMatchesRequest(
   reportValue: unknown,
   byteSize: unknown,
@@ -251,6 +255,9 @@ export function gameReadySceneReportMatchesRequest(
     objects?: unknown;
     triangles_in?: unknown;
     per_object?: unknown;
+    animations?: unknown;
+    animated_node_id?: unknown;
+    animation_kind?: unknown;
   };
   if (
     report.ok !== true
@@ -262,6 +269,20 @@ export function gameReadySceneReportMatchesRequest(
     || (report.objects as number) < 1
     || !Array.isArray(report.per_object)
     || report.per_object.length !== report.objects
+  ) return null;
+
+  const animations = report.animations ?? 0;
+  if (!Number.isInteger(animations) || (animations !== 0 && animations !== 1)) return null;
+  const animatedNodeId = animations === 1 ? report.animated_node_id : null;
+  if (
+    (animations === 1 && (
+      typeof animatedNodeId !== "string"
+      || (report.animation_kind !== "revolute" && report.animation_kind !== "prismatic")
+    ))
+    || (animations === 0 && (
+      report.animated_node_id != null
+      || report.animation_kind != null
+    ))
   ) return null;
 
   const seen = new Set<string>();
@@ -296,8 +317,10 @@ export function gameReadySceneReportMatchesRequest(
       lods: objectLods,
       uvAtlases,
       collider: colliderResult.collider,
+      animated: entry.node_id === animatedNodeId,
     });
   }
   if (triangleSum !== report.triangles_in) return null;
+  if (animations === 1 && !seen.has(animatedNodeId as string)) return null;
   return verified;
 }

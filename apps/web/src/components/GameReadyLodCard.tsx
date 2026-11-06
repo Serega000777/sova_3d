@@ -248,9 +248,19 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                     {entry.collider
                       ? ` · ${entry.collider.name} (${entry.collider.kind}) ${entry.collider.triangles.toLocaleString()}/${entry.collider.triangleLimit.toLocaleString()} ▲`
                       : ""}
+                    {entry.animated ? ` · ${ru ? "rigid-анимация" : "rigid animation"}` : ""}
                   </span>
                 ))}
               </div>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {result.objects.some((entry) => entry.animated)
+                  ? (ru
+                      ? "Доверенная rigid-анимация механизма перенесена вместе со всеми LOD и UCX движущегося узла."
+                      : "The trusted rigid mechanism animation is carried with every LOD and UCX child of the moving node.")
+                  : (ru
+                      ? "У этой сцены нет одной доверенной rigid-анимации."
+                      : "This scene has no single trusted rigid animation.")}
+              </span>
             </div>
           ) : (
             <div className="stack">
