@@ -3,8 +3,10 @@
 import { GAME_BUDGETS } from "@physical-ai/contracts";
 import { useEffect, useState } from "react";
 
-import { parseLodShares, type VerifiedGameReadyObject, type VerifiedGameLod, type VerifiedUvAtlas } from "../lib/game-ready-lod";
+import { parseLodShares, type VerifiedGameCollider, type VerifiedGameReadyObject, type VerifiedGameLod, type VerifiedUvAtlas } from "../lib/game-ready-lod";
 import { ModelViewer, type ViewerScenePart } from "./ModelViewer";
+
+export type GameColliderOption = "convex" | "box" | "none";
 
 export interface GameReadyLodResult {
   downloadUrl: string;
@@ -16,6 +18,8 @@ export interface GameReadyLodResult {
   objects: VerifiedGameReadyObject[] | null;
   /** Present only for a single-object export: one verified UV atlas report per LOD. */
   uvAtlases: VerifiedUvAtlas[] | null;
+  /** Present only for a single-object export when a collider was requested. */
+  collider: VerifiedGameCollider | null;
 }
 
 interface GameReadyLodCardProps {
@@ -24,7 +28,7 @@ interface GameReadyLodCardProps {
   hasExplicitScene: boolean;
   result: GameReadyLodResult | null;
   language: "ru" | "en";
-  onRun: (options: { maxTriangles: number; lodRatios: [number, number] }) => Promise<void>;
+  onRun: (options: { maxTriangles: number; lodRatios: [number, number]; collider: GameColliderOption }) => Promise<void>;
 }
 
 export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, language, onRun }: GameReadyLodCardProps) {
@@ -32,9 +36,10 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
   const [budget, setBudget] = useState(20_000);
   const [lod1Percent, setLod1Percent] = useState("50");
   const [lod2Percent, setLod2Percent] = useState("20");
+  const [colliderOption, setColliderOption] = useState<GameColliderOption>("none");
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
   const [previewLodIndex, setPreviewLodIndex] = useState(0);
-  const [previewAppearance, setPreviewAppearance] = useState<"source" | "uv_checker">("source");
+  const [previewAppearance, setPreviewAppearance] = useState<"source" | "uv_checker" | "collider">("source");
 
   useEffect(() => {
     setPreviewNodeId(null);
@@ -62,10 +67,26 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
     ? result?.objects?.[0]?.uvAtlases ?? []
     : previewObject?.uvAtlases ?? result?.uvAtlases ?? [];
   const previewAtlas = previewUvAtlases[previewLodIndex] ?? null;
+  // The collider is one node per object, not per LOD, and a whole-scene view compares several
+  // objects' LODs together — an isolated collider preview stays scoped to a single object.
+  const previewCollider: VerifiedGameCollider | null = previewWholeScene
+    ? null
+    : previewObject?.collider ?? result?.collider ?? null;
+  const isColliderPreview = previewAppearance === "collider" && previewCollider !== null;
 
   const debugAppearance = previewAppearance === "uv_checker" ? "uv_checker" as const : null;
   const previewSceneParts: ViewerScenePart[] | undefined = (() => {
     if (!result) return undefined;
+    if (isColliderPreview) {
+      if (!previewCollider) return [];
+      return [{
+        id: previewObject?.nodeId ?? "single",
+        url: result.downloadUrl,
+        format: "glb" as const,
+        worldTransform: [],
+        glbMeshName: previewCollider.name,
+      }];
+    }
     if (previewWholeScene && result.objects) {
       const names = result.objects.map((entry) => entry.lods[previewLodIndex]?.name ?? null);
       if (names.some((name) => name === null)) return [];
@@ -91,7 +112,7 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
 
   async function run() {
     if (!parsedShares.ok || runDisabled) return;
-    await onRun({ maxTriangles: budget, lodRatios: parsedShares.ratios });
+    await onRun({ maxTriangles: budget, lodRatios: parsedShares.ratios, collider: colliderOption });
   }
 
   return (
@@ -145,6 +166,34 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
       </div>
       {shareError ? <span className="status-yellow" role="alert">{shareError}</span> : null}
 
+      <div className="stack" style={{ gap: 6 }}>
+        <span className="muted" style={{ fontSize: 12 }}>{ru ? "Коллайдер" : "Collider"}</span>
+        <div className="segmented compact" role="radiogroup" aria-label={ru ? "Тип коллайдера" : "Collider type"}>
+          {([
+            { value: "convex" as const, label: ru ? "Выпуклый" : "Convex" },
+            { value: "box" as const, label: ru ? "Коробка" : "Box" },
+            { value: "none" as const, label: ru ? "Без коллайдера" : "No collider" },
+          ]).map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={colliderOption === option.value}
+              className={colliderOption === option.value ? "active" : ""}
+              disabled={disabled || busy}
+              onClick={() => setColliderOption(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <span className="muted" style={{ fontSize: 12 }}>
+          {ru
+            ? "Каждый видимый объект получает свой уникально именованный коллайдер UCX_."
+            : "Every visible object receives its own uniquely named UCX_ collider."}
+        </span>
+      </div>
+
       <button className="btn primary" type="button" disabled={runDisabled} onClick={() => void run()}>
         {busy ? (ru ? "Готовим LOD0–LOD2…" : "Preparing LOD0-LOD2…") : (ru ? "Подготовить LOD0–LOD2" : "Prepare LOD0-LOD2")}
       </button>
@@ -196,6 +245,9 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                     {entry.uvAtlases[0]
                       ? ` · UV ${entry.uvAtlases[0].triangleAreaPct.toFixed(2)}% · ${ru ? "вырожд." : "degen."} ${entry.uvAtlases[0].degenerateTriangles} · ${ru ? "вне атласа" : "oob"} ${entry.uvAtlases[0].outOfBoundsVertices}`
                       : ""}
+                    {entry.collider
+                      ? ` · ${entry.collider.name} (${entry.collider.kind}) ${entry.collider.triangles.toLocaleString()}/${entry.collider.triangleLimit.toLocaleString()} ▲`
+                      : ""}
                   </span>
                 ))}
               </div>
@@ -211,6 +263,12 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                     : ""}
                 </span>
               ))}
+              {result.collider ? (
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {result.collider.name} ({result.collider.kind}) · {result.collider.triangles.toLocaleString()}/{result.collider.triangleLimit.toLocaleString()} {ru ? "треуг." : "tris"}
+                  {` · ${ru ? "выпуклый" : "convex"} ${result.collider.isConvex ? "✓" : "✗"} · ${ru ? "замкнутый" : "watertight"} ${result.collider.isWatertight ? "✓" : "✗"}`}
+                </span>
+              ) : null}
             </div>
           )}
 
@@ -237,11 +295,12 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                   {` · ${ru ? "вырожденных" : "degenerate"} ${previewAtlas.degenerateTriangles}`}
                 </span>
               ) : null}
-              {previewUvAtlases.length > 0 ? (
-                <div className="row" role="radiogroup" aria-label={ru ? "Материал или UV-сетка" : "Material or UV checker"}>
+              {previewUvAtlases.length > 0 || previewCollider !== null ? (
+                <div className="row" role="radiogroup" aria-label={ru ? "Материал, UV-сетка или коллайдер" : "Material, UV checker or collider"}>
                   {([
                     { value: "source" as const, label: ru ? "Материал" : "Material" },
-                    { value: "uv_checker" as const, label: ru ? "UV-сетка" : "UV checker" },
+                    ...(previewUvAtlases.length > 0 ? [{ value: "uv_checker" as const, label: ru ? "UV-сетка" : "UV checker" }] : []),
+                    ...(previewCollider !== null ? [{ value: "collider" as const, label: ru ? "Коллайдер" : "Collider" }] : []),
                   ]).map((option) => (
                     <button
                       key={option.value}
@@ -256,6 +315,11 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                   ))}
                 </div>
               ) : null}
+              {isColliderPreview && previewCollider ? (
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {previewCollider.name} ({previewCollider.kind}) · {previewCollider.triangles.toLocaleString()}/{previewCollider.triangleLimit.toLocaleString()} {ru ? "треуг." : "tris"}
+                </span>
+              ) : null}
               {previewReady ? (
                 <div style={{ height: 240 }}>
                   <ModelViewer
@@ -268,11 +332,16 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                     showGrid={false}
                     language={language}
                     debugAppearance={debugAppearance}
+                    displayMode={isColliderPreview ? "wire" : "solid"}
                   />
                 </div>
               ) : null}
               <span className="muted" style={{ fontSize: 12 }}>
-                {previewAppearance === "uv_checker"
+                {isColliderPreview
+                  ? (ru
+                      ? "Показан ровно именованный UCX-коллайдер из готового GLB как изолированная каркасная сетка. Это просмотр одной collision-формы, а не симуляция столкновений, массы или динамики."
+                      : "This is the exact named UCX collider from the exported GLB, shown as an isolated wire-mesh. It previews one collision shape; it does not simulate contacts, mass or dynamics.")
+                  : previewAppearance === "uv_checker"
                   ? (ru
                       ? "UV-сетка рисуется по координатам выбранного узла из готового GLB. Она помогает увидеть швы и растяжение, но не является оценкой упаковки или редактором развёртки."
                       : "The checker uses the selected node's UV coordinates from the exported GLB. It helps inspect seams and stretching, but is not a packing score or unwrap editor.")

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  gameReadyColliderMatchesRequest,
   gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
   gameReadySceneReportMatchesRequest,
@@ -128,7 +129,7 @@ test("aggregate scene report fails closed when a per-object triangle sum does no
     triangles_in: 16_000,
     per_object: [objectA, objectB],
   };
-  const verified = gameReadySceneReportMatchesRequest(report, 5000, "base", 10_000, 2, true);
+  const verified = gameReadySceneReportMatchesRequest(report, 5000, "base", 10_000, 2, true, "none");
   assert.ok(verified);
   assert.equal(verified!.length, 2);
   assert.deepEqual(verified!.map((entry) => entry.nodeId), ["node-a", "node-b"]);
@@ -137,7 +138,7 @@ test("aggregate scene report fails closed when a per-object triangle sum does no
 
   // Summed source triangles disagree with the declared total: fail closed.
   const mismatched = { ...report, triangles_in: 99_999 };
-  assert.equal(gameReadySceneReportMatchesRequest(mismatched, 5000, "base", 10_000, 2, true), null);
+  assert.equal(gameReadySceneReportMatchesRequest(mismatched, 5000, "base", 10_000, 2, true, "none"), null);
 });
 
 test("aggregate scene report fails closed when a visible object's evidence is missing or duplicated", () => {
@@ -154,18 +155,18 @@ test("aggregate scene report fails closed when a visible object's evidence is mi
 
   // `objects` count claims 2 but only one entry is present: fail closed.
   const missing = { ...base, per_object: [objectA] };
-  assert.equal(gameReadySceneReportMatchesRequest(missing, 5000, "base", 10_000, 2, true), null);
+  assert.equal(gameReadySceneReportMatchesRequest(missing, 5000, "base", 10_000, 2, true, "none"), null);
 
   // Duplicated node id instead of a second distinct object: fail closed.
   const duplicated = { ...base, per_object: [objectA, { ...objectA }] };
-  assert.equal(gameReadySceneReportMatchesRequest(duplicated, 5000, "base", 10_000, 2, true), null);
+  assert.equal(gameReadySceneReportMatchesRequest(duplicated, 5000, "base", 10_000, 2, true, "none"), null);
 
   // A substituted/malformed per-object LOD set fails closed even though the envelope matches.
   const corrupted = {
     ...base,
     per_object: [objectA, { ...objectB, report: { ...objectB.report, lods: [] } }],
   };
-  assert.equal(gameReadySceneReportMatchesRequest(corrupted, 5000, "base", 10_000, 2, true), null);
+  assert.equal(gameReadySceneReportMatchesRequest(corrupted, 5000, "base", 10_000, 2, true, "none"), null);
 });
 
 test("aggregate scene report fails closed when a visible object's UV evidence is absent or substituted", () => {
@@ -179,14 +180,14 @@ test("aggregate scene report fails closed when a visible object's UV evidence is
     triangles_in: 16_000,
     per_object: [objectA, objectB],
   };
-  assert.ok(gameReadySceneReportMatchesRequest(base, 5000, "base", 10_000, 2, true));
+  assert.ok(gameReadySceneReportMatchesRequest(base, 5000, "base", 10_000, 2, true, "none"));
 
   // One object's UV atlas list is dropped entirely: fail closed.
   const droppedUv = {
     ...base,
     per_object: [objectA, { ...objectB, report: { ...objectB.report, uv_atlases: [] } }],
   };
-  assert.equal(gameReadySceneReportMatchesRequest(droppedUv, 5000, "base", 10_000, 2, true), null);
+  assert.equal(gameReadySceneReportMatchesRequest(droppedUv, 5000, "base", 10_000, 2, true, "none"), null);
 
   // One object's UV atlas is substituted with another object's LOD name: fail closed.
   const substitutedUv = {
@@ -202,24 +203,138 @@ test("aggregate scene report fails closed when a visible object's UV evidence is
       },
     ],
   };
-  assert.equal(gameReadySceneReportMatchesRequest(substitutedUv, 5000, "base", 10_000, 2, true), null);
+  assert.equal(gameReadySceneReportMatchesRequest(substitutedUv, 5000, "base", 10_000, 2, true, "none"), null);
 
   // An object claims UV false while the scene requested UV true: fail closed.
   const uvNotRequested = {
     ...base,
     per_object: [objectA, { ...objectB, report: { ...objectB.report, uv: false } }],
   };
-  assert.equal(gameReadySceneReportMatchesRequest(uvNotRequested, 5000, "base", 10_000, 2, true), null);
+  assert.equal(gameReadySceneReportMatchesRequest(uvNotRequested, 5000, "base", 10_000, 2, true, "none"), null);
+});
+
+function makeCollider(modelName: string, kind: "convex" | "box", overrides: Record<string, unknown> = {}) {
+  return {
+    name: `UCX_${modelName}_00`,
+    kind,
+    triangles: 120,
+    triangle_limit: 256,
+    is_convex: true,
+    is_watertight: true,
+    volume_ratio_pct: 42.5,
+    floor_offset_mm: 0.1,
+    ...overrides,
+  };
+}
+
+test("single-object collider evidence must name the exact requested UCX node with bounded, convex, watertight geometry", () => {
+  const collider = makeCollider("SovaModel", "convex");
+  assert.deepEqual(gameReadyColliderMatchesRequest({ collider }, "SovaModel", "convex"), {
+    ok: true,
+    collider: {
+      name: "UCX_SovaModel_00",
+      kind: "convex",
+      triangles: 120,
+      triangleLimit: 256,
+      isConvex: true,
+      isWatertight: true,
+      volumeRatioPct: 42.5,
+      floorOffsetMm: 0.1,
+    },
+  });
+  // A "none" request must carry no collider at all.
+  assert.deepEqual(gameReadyColliderMatchesRequest({ collider: null }, "SovaModel", "none"), { ok: true, collider: null });
+  // A "none" request that still returns a collider fails closed instead of silently ignoring it.
+  assert.deepEqual(gameReadyColliderMatchesRequest({ collider }, "SovaModel", "none"), { ok: false });
+  // A requested collider that is entirely absent fails closed.
+  assert.deepEqual(gameReadyColliderMatchesRequest({ collider: null }, "SovaModel", "convex"), { ok: false });
+  // Substituted node name fails closed.
+  assert.deepEqual(
+    gameReadyColliderMatchesRequest({ collider: makeCollider("OtherModel", "convex") }, "SovaModel", "convex"),
+    { ok: false },
+  );
+  // Wrong collider kind (box returned for a requested convex) fails closed.
+  assert.deepEqual(gameReadyColliderMatchesRequest({ collider: makeCollider("SovaModel", "box") }, "SovaModel", "convex"), { ok: false });
+  // Triangles exceeding the declared limit fail closed.
+  assert.deepEqual(
+    gameReadyColliderMatchesRequest({ collider: makeCollider("SovaModel", "convex", { triangles: 300 }) }, "SovaModel", "convex"),
+    { ok: false },
+  );
+  // Unverified convexity or watertightness fails closed.
+  assert.deepEqual(
+    gameReadyColliderMatchesRequest({ collider: makeCollider("SovaModel", "convex", { is_convex: false }) }, "SovaModel", "convex"),
+    { ok: false },
+  );
+  assert.deepEqual(
+    gameReadyColliderMatchesRequest({ collider: makeCollider("SovaModel", "convex", { is_watertight: false }) }, "SovaModel", "convex"),
+    { ok: false },
+  );
+});
+
+test("aggregate scene report fails closed when a visible object's collider evidence is absent or substituted", () => {
+  function objectWithCollider(nodeId: string, sourceName: string, engineName: string, trianglesIn: number, kind: "convex" | "box" | null) {
+    const base = makeObject(nodeId, sourceName, engineName, trianglesIn);
+    return {
+      ...base,
+      report: {
+        ...base.report,
+        collider: kind ? makeCollider(engineName, kind) : null,
+      },
+    };
+  }
+
+  const objectA = objectWithCollider("node-a", "Base", "Base", 10_000, "convex");
+  const objectB = objectWithCollider("node-b", "Lid", "Lid", 6_000, "convex");
+  const base = {
+    ok: true,
+    pivot: "base",
+    file_bytes: 5000,
+    objects: 2,
+    triangles_in: 16_000,
+    per_object: [objectA, objectB],
+  };
+  const verified = gameReadySceneReportMatchesRequest(base, 5000, "base", 10_000, 2, true, "convex");
+  assert.ok(verified);
+  assert.equal(verified![0]!.collider?.name, "UCX_Base_00");
+  assert.equal(verified![1]!.collider?.name, "UCX_Lid_00");
+
+  // One object's collider evidence is dropped entirely while a collider was requested: fail closed.
+  const droppedCollider = {
+    ...base,
+    per_object: [objectA, objectWithCollider("node-b", "Lid", "Lid", 6_000, null)],
+  };
+  assert.equal(gameReadySceneReportMatchesRequest(droppedCollider, 5000, "base", 10_000, 2, true, "convex"), null);
+
+  // One object's collider is substituted with another object's UCX name: fail closed.
+  const substitutedCollider = {
+    ...base,
+    per_object: [
+      objectA,
+      {
+        ...objectB,
+        report: { ...objectB.report, collider: makeCollider("Base", "convex") },
+      },
+    ],
+  };
+  assert.equal(gameReadySceneReportMatchesRequest(substitutedCollider, 5000, "base", 10_000, 2, true, "convex"), null);
+
+  // A "none" request where an object still carries a collider fails closed.
+  assert.equal(gameReadySceneReportMatchesRequest(base, 5000, "base", 10_000, 2, true, "none"), null);
 });
 
 test("web wires the LOD card through the existing export job and fail-closed validators", () => {
-  assert.match(studio, /import \{\s*gameReadyEnvelopeMatchesRequest,\s*gameReadyLodsMatchRequest,\s*gameReadySceneReportMatchesRequest,\s*gameReadyUvAtlasesMatchLods,/);
+  assert.match(studio, /import \{\s*gameReadyColliderMatchesRequest,\s*gameReadyEnvelopeMatchesRequest,\s*gameReadyLodsMatchRequest,\s*gameReadySceneReportMatchesRequest,\s*gameReadyUvAtlasesMatchLods,/);
   assert.match(studio, /async function runGameReadyLod/);
-  assert.match(studio, /collider: "none",\s*lod_ratios: options\.lodRatios,\s*uv: true,\s*pivot: "base",/);
+  assert.match(studio, /collider: options\.collider,\s*lod_ratios: options\.lodRatios,\s*uv: true,\s*pivot: "base",/);
   assert.match(studio, /gameReadySceneReportMatchesRequest\(\s*result\.report,/);
   assert.match(studio, /gameReadyLodsMatchRequest\(reportLods, modelName, options\.maxTriangles, options\.lodRatios\.length\)/);
   assert.match(studio, /gameReadyEnvelopeMatchesRequest\(result\.report, result\.byte_size, "base"\)/);
   assert.match(studio, /gameReadyUvAtlasesMatchLods\(result\.report, lods, true\)/);
+  // The explicit-scene path passes the requested collider type as the scene validator's
+  // colliderRequested argument, and the single-object path separately verifies the collider.
+  assert.match(studio, /gameReadySceneReportMatchesRequest\(\s*result\.report,\s*result\.byte_size,\s*"base",\s*options\.maxTriangles,\s*options\.lodRatios\.length,\s*true,\s*options\.collider,\s*\)/);
+  assert.match(studio, /gameReadyColliderMatchesRequest\(result\.report, modelName, options\.collider\)/);
+  assert.match(studio, /collider: objects \? null : collider,/);
   assert.match(studio, /<GameReadyLodCard/);
   assert.match(studio, /onRun=\{runGameReadyLod\}/);
 });
@@ -238,13 +353,33 @@ test("the single-object preview resolves exactly the selected object's chosen LO
 
 test("the checker-preview toggle only appears with UV evidence, and swaps the viewer's material without changing which node is requested", () => {
   assert.match(card, /const debugAppearance = previewAppearance === "uv_checker" \? "uv_checker" as const : null;/);
-  assert.match(card, /previewUvAtlases\.length > 0 \?/);
+  assert.match(card, /previewUvAtlases\.length > 0 \|\| previewCollider !== null \?/);
   assert.match(card, /setPreviewAppearance\("source"\)/);
   // The toggle feeds ModelViewer's standalone `debugAppearance` prop; it never appears inside
   // the `previewSceneParts` builder, so it cannot change which `glbMeshName` is resolved.
   assert.doesNotMatch(card, /glbMeshName: names\[index\]!,\s*debugAppearance,/);
   assert.doesNotMatch(card, /glbMeshName: name,\s*debugAppearance,/);
   assert.match(card, /debugAppearance=\{debugAppearance\}/);
+});
+
+test("the collider option is requested, validated per-object and exposed as an isolated wire-mesh preview", () => {
+  // The UI exposes convex/box/none, matching mobile's collider type options.
+  assert.match(card, /export type GameColliderOption = "convex" \| "box" \| "none";/);
+  assert.match(card, /const \[colliderOption, setColliderOption\] = useState<GameColliderOption>\("none"\);/);
+  assert.match(card, /await onRun\(\{ maxTriangles: budget, lodRatios: parsedShares\.ratios, collider: colliderOption \}\);/);
+  // The collider is one node per object; an isolated preview stays scoped to a single object and
+  // resolves to the exact worker-reported UCX node name, never the whole-scene comparison.
+  assert.match(
+    card,
+    /const isColliderPreview = previewAppearance === "collider" && previewCollider !== null;/,
+  );
+  assert.match(
+    card,
+    /if \(isColliderPreview\) \{\s*if \(!previewCollider\) return \[\];\s*return \[\{\s*id: previewObject\?\.nodeId \?\? "single",\s*url: result\.downloadUrl,\s*format: "glb" as const,\s*worldTransform: \[\],\s*glbMeshName: previewCollider\.name,/,
+  );
+  // The preview is rendered as a wire-mesh (ModelViewer's existing wireframe display mode),
+  // isolated to only the selected UCX node via `glbMeshName`.
+  assert.match(card, /displayMode=\{isColliderPreview \? "wire" : "solid"\}/);
 });
 
 test("ModelViewer can load a named mesh from a multi-node GLB instead of always taking the first mesh", () => {

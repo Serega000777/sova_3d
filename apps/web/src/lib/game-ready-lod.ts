@@ -1,6 +1,7 @@
-/** Reference 83/84: web parity for mobile's game-ready LOD0-LOD2 preparation/preview and its
- * per-object UV atlas evidence. Colliders (86), mechanism animation (87) and the full
- * multi-feature export (88) are separate scenarios and are not validated here. */
+/** Reference 83/84/86: web parity for mobile's game-ready LOD0-LOD2 preparation/preview, its
+ * per-object UV atlas evidence and its per-object convex/box collider (UCX) evidence. Mechanism
+ * animation (87) and the full multi-feature export (88) are separate scenarios and are not
+ * validated here. */
 
 export type LodShareInput =
   | { ok: true; ratios: [number, number] }
@@ -144,6 +145,79 @@ export function gameReadyEnvelopeMatchesRequest(
   return Number.isInteger(lod0?.triangles) && (lod0?.triangles as number) <= (report.triangles_in as number);
 }
 
+export interface VerifiedGameCollider {
+  /** The worker-reported UCX node name, e.g. "UCX_SovaModel_00". */
+  name: string;
+  kind: "convex" | "box";
+  triangles: number;
+  triangleLimit: number;
+  isConvex: boolean;
+  isWatertight: boolean;
+  volumeRatioPct: number | null;
+  floorOffsetMm: number;
+}
+
+export type VerifiedGameColliderResult =
+  | { ok: true; collider: VerifiedGameCollider | null }
+  | { ok: false };
+
+/** A collider selector may expose only the exact requested UCX node with bounded, measured,
+ * convex and watertight geometry; a "none" request must carry no collider at all. Fails closed
+ * (ok: false) on any mismatch or substitution instead of returning a null that could be mistaken
+ * for the valid "no collider requested" case. */
+export function gameReadyColliderMatchesRequest(
+  reportValue: unknown,
+  modelName: string,
+  requested: "convex" | "box" | "none",
+): VerifiedGameColliderResult {
+  if (!reportValue || typeof reportValue !== "object") return { ok: false };
+  const collider = (reportValue as { collider?: unknown }).collider;
+  if (requested === "none") {
+    return collider == null ? { ok: true, collider: null } : { ok: false };
+  }
+  if (!collider || typeof collider !== "object") return { ok: false };
+  const evidence = collider as Partial<{
+    name: unknown;
+    kind: unknown;
+    triangles: unknown;
+    triangle_limit: unknown;
+    is_convex: unknown;
+    is_watertight: unknown;
+    volume_ratio_pct: unknown;
+    floor_offset_mm: unknown;
+  }>;
+  const valid = (
+    evidence.name === `UCX_${modelName}_00`
+    && evidence.kind === requested
+    && Number.isInteger(evidence.triangles)
+    && (evidence.triangles as number) > 0
+    && Number.isInteger(evidence.triangle_limit)
+    && (evidence.triangle_limit as number) > 0
+    && (evidence.triangles as number) <= (evidence.triangle_limit as number)
+    && evidence.is_convex === true
+    && evidence.is_watertight === true
+    && (
+      evidence.volume_ratio_pct === null
+      || (Number.isFinite(evidence.volume_ratio_pct) && (evidence.volume_ratio_pct as number) > 0)
+    )
+    && Number.isFinite(evidence.floor_offset_mm)
+  );
+  if (!valid) return { ok: false };
+  return {
+    ok: true,
+    collider: {
+      name: evidence.name as string,
+      kind: evidence.kind as "convex" | "box",
+      triangles: evidence.triangles as number,
+      triangleLimit: evidence.triangle_limit as number,
+      isConvex: evidence.is_convex as boolean,
+      isWatertight: evidence.is_watertight as boolean,
+      volumeRatioPct: evidence.volume_ratio_pct as number | null,
+      floorOffsetMm: evidence.floor_offset_mm as number,
+    },
+  };
+}
+
 export interface VerifiedGameReadyObject {
   nodeId: string;
   /** Original scene-tree label. */
@@ -153,12 +227,13 @@ export interface VerifiedGameReadyObject {
   trianglesIn: number;
   lods: VerifiedGameLod[];
   uvAtlases: VerifiedUvAtlas[];
+  collider: VerifiedGameCollider | null;
 }
 
-/** A scene's aggregate LOD report is trustworthy only when every visible object's own LOD and
- * UV atlas evidence independently passes the same per-object checks a single-object export
- * must pass, every object id in the report is unique, and the summed source triangles match
- * the reported total — so one object's evidence cannot be silently dropped or substituted. */
+/** A scene's aggregate LOD report is trustworthy only when every visible object's own LOD, UV
+ * atlas and collider evidence independently passes the same per-object checks a single-object
+ * export must pass, every object id in the report is unique, and the summed source triangles
+ * match the reported total — so one object's evidence cannot be silently dropped or substituted. */
 export function gameReadySceneReportMatchesRequest(
   reportValue: unknown,
   byteSize: unknown,
@@ -166,6 +241,7 @@ export function gameReadySceneReportMatchesRequest(
   maxTriangles: number,
   requestedLighterLevels: number,
   uvRequested: boolean,
+  colliderRequested: "convex" | "box" | "none",
 ): VerifiedGameReadyObject[] | null {
   if (!reportValue || typeof reportValue !== "object") return null;
   const report = reportValue as {
@@ -209,6 +285,8 @@ export function gameReadySceneReportMatchesRequest(
     const objectLods = objectReport!.lods as VerifiedGameLod[];
     const uvAtlases = gameReadyUvAtlasesMatchLods(entry.report, objectLods, uvRequested);
     if (!uvAtlases) return null;
+    const colliderResult = gameReadyColliderMatchesRequest(entry.report, entry.name, colliderRequested);
+    if (!colliderResult.ok) return null;
     triangleSum += objectReport!.triangles_in as number;
     verified.push({
       nodeId: entry.node_id,
@@ -217,6 +295,7 @@ export function gameReadySceneReportMatchesRequest(
       trianglesIn: objectReport!.triangles_in as number,
       lods: objectLods,
       uvAtlases,
+      collider: colliderResult.collider,
     });
   }
   if (triangleSum !== report.triangles_in) return null;

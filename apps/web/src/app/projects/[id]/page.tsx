@@ -96,7 +96,7 @@ import { ExactCadPanel, type ExactCadOperation } from "@/components/ExactCadPane
 import { FeedbackButtons } from "@/components/FeedbackButtons";
 import { FastenerPanel } from "@/components/FastenerPanel";
 import { FitTestCard } from "@/components/FitTestCard";
-import { GameReadyLodCard, type GameReadyLodResult } from "@/components/GameReadyLodCard";
+import { GameReadyLodCard, type GameColliderOption, type GameReadyLodResult } from "@/components/GameReadyLodCard";
 import { LicenceCard } from "@/components/LicenceCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { ManufacturingEstimateCard } from "@/components/ManufacturingEstimateCard";
@@ -152,10 +152,12 @@ import {
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { interiorMaterialResultMatches } from "@/lib/interior-material";
 import {
+  gameReadyColliderMatchesRequest,
   gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
   gameReadySceneReportMatchesRequest,
   gameReadyUvAtlasesMatchLods,
+  type VerifiedGameCollider,
   type VerifiedGameLod,
 } from "@/lib/game-ready-lod";
 import { useSession } from "@/lib/session";
@@ -4419,10 +4421,10 @@ export default function ProjectPage() {
     }
   }
 
-  /** Reference 83/84: web parity for mobile's game-ready LOD0-LOD2 preparation and its UV
-   *  atlas evidence. Colliders (86) and mechanism animation (87) stay out of this request so
-   *  the aggregate report only has to prove LOD and UV evidence. */
-  async function runGameReadyLod(options: { maxTriangles: number; lodRatios: [number, number] }) {
+  /** Reference 83/84/86: web parity for mobile's game-ready LOD0-LOD2 preparation, its UV
+   *  atlas evidence and its per-object convex/box collider (UCX) evidence. Mechanism animation
+   *  (87) stays out of this request. */
+  async function runGameReadyLod(options: { maxTriangles: number; lodRatios: [number, number]; collider: GameColliderOption }) {
     if (!client || !activeVersion) return;
     const versionId = activeVersion.id;
     const modelName = "SovaModel";
@@ -4436,7 +4438,7 @@ export default function ProjectPage() {
         game: {
           name: modelName,
           max_triangles: options.maxTriangles,
-          collider: "none",
+          collider: options.collider,
           lod_ratios: options.lodRatios,
           uv: true,
           pivot: "base",
@@ -4462,6 +4464,7 @@ export default function ProjectPage() {
       let objects: ReturnType<typeof gameReadySceneReportMatchesRequest> = null;
       let lods: VerifiedGameLod[] | null = null;
       let uvAtlases: ReturnType<typeof gameReadyUvAtlasesMatchLods> = null;
+      let collider: VerifiedGameCollider | null = null;
       if (hasExplicitScene) {
         objects = gameReadySceneReportMatchesRequest(
           result.report,
@@ -4470,6 +4473,7 @@ export default function ProjectPage() {
           options.maxTriangles,
           options.lodRatios.length,
           true,
+          options.collider,
         );
         if (!objects) {
           throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
@@ -4487,6 +4491,11 @@ export default function ProjectPage() {
         if (!uvAtlases) {
           throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
         }
+        const colliderResult = gameReadyColliderMatchesRequest(result.report, modelName, options.collider);
+        if (!colliderResult.ok) {
+          throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
+        }
+        collider = colliderResult.collider;
       }
       const download = await client.download(result.asset_id);
       if (activeVersionIdRef.current !== versionId || gameReadyLodRevision.current !== revision) return;
@@ -4497,6 +4506,7 @@ export default function ProjectPage() {
         lods: objects ? null : lods,
         objects,
         uvAtlases: objects ? null : uvAtlases,
+        collider: objects ? null : collider,
       });
       setNotice(ru ? "LOD0–LOD2 готовы к скачиванию." : "LOD0-LOD2 are ready to download.");
     } catch (reason) {
