@@ -177,6 +177,7 @@ import {
   mirrorFacadeOpening,
   type FacadeOpeningDraft,
 } from "@/lib/facade-openings";
+import { verifiedAppliedFacadeVariant } from "@/lib/facade-design-variants";
 
 const ModelViewer = dynamic(
   () => import("@/components/ModelViewer").then((m) => m.ModelViewer),
@@ -2364,19 +2365,38 @@ export default function ProjectPage() {
     }
   }
 
+  /** Scenario 80: accept only the exact immutable child the selected variant produced, and
+   *  never let a stale job that resolves after the user moved to another version hijack the
+   *  viewport — mirrors mobile's `verifiedAppliedFacadeVariant` + `activeIdRef` guard
+   *  (apps/mobile/src/FacadeDesignVariantsCard.tsx, apps/mobile/app/project/[id].tsx). */
   async function applySavedFacadeVariant(variant: FacadeVariant) {
     if (!client || !activeVersion) return;
+    const sourceVersionId = activeVersion.id;
     setError(null);
     try {
-      const accepted = await client.applyFacadeVariant(activeVersion.id, {
+      const accepted = await client.applyFacadeVariant(sourceVersionId, {
         variant_version_id: variant.version_id,
       });
       const job = await trackJob(
         ru ? `Применяю «${variant.name}»` : `Applying “${variant.name}”`,
         accepted.job_id,
       );
-      await showResult(job);
+      const versionId = (job.result as { version_id?: unknown } | null)?.version_id;
+      if (typeof versionId !== "string") {
+        throw new Error(
+          ru ? "Сервер не вернул новую версию фасада." : "The server did not return a new facade version.",
+        );
+      }
+      const version = await client.getVersion(versionId);
+      if (!verifiedAppliedFacadeVariant(job, version, sourceVersionId, variant)) {
+        throw new Error(
+          ru
+            ? "Результат варианта не совпал с выбранной версией."
+            : "The variant result did not match the selected version.",
+        );
+      }
       await refresh();
+      if (activeVersionIdRef.current === sourceVersionId) setActiveVersion(version);
       setNotice(
         ru ? `Вариант «${variant.name}» применён в новой версии.` : `Variant “${variant.name}” was applied in a new version.`,
       );
