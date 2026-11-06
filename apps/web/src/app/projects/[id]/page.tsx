@@ -4498,10 +4498,26 @@ export default function ProjectPage() {
         }
         collider = colliderResult.collider;
       }
-      const download = await client.download(result.asset_id);
+      // Reference 88: bind the signed download to the exact asset/byte-size the verified report
+      // above already proved, reusing scenario 89's established download-binding convention
+      // instead of trusting the download endpoint's response on its own.
+      const verifiedDownload = verifiedExchangeDownload(
+        { assetId: result.asset_id, byteSize: result.byte_size as number, format: "glb" },
+        await client.download(result.asset_id),
+      );
+      if (!verifiedDownload) {
+        throw new Error(
+          ru
+            ? "Ссылка скачивания не совпадает с проверенным файлом экспорта."
+            : "The download does not match the verified export file.",
+        );
+      }
       if (activeVersionIdRef.current !== versionId || gameReadyLodRevision.current !== revision) return;
       setGameReadyLodResult({
-        downloadUrl: download.url,
+        downloadUrl: verifiedDownload.url,
+        assetId: verifiedDownload.assetId,
+        versionId,
+        requestRevision: revision,
         byteSize: result.byte_size as number,
         maxTriangles: options.maxTriangles,
         lods: objects ? null : lods,
@@ -4516,6 +4532,46 @@ export default function ProjectPage() {
       }
     } finally {
       if (gameReadyLodRevision.current === revision) setGameReadyLodBusy(false);
+    }
+  }
+
+  /** Reference 88: re-verify a fresh signed URL against the exact asset/byte-size the game-ready
+   *  report already proved before handing the file to the user, since a signed URL can expire or
+   *  the selected version/request can change while LOD/UV/collider previews are still open.
+   *  Mirrors scenario 89's `openExchangeConversion` stale-result-guard convention. */
+  async function downloadGameReadyLod() {
+    const current = gameReadyLodResult;
+    if (
+      !client
+      || !current
+      || activeVersionIdRef.current !== current.versionId
+      || gameReadyLodRevision.current !== current.requestRevision
+    ) return;
+    setError(null);
+    try {
+      const refreshed = verifiedExchangeDownload(
+        { assetId: current.assetId, byteSize: current.byteSize, format: "glb" },
+        await client.download(current.assetId),
+      );
+      if (
+        !refreshed
+        || activeVersionIdRef.current !== current.versionId
+        || gameReadyLodRevision.current !== current.requestRevision
+      ) {
+        throw new Error(
+          ru
+            ? "Ссылка скачивания больше не совпадает с проверенным файлом."
+            : "The download no longer matches the verified file.",
+        );
+      }
+      const link = document.createElement("a");
+      link.href = refreshed.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.download = "";
+      link.click();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -8062,6 +8118,7 @@ export default function ProjectPage() {
                 result={gameReadyLodResult}
                 language={language}
                 onRun={runGameReadyLod}
+                onDownload={downloadGameReadyLod}
               />
             </ProOverlay>
             {downloads.map((d) => d.format === "usdz" ? (

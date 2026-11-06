@@ -10,6 +10,11 @@ export type GameColliderOption = "convex" | "box" | "none";
 
 export interface GameReadyLodResult {
   downloadUrl: string;
+  /** Bound to the exact asset the verified report proved, so a stale/expired signed URL can be
+   *  re-verified against this same id right before the user actually downloads the file. */
+  assetId: string;
+  versionId: string;
+  requestRevision: number;
   byteSize: number;
   maxTriangles: number;
   /** Present only for a single-object export. */
@@ -29,9 +34,12 @@ interface GameReadyLodCardProps {
   result: GameReadyLodResult | null;
   language: "ru" | "en";
   onRun: (options: { maxTriangles: number; lodRatios: [number, number]; collider: GameColliderOption }) => Promise<void>;
+  /** Re-verifies a fresh signed URL against the exact bound asset/byte-size before downloading,
+   *  since the user may inspect LOD/UV/collider previews for a while before actually downloading. */
+  onDownload: () => Promise<void>;
 }
 
-export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, language, onRun }: GameReadyLodCardProps) {
+export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, language, onRun, onDownload }: GameReadyLodCardProps) {
   const ru = language === "ru";
   const [budget, setBudget] = useState(20_000);
   const [lod1Percent, setLod1Percent] = useState("50");
@@ -40,6 +48,7 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
   const [previewLodIndex, setPreviewLodIndex] = useState(0);
   const [previewAppearance, setPreviewAppearance] = useState<"source" | "uv_checker" | "collider">("source");
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     setPreviewNodeId(null);
@@ -113,6 +122,16 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
   async function run() {
     if (!parsedShares.ok || runDisabled) return;
     await onRun({ maxTriangles: budget, lodRatios: parsedShares.ratios, collider: colliderOption });
+  }
+
+  async function download() {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await onDownload();
+    } finally {
+      setDownloading(false);
+    }
   }
 
   return (
@@ -366,7 +385,9 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
             </div>
           ) : null}
 
-          <a className="btn" href={result.downloadUrl} download="">{ru ? "Скачать GLB" : "Download GLB"}</a>
+          <button className="btn" type="button" disabled={downloading} onClick={() => void download()}>
+            {downloading ? (ru ? "Скачиваем…" : "Downloading…") : (ru ? "Скачать GLB" : "Download GLB")}
+          </button>
         </div>
       ) : null}
 

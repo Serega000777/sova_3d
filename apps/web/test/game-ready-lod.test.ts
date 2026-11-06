@@ -10,6 +10,7 @@ import {
   gameReadyUvAtlasesMatchLods,
   parseLodShares,
 } from "../src/lib/game-ready-lod.ts";
+import { verifiedExchangeDownload } from "../src/lib/format-conversion.ts";
 
 const studio = readFileSync(new URL("../src/app/projects/[id]/page.tsx", import.meta.url), "utf8");
 const card = readFileSync(new URL("../src/components/GameReadyLodCard.tsx", import.meta.url), "utf8");
@@ -472,4 +473,58 @@ test("ModelViewer renders a UV-space checker override as a render-time material 
   assert.doesNotMatch(scenePartInterface, /debugAppearance/);
   const viewerBodyInterface = viewer.slice(viewer.indexOf("export interface ViewerBody"), viewer.indexOf("export interface ViewerAppearance"));
   assert.doesNotMatch(viewerBodyInterface, /debugAppearance/);
+});
+
+// Reference 88: the full game-ready export is this same LOD/UV/collider/animation card's GLB,
+// so the remaining web gap is the download action itself — it must stay bound to the exact
+// asset/byte-size the already-verified report proved, reusing scenario 89's established
+// `verifiedExchangeDownload` binding and `openExchangeConversion` stale-result-guard convention
+// instead of handing the raw download endpoint's response straight to the user.
+
+test("the game-ready download binds to the exact asset id, byte size and glb format the verified report proved", () => {
+  const bound = { assetId: "asset-88", byteSize: 7_340_032, format: "glb" };
+  const download = { asset_id: "asset-88", format: "glb", byte_size: 7_340_032, url: "https://objects.example.test/asset-88?signature=redacted" };
+  assert.equal(verifiedExchangeDownload(bound, download as never)?.url, download.url);
+  // A substituted asset id, a reformatted file or a different byte size all fail closed instead
+  // of handing over an unrelated or corrupted download.
+  assert.equal(verifiedExchangeDownload(bound, { ...download, asset_id: "substituted" } as never), null);
+  assert.equal(verifiedExchangeDownload(bound, { ...download, format: "gltf" } as never), null);
+  assert.equal(verifiedExchangeDownload(bound, { ...download, byte_size: 7_340_031 } as never), null);
+  assert.equal(verifiedExchangeDownload(bound, { ...download, url: "javascript:alert(1)" } as never), null);
+});
+
+test("web binds the initial game-ready download to the exact job result asset id, byte size and glb format before accepting it", () => {
+  assert.match(
+    studio,
+    /verifiedExchangeDownload\(\s*\{ assetId: result\.asset_id, byteSize: result\.byte_size as number, format: "glb" \},\s*await client\.download\(result\.asset_id\),\s*\)/,
+  );
+  assert.match(studio, /if \(!verifiedDownload\) \{\s*throw new Error\(/);
+  assert.match(studio, /downloadUrl: verifiedDownload\.url,/);
+  assert.match(studio, /assetId: verifiedDownload\.assetId,/);
+});
+
+test("web re-verifies a fresh signed download against the exact bound asset before handing it to the user", () => {
+  assert.match(studio, /async function downloadGameReadyLod\(\)/);
+  const fn = studio.slice(studio.indexOf("async function downloadGameReadyLod"), studio.indexOf("/** P1 gap: smart low-poly preset"));
+  // The stale-result guard checks both the active version and the captured request revision,
+  // both before and after the re-fetch, exactly like scenario 89's openExchangeConversion.
+  assert.match(fn, /activeVersionIdRef\.current !== current\.versionId/);
+  assert.match(fn, /gameReadyLodRevision\.current !== current\.requestRevision/);
+  assert.match(
+    fn,
+    /verifiedExchangeDownload\(\s*\{ assetId: current\.assetId, byteSize: current\.byteSize, format: "glb" \},\s*await client\.download\(current\.assetId\),\s*\)/,
+  );
+  assert.match(fn, /link\.href = refreshed\.url;/);
+  assert.match(fn, /link\.click\(\);/);
+  assert.match(studio, /onDownload=\{downloadGameReadyLod\}/);
+});
+
+test("the card's download action re-verifies through the parent callback instead of a static anchor href", () => {
+  // A raw `<a href={result.downloadUrl} ...>` would let the user click a signed URL that has
+  // already expired or outlived its version/revision context; the button must call back into
+  // the parent's re-verified download handler instead.
+  assert.doesNotMatch(card, /href=\{result\.downloadUrl\}/);
+  assert.match(card, /onDownload: \(\) => Promise<void>;/);
+  assert.match(card, /await onDownload\(\);/);
+  assert.match(card, /disabled=\{downloading\} onClick=\{\(\) => void download\(\)\}/);
 });
