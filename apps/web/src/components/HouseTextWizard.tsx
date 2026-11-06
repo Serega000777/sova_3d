@@ -5,6 +5,8 @@ import {
   type HouseTextProposal,
   type PhysicalAiClient,
   houseTextApplyBody,
+  houseTextFootprint,
+  houseTextProposalIsExact,
   houseTextRefusal,
   houseTextRows,
 } from "@physical-ai/contracts";
@@ -24,7 +26,7 @@ const EXAMPLES: Record<Language, readonly string[]> = {
   ],
 };
 
-/** Item 41: description → server proposal → explicit Apply/Cancel → existing house-box job. */
+/** Item 41/98: description → server proposal with an exact massing outline → explicit Apply/Cancel → existing house-box job. */
 export function HouseTextWizard({
   client,
   workspaceId,
@@ -44,6 +46,8 @@ export function HouseTextWizard({
   const [proposal, setProposal] = useState<HouseTextProposal | null>(null);
   const [busy, setBusy] = useState<"propose" | "apply" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Fail-closed: malformed dimensions or an unsupported shape never render a preview or allow apply.
+  const footprint = proposal ? houseTextFootprint(proposal.request) : null;
 
   function explain(reason: unknown) {
     if (reason instanceof ApiError) return houseTextRefusal(reason.details, reason.message, language);
@@ -66,6 +70,11 @@ export function HouseTextWizard({
     setError(null);
     try {
       const next = await client.proposeHouseFromText({ workspace_id: workspaceId, prompt });
+      if (!houseTextProposalIsExact(next, { workspaceId, projectId: null })) {
+        throw new Error(ru
+          ? "Сервер вернул несогласованное предложение. Получите его заново."
+          : "The server returned an inconsistent proposal. Request it again.");
+      }
       setProposal(next);
       setProposedText(prompt);
     } catch (reason) {
@@ -78,7 +87,7 @@ export function HouseTextWizard({
   }
 
   async function apply() {
-    if (!proposal || proposedText === null) return;
+    if (!proposal || proposedText === null || !footprint) return;
     setBusy("apply");
     setError(null);
     try {
@@ -86,7 +95,13 @@ export function HouseTextWizard({
         houseTextApplyBody(proposal, proposedText),
         crypto.randomUUID(),
       );
-      await client.waitForJob(accepted.job.job_id, { intervalMs: 1_000 });
+      const job = await client.waitForJob(accepted.job.job_id, { intervalMs: 1_000 });
+      if (job.status !== "succeeded") {
+        throw new Error(
+          (job.error as { message?: string } | null)?.message
+            ?? (ru ? "Дом не построен" : "The house was not built"),
+        );
+      }
       router.push(`/projects/${accepted.project_id}?goal=house_design`);
     } catch (reason) {
       setError(explain(reason));
@@ -132,13 +147,42 @@ export function HouseTextWizard({
         </div>
         <p className="muted">
           {ru
-            ? "Сейчас поддерживается один прямоугольный дом без лестниц, крыши и комнат — их можно добавить позже в редакторе."
-            : "One rectangular house without stairs, roof or rooms is supported for now — add those later in the editor."}
+            ? "Поддерживаются прямоугольная, Г- и Т-образная массы без лестниц, крыши, окон и комнат — добавьте их позже в редакторе."
+            : "Rectangular, L-shaped and T-shaped masses are supported, without stairs, roof, windows or rooms — add those later in the editor."}
         </p>
         {proposal && (
           <section className="card stack house-text-proposal" aria-live="polite">
             <strong>{ru ? "Предложение — проверьте параметры" : "Proposal — check the parameters"}</strong>
             <p>{ru ? proposal.summary_ru : proposal.summary_en}</p>
+            {footprint ? (
+              <div
+                className="house-text-footprint stack"
+                aria-label={ru ? "Точное пятно застройки из предложения сервера" : "Exact footprint from the server proposal"}
+              >
+                <svg
+                  className="house-text-footprint-svg"
+                  viewBox={`-500 -500 ${proposal.request.length_mm + 1_000} ${proposal.request.width_mm + 1_000}`}
+                  role="img"
+                  aria-label={ru ? "Схема массы дома — не фасад" : "House massing diagram — not a facade"}
+                >
+                  <polygon
+                    points={footprint.map(([x, y]) => `${x},${y}`).join(" ")}
+                    fill="var(--accent-wash-strong)"
+                    stroke="var(--accent)"
+                    strokeWidth={Math.max(proposal.request.length_mm, proposal.request.width_mm) / 180}
+                  />
+                </svg>
+                <small className="muted">
+                  {ru
+                    ? `Схема массы (не фотореалистичный фасад) · ${proposal.request.length_mm.toLocaleString("ru")} × ${proposal.request.width_mm.toLocaleString("ru")} мм`
+                    : `Massing diagram, not a photoreal facade · ${proposal.request.length_mm.toLocaleString("en")} × ${proposal.request.width_mm.toLocaleString("en")} mm`}
+                </small>
+              </div>
+            ) : (
+              <div className="error" role="alert">
+                {ru ? "Сервер вернул неподдерживаемое пятно дома." : "The server returned an unsupported house footprint."}
+              </div>
+            )}
             <table className="house-text-table">
               <thead>
                 <tr>
@@ -175,7 +219,7 @@ export function HouseTextWizard({
           {proposal ? (
             <span className="house-text-confirm">
               <button type="button" className="btn" onClick={cancel} disabled={busy !== null}>{ru ? "Отмена" : "Cancel"}</button>
-              <button type="button" className="btn primary" onClick={() => void apply()} disabled={busy !== null}>
+              <button type="button" className="btn primary" onClick={() => void apply()} disabled={busy !== null || !footprint}>
                 {busy === "apply" ? (ru ? "Строим…" : "Building…") : (ru ? "Применить и создать дом" : "Apply and create house")}
               </button>
             </span>

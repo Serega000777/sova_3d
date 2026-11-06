@@ -2837,3 +2837,4 @@ summary {
 .house-text-table { width: 100%; border-collapse: collapse; }
 .house-text-table th, .house-text-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
 .house-text-confirm { display: flex; gap: 12px; }
+.house-text-footprint-svg { width: 100%; max-height: 220px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--panel) 88%, transparent); }
