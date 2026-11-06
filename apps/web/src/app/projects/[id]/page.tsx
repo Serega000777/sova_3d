@@ -98,6 +98,7 @@ import { FastenerPanel } from "@/components/FastenerPanel";
 import { FitTestCard } from "@/components/FitTestCard";
 import { GameReadyLodCard, type GameColliderOption, type GameReadyLodResult } from "@/components/GameReadyLodCard";
 import { LicenceCard } from "@/components/LicenceCard";
+import { localEditPreviewVersion, type LocalEditPreviewSide } from "@/local-edit-preview";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { ManufacturingEstimateCard } from "@/components/ManufacturingEstimateCard";
 import { OptimizeCard, type OptimizationDraft } from "@/components/OptimizeCard";
@@ -1070,9 +1071,16 @@ export default function ProjectPage() {
   useEffect(() => {
     if (largestMm > 0) setModellingGrid((grid) => ({ ...grid, step_mm: suggestGridStep(largestMm) }));
   }, [largestMm]);
-  const [preview, setPreview] = useState<{ version: Version; diff: VersionComparison } | null>(
-    null,
-  );
+  const [preview, setPreview] = useState<{
+    version: Version;
+    diff: VersionComparison;
+    beforeVersion?: Version | null;
+    beforeUrls?: ThumbnailUrlSet;
+    afterUrls?: ThumbnailUrlSet;
+    command?: string;
+    region?: RegionSelection | null;
+  } | null>(null);
+  const [previewSide, setPreviewSide] = useState<LocalEditPreviewSide>("after");
   const [previewMode, setPreviewMode] = useState(false);
   // F-075: several answers to one request, each a preview; the user keeps one.
   const [variants, setVariants] = useState<
@@ -2826,11 +2834,11 @@ export default function ProjectPage() {
             .join(" ") || null,
       });
       const job = await trackJob("Planning & building", accepted.job_id);
-      await afterAiJob(accepted.ai_request_id, job);
+      const previewShown = await afterAiJob(accepted.ai_request_id, job, { command: text, region });
       setPrompt("");
       dropPhotos();
       dropVideo();
-      if (job.status === "succeeded") {
+      if (job.status === "succeeded" && !previewShown) {
         setRegion(null);
         setRegionMode(false);
       }
@@ -2873,11 +2881,15 @@ export default function ProjectPage() {
     }
   }
 
-  async function afterAiJob(requestId: string, job: Job) {
-    if (!client) return;
+  async function afterAiJob(
+    requestId: string,
+    job: Job,
+    context?: { command?: string; region?: RegionSelection | null },
+  ): Promise<boolean> {
+    if (!client) return false;
     if (job.status === "waiting_input") {
       setPending(await client.getAiRequest(requestId));
-      return;
+      return false;
     }
     setPending(null);
     if (job.status === "failed") {
@@ -2885,8 +2897,9 @@ export default function ProjectPage() {
       setError(detail?.message ?? "the command failed");
     }
     await refresh();
-    if (await showPreviewIfDraft(job)) return;
+    if (await showPreviewIfDraft(job, context)) return true;
     await showResult(job);
+    return false;
   }
 
   /** T-052: a preview is built but not kept — show it next to what it would replace. */
@@ -2965,14 +2978,38 @@ export default function ProjectPage() {
     }
   }
 
-  async function showPreviewIfDraft(job: Job): Promise<boolean> {
+  /** Reference 76: a region-scoped command binds its decision card to the exact submitted
+   * command/region and loads the canonical before version so the viewport can switch between
+   * the immutable source and the draft; a missing source falls back to the draft. */
+  async function showPreviewIfDraft(
+    job: Job,
+    context?: { command?: string; region?: RegionSelection | null },
+  ): Promise<boolean> {
     if (!client) return false;
     const result = job.result as { version_id?: string; preview?: boolean } | null;
     if (!result?.preview || !result.version_id) return false;
     const version = await client.getVersion(result.version_id);
     const diff = await client.compareVersion(version.id);
-    setPreview({ version, diff });
-    setActiveVersion(version);
+    const beforeVersion = diff.before?.version_id
+      ? await client.getVersion(diff.before.version_id).catch(() => null)
+      : null;
+    const [beforeUrls, afterUrls] = await Promise.all([
+      beforeVersion
+        ? client.versionThumbnailUrls(beforeVersion.id, beforeVersion.assets).catch(() => ({}))
+        : Promise.resolve({}),
+      client.versionThumbnailUrls(version.id, version.assets).catch(() => ({})),
+    ]);
+    setPreview({
+      version,
+      diff,
+      beforeVersion,
+      beforeUrls,
+      afterUrls,
+      command: context?.command,
+      region: context?.region,
+    });
+    setPreviewSide("after");
+    setActiveVersion(localEditPreviewVersion("after", beforeVersion, version));
     return true;
   }
 
@@ -2982,7 +3019,13 @@ export default function ProjectPage() {
     try {
       if (keep) await client.acceptVersion(preview.version.id);
       else await client.discardVersion(preview.version.id);
+      const hadRegion = Boolean(preview.region);
       setPreview(null);
+      setPreviewSide("after");
+      if (hadRegion) {
+        setRegion(null);
+        setRegionMode(false);
+      }
       await refresh();
       const summary = await client.getProject(projectId);
       setActiveVersion(summary.head_version ?? null);
@@ -3000,7 +3043,7 @@ export default function ProjectPage() {
       const accepted = await client.clarify(pending.id, [answer.trim()]);
       setAnswer("");
       const job = await trackJob("Continuing", accepted.job_id);
-      await afterAiJob(pending.id, job);
+      await afterAiJob(pending.id, job, { command: pending.prompt, region });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -8586,8 +8629,62 @@ export default function ProjectPage() {
 
 
       {preview && (
-        <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
+        <div
+          className="card stack"
+          style={{ borderColor: "var(--yellow)" }}
+          aria-label={
+            preview.command && preview.region
+              ? (ru ? "Предпросмотр локальной правки" : "Local edit preview")
+              : undefined
+          }
+        >
           <strong>Preview — not kept yet</strong>
+          {preview.command && preview.region ? (
+            <div
+              className="card stack"
+              style={{ gap: 4, background: "var(--panel-2)" }}
+              aria-label={ru ? "Команда и область локальной правки" : "Local edit command and region"}
+            >
+              <span>{ru ? "Команда" : "Command"}: {preview.command}</span>
+              <span className="mono">{ru ? "Область" : "Region"}: {regionSize(preview.region)}</span>
+            </div>
+          ) : null}
+          {preview.beforeUrls && preview.afterUrls && (
+            <VersionImageComparison
+              beforeUrl={preview.beforeUrls.iso ?? null}
+              currentUrl={preview.afterUrls.iso ?? null}
+              beforeLabel={ru ? "До" : "Before"}
+              currentLabel={ru ? "После" : "After"}
+              language={language}
+            />
+          )}
+          {preview.beforeVersion && (
+            <div
+              className="row"
+              style={{ flexWrap: "wrap" }}
+              aria-label={ru ? "3D сравнение до и после" : "Before and after 3D comparison"}
+            >
+              {(["before", "after"] as const).map((side) => (
+                <button
+                  key={side}
+                  type="button"
+                  className={`btn ${previewSide === side ? "primary" : ""}`}
+                  style={{ flex: 1 }}
+                  disabled={!!busy}
+                  onClick={() => {
+                    setPreviewSide(side);
+                    setActiveVersion(
+                      localEditPreviewVersion(side, preview.beforeVersion, preview.version),
+                    );
+                  }}
+                >
+                  {side === "before"
+                    ? (ru ? "Показать 3D до" : "Show 3D before")
+                    : (ru ? "Показать 3D после" : "Show 3D after")}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="row">
             {(["before", "after"] as const).map((side) => {
               const state = preview.diff[side];
