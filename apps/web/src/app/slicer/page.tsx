@@ -19,12 +19,15 @@ import type {
   PrinterProfile,
   Project,
   RegionSelection,
+  SplitProvenance,
+  Version,
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { verifiedWebBuildPlateLayout } from "@/lib/build-plate-layout";
 import { shrinkPhoto } from "@/lib/photo";
 import { parsePrinterState } from "@/lib/printer-monitor";
 import {
@@ -142,36 +145,17 @@ type ProcessModifier = {
   region: RegionSelection["region"];
 };
 
-type NestedPart = {
-  name: string;
-  extents_mm: number[];
-  fits_bed?: boolean;
-  plate_offset_mm?: number[];
-  plate_rotation_deg?: 0 | 90;
-  edge_clearance_mm?: number | null;
-  nearest_clearance_mm?: number | null;
+type PlateLayoutDraft = {
+  version: Version;
+  layout: SplitProvenance;
+  sourceVersionId: string;
+  marginMm: number;
 };
 
-type NestingResult = {
-  parts: NestedPart[];
-  dowels?: {
-    name: string;
-    diameter_mm: number;
-    plate_offset_mm?: number[];
-  }[];
-  layout_bed_mm?: number[] | null;
-  layout_extents_mm?: number[] | null;
-  minimum_edge_clearance_mm?: number | null;
-  minimum_part_clearance_mm?: number | null;
-  margin_mm?: number | null;
-  gap_mm?: number;
-};
-
-function BedNestingPreview({ result }: { result: NestingResult }) {
+function BedNestingPreview({ result, margin }: { result: SplitProvenance; margin: number }) {
   const bed = result.layout_bed_mm;
   if (!bed || bed.length < 2 || bed[0] <= 0 || bed[1] <= 0) return null;
   const [bedX, bedY] = bed;
-  const margin = result.margin_mm ?? 0;
   const colours = ["#f28c28", "#4ca6ff", "#8ccf5f", "#d784f7", "#ffd166", "#4dd4ac"];
   const nearEdge = (result.minimum_edge_clearance_mm ?? margin) < 5;
   return (
@@ -204,7 +188,7 @@ function BedNestingPreview({ result }: { result: NestingResult }) {
           />
         )}
         {result.parts.map((part, index) => {
-          const offset = part.plate_offset_mm ?? [0, 0, 0];
+          const offset = part.plate_offset_mm;
           const rotated = part.plate_rotation_deg === 90;
           const width = rotated ? part.extents_mm[1] : part.extents_mm[0];
           const depth = rotated ? part.extents_mm[0] : part.extents_mm[1];
@@ -233,8 +217,8 @@ function BedNestingPreview({ result }: { result: NestingResult }) {
             </g>
           );
         })}
-        {result.dowels?.map((dowel) => {
-          const offset = dowel.plate_offset_mm ?? [0, 0, 0];
+        {result.dowels.map((dowel) => {
+          const offset = dowel.plate_offset_mm;
           return (
             <circle
               key={dowel.name}
@@ -332,7 +316,9 @@ export default function SlicerPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloads, setDownloads] = useState<{ format: string; url: string }[]>([]);
-  const [nesting, setNesting] = useState<NestingResult | null>(null);
+  const [plateLayoutDraft, setPlateLayoutDraft] = useState<PlateLayoutDraft | null>(null);
+  const [plateLayoutMessage, setPlateLayoutMessage] = useState<string | null>(null);
+  const plateLayoutRevision = useRef(0);
   const [bedMarginMm, setBedMarginMm] = useState(5);
   const [partGapMm, setPartGapMm] = useState(10);
   const [slices, setSlices] = useState<SlicePreview | null>(null);
@@ -487,7 +473,9 @@ export default function SlicerPage() {
 
   useEffect(() => {
     setReport(null);
-    setNesting(null);
+    plateLayoutRevision.current += 1;
+    setPlateLayoutDraft(null);
+    setPlateLayoutMessage(null);
     setDownloads([]);
     setSlices(null);
     setGcode(null);
@@ -539,7 +527,9 @@ export default function SlicerPage() {
   }, [client, projectId, versionId]);
 
   useEffect(() => {
-    setNesting(null);
+    plateLayoutRevision.current += 1;
+    setPlateLayoutDraft(null);
+    setPlateLayoutMessage(null);
     setSlices(null);
     setGcode(null);
     setToolpath(null);
@@ -762,27 +752,86 @@ export default function SlicerPage() {
   }
 
   async function cut(mode: "fit" | "half") {
-    if (!client || !versionId) return;
+    if (!client || !versionId || plateLayoutDraft) return;
+    const sourceVersionId = versionId;
+    const requestedMarginMm = bedMarginMm;
+    const requestedGapMm = partGapMm;
+    const revision = ++plateLayoutRevision.current;
+    let draftVersionId: string | null = null;
     setError(null);
-    setNesting(null);
+    setPlateLayoutMessage(null);
     try {
-      const accepted = await client.splitModel(versionId, {
+      const accepted = await client.splitModel(sourceVersionId, {
         fit_bed: mode === "fit",
         printer_profile_id: mode === "fit" ? printerId || null : null,
         parts: mode === "fit" ? null : 2,
-        margin_mm: bedMarginMm,
-        gap_mm: partGapMm,
+        margin_mm: requestedMarginMm,
+        gap_mm: requestedGapMm,
         repair: true,
-        preview: false,
+        preview: true,
+        label: mode === "fit" ? "Раскладка на платформе" : "Раскладка двух частей",
       });
       const job = await track(mode === "fit" ? "Режем под стол принтера" : "Режем пополам", accepted.job_id);
       if (job.status !== "succeeded") throw new Error((job.error as { message?: string })?.message ?? "не удалось разрезать");
-      const result = job.result as NestingResult & { version_id?: string };
-      setNesting({ ...result, parts: result.parts ?? [] });
-      if (result.version_id) setVersionId(result.version_id);
+      const result = job.result as { preview?: unknown; version_id?: unknown } | null;
+      if (result?.preview !== true || typeof result.version_id !== "string") {
+        throw new Error("Сервер не вернул проверяемый черновик раскладки.");
+      }
+      draftVersionId = result.version_id;
+      const version = await client.getVersion(draftVersionId);
+      const layout = verifiedWebBuildPlateLayout(
+        version,
+        sourceVersionId,
+        requestedMarginMm,
+        requestedGapMm,
+      );
+      if (!layout) {
+        await client.discardVersion(draftVersionId);
+        draftVersionId = null;
+        throw new Error("Черновик не прошёл проверку источника, стола, зазоров или геометрии.");
+      }
+      if (plateLayoutRevision.current !== revision) {
+        await client.discardVersion(draftVersionId);
+        draftVersionId = null;
+        return;
+      }
+      setPlateLayoutDraft({
+        version,
+        layout,
+        sourceVersionId,
+        marginMm: requestedMarginMm,
+      });
+      setPlateLayoutMessage("Раскладка готова как черновик; текущая версия проекта не изменена.");
+    } catch (reason) {
+      if (draftVersionId) {
+        await client.discardVersion(draftVersionId).catch(() => undefined);
+      }
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function decidePlateLayout(keep: boolean) {
+    if (!client || !plateLayoutDraft) return;
+    const draft = plateLayoutDraft;
+    setError(null);
+    setBusy(keep ? "Сохраняем раскладку" : "Удаляем черновик");
+    try {
+      plateLayoutRevision.current += 1;
+      if (keep) {
+        const finalized = await client.acceptVersion(draft.version.id);
+        setVersionId(finalized.id);
+        setPlateLayoutMessage("Раскладка сохранена новой immutable-версией.");
+      } else {
+        await client.discardVersion(draft.version.id);
+        setVersionId(draft.sourceVersionId);
+        setPlateLayoutMessage("Черновик удалён; исходная версия не изменилась.");
+      }
+      setPlateLayoutDraft(null);
       await refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -1038,7 +1087,12 @@ export default function SlicerPage() {
       <div className="card row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
         <label className="stack" style={{ minWidth: 260 }}>
           <span className="muted">Модель</span>
-          <select className="input" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+          <select
+            className="input"
+            value={projectId}
+            disabled={Boolean(busy) || Boolean(plateLayoutDraft)}
+            onChange={(e) => setProjectId(e.target.value)}
+          >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -1048,7 +1102,12 @@ export default function SlicerPage() {
         </label>
         <label className="stack" style={{ minWidth: 220 }}>
           <span className="muted">Принтер</span>
-          <select className="input" value={printerId} onChange={(e) => setPrinterId(e.target.value)}>
+          <select
+            className="input"
+            value={printerId}
+            disabled={Boolean(busy) || Boolean(plateLayoutDraft)}
+            onChange={(e) => setPrinterId(e.target.value)}
+          >
             {printers.length === 0 && <option value="">— профилей нет —</option>}
             {printers.map((p) => (
               <option key={p.id} value={p.id}>
@@ -1391,6 +1450,7 @@ export default function SlicerPage() {
                 max={50}
                 step={1}
                 value={bedMarginMm}
+                disabled={Boolean(plateLayoutDraft)}
                 onChange={(event) => setBedMarginMm(Math.max(0, Math.min(50, Number(event.target.value) || 0)))}
               />
             </label>
@@ -1403,35 +1463,50 @@ export default function SlicerPage() {
                 max={50}
                 step={1}
                 value={partGapMm}
+                disabled={Boolean(plateLayoutDraft)}
                 onChange={(event) => setPartGapMm(Math.max(0, Math.min(50, Number(event.target.value) || 0)))}
               />
             </label>
           </div>
           <div className="row" style={{ flexWrap: "wrap" }}>
-            <button className="btn" disabled={!versionId || !!busy || !printerId} onClick={() => void cut("fit")}>
+            <button className="btn" disabled={!versionId || !!busy || !printerId || Boolean(plateLayoutDraft)} onClick={() => void cut("fit")}>
               Под стол принтера
             </button>
-            <button className="btn" disabled={!versionId || !!busy} onClick={() => void cut("half")}>
+            <button className="btn" disabled={!versionId || !!busy || Boolean(plateLayoutDraft)} onClick={() => void cut("half")}>
               Пополам
             </button>
           </div>
-          {nesting && (
+          {plateLayoutMessage && <div className="muted">{plateLayoutMessage}</div>}
+          {plateLayoutDraft && (
             <>
               <ul className="list">
-                {nesting.parts.map((part) => (
+                {plateLayoutDraft.layout.parts.map((part) => (
                   <li key={part.name}>
                     <strong>{part.name}</strong>{" "}
                     <span className="muted mono">{part.extents_mm.map((v) => v.toFixed(0)).join(" × ")} мм</span>
-                    {part.plate_offset_mm && (
-                      <span className="muted">
-                        {" "}· X {part.plate_offset_mm[0].toFixed(1)} · Y {part.plate_offset_mm[1].toFixed(1)} · {part.plate_rotation_deg ?? 0}°
-                      </span>
-                    )}
-                    {part.fits_bed === false && <span className="status-yellow"> · не влезает</span>}
+                    <span className="muted">
+                      {" "}· X {part.plate_offset_mm[0].toFixed(1)} · Y {part.plate_offset_mm[1].toFixed(1)} · {part.plate_rotation_deg}°
+                    </span>
+                  </li>
+                ))}
+                {plateLayoutDraft.layout.dowels.map((dowel) => (
+                  <li key={dowel.name}>
+                    <strong>{dowel.name}</strong>{" "}
+                    <span className="muted mono">
+                      Ø{dowel.diameter_mm.toFixed(1)} × {dowel.length_mm.toFixed(1)} мм · X {dowel.plate_offset_mm[0].toFixed(1)} · Y {dowel.plate_offset_mm[1].toFixed(1)}
+                    </span>
                   </li>
                 ))}
               </ul>
-              <BedNestingPreview result={nesting} />
+              <BedNestingPreview result={plateLayoutDraft.layout} margin={plateLayoutDraft.marginMm} />
+              <div className="row" style={{ flexWrap: "wrap" }}>
+                <button className="btn primary" disabled={Boolean(busy)} onClick={() => void decidePlateLayout(true)}>
+                  Сохранить раскладку
+                </button>
+                <button className="btn" disabled={Boolean(busy)} onClick={() => void decidePlateLayout(false)}>
+                  Удалить черновик
+                </button>
+              </div>
             </>
           )}
         </div>
