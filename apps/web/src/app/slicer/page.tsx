@@ -26,6 +26,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { shrinkPhoto } from "@/lib/photo";
+import { parsePrinterState } from "@/lib/printer-monitor";
 import {
   isPrintQueueConflict,
   loadPrintQueueSnapshot,
@@ -555,14 +556,17 @@ export default function SlicerPage() {
   }, [materialSlotContext]);
 
   useEffect(() => {
-    if (!client || !gcode?.profileId || !dispatch) return;
+    if (!client || !printerId || !bridge?.enabled || bridge.provider === "none") return;
+    const provider = bridge.provider;
     let active = true;
     const update = async () => {
       try {
-        const next = await client.getPrinterState(gcode.profileId!);
+        const next = parsePrinterState(await client.getPrinterState(printerId), provider);
+        if (!next) throw new Error("Контроллер вернул несогласованную телеметрию.");
         if (active) setPrinterState(next);
       } catch {
-        // The explicit refresh button reports errors; background polling stays quiet.
+        // Do not present stale telemetry as the current controller state.
+        if (active) setPrinterState(null);
       }
     };
     void update();
@@ -571,7 +575,32 @@ export default function SlicerPage() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [client, dispatch, gcode?.profileId]);
+  }, [bridge?.enabled, bridge?.provider, client, printerId]);
+
+  useEffect(() => {
+    if (!client || !printerId || !bridge || bridge.test_mode || !bridge.has_camera) return;
+    let active = true;
+    const updateCamera = async () => {
+      try {
+        const image = await client.getPrinterCamera(printerId);
+        if (!active) return;
+        const nextUrl = URL.createObjectURL(image);
+        setCameraUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return nextUrl;
+        });
+      } catch {
+        // Do not keep presenting an old frame as a live camera image.
+        if (active) setCameraUrl(null);
+      }
+    };
+    void updateCamera();
+    const timer = window.setInterval(() => void updateCamera(), 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [bridge, client, printerId]);
 
   useEffect(() => () => {
     if (cameraUrl) URL.revokeObjectURL(cameraUrl);
@@ -889,17 +918,43 @@ export default function SlicerPage() {
   }
 
   async function refreshPrinter() {
-    if (!client || !gcode?.profileId) return;
+    if (!client || !printerId || !bridge?.enabled || bridge.provider === "none") return;
     setError(null);
     setBusy("Обновляем состояние принтера");
     try {
-      const [nextState, image] = await Promise.all([
-        client.getPrinterState(gcode.profileId),
-        client.getPrinterCamera(gcode.profileId),
+      const [rawState, image] = await Promise.all([
+        client.getPrinterState(printerId),
+        bridge.test_mode || !bridge.has_camera ? Promise.resolve(null) : client.getPrinterCamera(printerId),
       ]);
+      const nextState = parsePrinterState(rawState, bridge.provider);
+      if (!nextState) throw new Error("Контроллер вернул несогласованную телеметрию.");
       setPrinterState(nextState);
-      setCameraUrl(URL.createObjectURL(image));
+      if (image) {
+        const nextUrl = URL.createObjectURL(image);
+        setCameraUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return nextUrl;
+        });
+      }
     } catch (reason) {
+      setPrinterState(null);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function controlPrinter(action: "pause" | "resume" | "cancel") {
+    if (!client || !printerId || bridge?.provider !== "octoprint") return;
+    if (action === "cancel" && !window.confirm("Отменить текущую печать? OctoPrint остановит задание без возможности возобновления.")) return;
+    setError(null);
+    setBusy(action === "pause" ? "Приостанавливаем печать" : action === "resume" ? "Возобновляем печать" : "Отменяем печать");
+    try {
+      const nextState = parsePrinterState(await client.controlPrinter(printerId, action), "octoprint");
+      if (!nextState) throw new Error("Контроллер вернул несогласованное состояние после команды.");
+      setPrinterState(nextState);
+    } catch (reason) {
+      setPrinterState(null);
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(null);
@@ -1030,6 +1085,87 @@ export default function SlicerPage() {
       )}
       {error && <div className="error">{error}</div>}
       {busy && <div className="card muted">{busy}</div>}
+
+      <section className="card stack" aria-label="Контроль печати">
+        <div className="row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div className="stack" style={{ gap: 3 }}>
+            <strong>Контроль печати · {selectedPrinter?.name ?? "профиль не выбран"}</strong>
+            <span className="muted">
+              Состояние выбранного принтера обновляется каждые 5 секунд, защищённый снимок камеры — каждые 15 секунд.
+            </span>
+          </div>
+          <button
+            className="btn"
+            type="button"
+            disabled={!!busy || !printerId || !bridge?.enabled}
+            onClick={() => void refreshPrinter()}
+          >
+            Обновить сейчас
+          </button>
+        </div>
+        {bridge?.test_mode && (
+          <div className="notice" role="status">
+            <strong>DEMO · реальный принтер не подключён.</strong>{" "}
+            Тестовый bridge не обращается к устройству или камере, а управление печатью заблокировано.
+          </div>
+        )}
+        {bridge && !bridge.enabled && (
+          <div className="notice" role="status">
+            Подключение не настроено. Адрес и ключ контроллера задаются только на сервере и не сохраняются в браузере.
+          </div>
+        )}
+        {printerState ? (
+          <>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span className={`chip ${printerState.printing ? "selected" : ""}`}>{printerState.state}</span>
+              <span className="chip">
+                {printerState.printing ? "Печатает" : printerState.paused ? "Пауза" : printerState.operational ? "Готов" : "Не готов"}
+              </span>
+              {printerState.filename && <span className="muted mono">{printerState.filename}</span>}
+            </div>
+            {printerState.completion_pct != null && (
+              <label className="stack">
+                <span className="muted">Готово {printerState.completion_pct.toFixed(1)}%</span>
+                <progress max={100} value={printerState.completion_pct} style={{ width: "100%" }} />
+              </label>
+            )}
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <span className="chip">Сопло {printerState.nozzle_actual_c?.toFixed(0) ?? "—"}° / {printerState.nozzle_target_c?.toFixed(0) ?? "—"}°</span>
+              <span className="chip">Стол {printerState.bed_actual_c?.toFixed(0) ?? "—"}° / {printerState.bed_target_c?.toFixed(0) ?? "—"}°</span>
+              {printerState.elapsed_seconds != null && <span className="chip">Прошло ~{Math.ceil(printerState.elapsed_seconds / 60)} мин</span>}
+              {printerState.remaining_seconds != null && <span className="chip">Осталось ~{Math.ceil(printerState.remaining_seconds / 60)} мин</span>}
+            </div>
+            {canEditPrintQueue && bridge?.provider === "octoprint" && (printerState?.printing || printerState?.paused) && (
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                {printerState.paused ? (
+                  <button className="btn primary" type="button" disabled={!!busy} onClick={() => void controlPrinter("resume")}>
+                    Продолжить
+                  </button>
+                ) : (
+                  <button className="btn" type="button" disabled={!!busy} onClick={() => void controlPrinter("pause")}>
+                    Пауза
+                  </button>
+                )}
+                <button className="btn" type="button" disabled={!!busy} onClick={() => void controlPrinter("cancel")}>
+                  Отменить печать
+                </button>
+              </div>
+            )}
+          </>
+        ) : bridge?.enabled ? (
+          <span className="muted">Получаем состояние контроллера…</span>
+        ) : null}
+        {cameraUrl && !bridge?.test_mode && (
+          <img
+            src={cameraUrl}
+            alt="Снимок камеры выбранного принтера"
+            style={{ width: "100%", maxHeight: 460, objectFit: "contain", borderRadius: 12, background: "#0b1020" }}
+          />
+        )}
+        <span className="muted">
+          Номер слоя, автоматическое распознавание ошибок и timelapse не показываются: текущий контроллер не предоставляет для них проверяемых данных.
+        </span>
+      </section>
 
       <section className="card stack" aria-label="Планирование партии для фермы">
         <div>
@@ -2208,52 +2344,14 @@ export default function SlicerPage() {
                   <span className="muted">Выберите профиль принтера и постройте G-code заново.</span>
                 )}
                 {dispatch && (
-                  <>
-                    <div className="notice success" role="status">
-                      {dispatch.provider === "stub"
-                        ? "Тест пройден: файл принят, реальный принтер не использовался."
-                        : dispatch.printing
-                          ? "Файл загружен, печать запущена."
-                          : "Файл загружен в OctoPrint и выбран для печати."}{" "}
-                      <span className="mono">{dispatch.filename}</span>
-                    </div>
-                    <div className="stack" style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 14 }}>
-                      <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                        <strong>Принтер сейчас</strong>
-                        <button className="btn" type="button" disabled={!!busy} onClick={() => void refreshPrinter()}>
-                          Обновить + камера
-                        </button>
-                      </div>
-                      {printerState ? (
-                        <>
-                          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                            <span className={`chip ${printerState.printing ? "selected" : ""}`}>{printerState.state}</span>
-                            {printerState.filename && <span className="muted mono">{printerState.filename}</span>}
-                          </div>
-                          {printerState.completion_pct != null && printerState.printing && (
-                            <label className="stack">
-                              <span className="muted">Готово {printerState.completion_pct.toFixed(1)}%</span>
-                              <progress max={100} value={printerState.completion_pct} style={{ width: "100%" }} />
-                            </label>
-                          )}
-                          <span className="muted">
-                            Сопло {printerState.nozzle_actual_c?.toFixed(0) ?? "—"}° / {printerState.nozzle_target_c?.toFixed(0) ?? "—"}° · Стол{" "}
-                            {printerState.bed_actual_c?.toFixed(0) ?? "—"}° / {printerState.bed_target_c?.toFixed(0) ?? "—"}°
-                            {printerState.remaining_seconds != null && ` · осталось ~${Math.ceil(printerState.remaining_seconds / 60)} мин`}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="muted">Получаем состояние…</span>
-                      )}
-                      {cameraUrl && (
-                        <img
-                          src={cameraUrl}
-                          alt="Камера принтера"
-                          style={{ width: "100%", maxHeight: 360, objectFit: "cover", borderRadius: 12, background: "#0b1020" }}
-                        />
-                      )}
-                    </div>
-                  </>
+                  <div className="notice success" role="status">
+                    {dispatch.provider === "stub"
+                      ? "Тест пройден: файл принят, реальный принтер не использовался."
+                      : dispatch.printing
+                        ? "Файл загружен, печать запущена."
+                        : "Файл загружен в OctoPrint и выбран для печати."}{" "}
+                    <span className="mono">{dispatch.filename}</span>
+                  </div>
                 )}
               </div>
               <div className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
