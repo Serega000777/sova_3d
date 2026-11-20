@@ -2,8 +2,27 @@ import type { RegionSelection } from "@physical-ai/contracts";
 
 export interface PaintDraftStroke {
   colour: string;
+  catalogMaterialId: string | null;
   opacity: number;
   region: RegionSelection;
+}
+
+export function paintStrokeBody(stroke: PaintDraftStroke): (
+  | { colour: string; catalog_material_id?: never }
+  | { colour?: never; catalog_material_id: string }
+) & { opacity: number; region: RegionSelection["region"] } {
+  if (stroke.catalogMaterialId) {
+    return {
+      catalog_material_id: stroke.catalogMaterialId,
+      opacity: stroke.opacity,
+      region: stroke.region.region,
+    };
+  }
+  return {
+    colour: stroke.colour,
+    opacity: stroke.opacity,
+    region: stroke.region.region,
+  };
 }
 
 export interface PaintLayerSummary {

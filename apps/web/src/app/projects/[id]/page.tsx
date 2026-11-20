@@ -156,6 +156,7 @@ import {
   movePaintLayerOrder,
   paintDraftMatchesContext,
   paintLayerSummaries,
+  paintStrokeBody,
   removePaintStroke,
   type PaintDraftStroke,
 } from "@/lib/paint-workflow";
@@ -1245,6 +1246,7 @@ export default function ProjectPage() {
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [paintOpacity, setPaintOpacity] = useState(0.85);
+  const [paintMaterialId, setPaintMaterialId] = useState<string | null>(null);
   const [paintLayerName, setPaintLayerName] = useState(ru ? "Слой 1" : "Layer 1");
   const [paintSourceVersionId, setPaintSourceVersionId] = useState<string | null>(null);
   const [paintSourceSceneNodeId, setPaintSourceSceneNodeId] = useState<string | null>(null);
@@ -1910,6 +1912,10 @@ export default function ProjectPage() {
   const paintSceneNodeIdRef = useRef<string | null>(paintSceneNodeId);
   paintSceneNodeIdRef.current = paintSceneNodeId;
   const savedPaintLayers = paintLayerSummaries(activeVersion?.provenance, paintSceneNodeId);
+  const paintMaterial = paintMaterialId
+    ? interiorMaterials.find((material) => material.id === paintMaterialId) ?? null
+    : null;
+  const paintPreviewColour = paintMaterial?.base_color ?? colour;
 
   useEffect(() => {
     if (!strokes.length) return;
@@ -4221,11 +4227,7 @@ export default function ProjectPage() {
     setError(null);
     try {
       const accepted = await client.paintModel(sourceVersionId, {
-        strokes: strokes.map((stroke) => ({
-          colour: stroke.colour,
-          opacity: stroke.opacity,
-          region: stroke.region.region,
-        })),
+        strokes: strokes.map(paintStrokeBody),
         label: layerName,
         layer_name: layerName,
         scene_node_id: sourceSceneNodeId,
@@ -5184,7 +5186,7 @@ export default function ProjectPage() {
             onSelect={setSelected}
             onMeasure={setSize}
             regionMode={regionMode || paintMode}
-            paintColour={paintMode ? colour : null}
+            paintColour={paintMode ? paintPreviewColour : null}
             brushMm={brush}
             cutPlanes={cutPlanes}
             displayMode={displayMode}
@@ -5326,7 +5328,20 @@ export default function ProjectPage() {
                 );
                 return;
               }
-              const nextStroke: PaintDraftStroke = { colour, opacity: paintOpacity, region: next };
+              if (paintMaterialId && !paintMaterial) {
+                setError(
+                  ru
+                    ? "Выбранный материал отсутствует в текущем серверном каталоге."
+                    : "The selected material is absent from the current server catalogue.",
+                );
+                return;
+              }
+              const nextStroke: PaintDraftStroke = {
+                colour: paintPreviewColour,
+                catalogMaterialId: paintMaterialId,
+                opacity: paintOpacity,
+                region: next,
+              };
               if (!paintDraftMatchesContext(
                 paintSourceVersionId,
                 paintSourceSceneNodeId,
@@ -7529,17 +7544,40 @@ export default function ProjectPage() {
                       key={swatch}
                       type="button"
                       aria-label={swatch}
-                      className={`swatch ${colour === swatch ? "selected" : ""}`}
+                      className={`swatch ${!paintMaterialId && colour === swatch ? "selected" : ""}`}
                       style={{ background: swatch }}
-                      onClick={() => setColour(swatch)}
+                      onClick={() => {
+                        setColour(swatch);
+                        setPaintMaterialId(null);
+                      }}
                     />
                   ))}
                   <input
                     type="color"
                     className="swatch"
                     value={colour}
-                    onChange={(event) => setColour(event.target.value)}
+                    onChange={(event) => {
+                      setColour(event.target.value);
+                      setPaintMaterialId(null);
+                    }}
                   />
+                </div>
+                <div className="stack" style={{ gap: 6 }}>
+                  <span className="muted">{ru ? "Доверенный PBR-материал" : "Trusted PBR material"}</span>
+                  <div className="row" style={{ flexWrap: "wrap" }}>
+                    {interiorMaterials.map((material) => (
+                      <button
+                        key={material.id}
+                        type="button"
+                        className={`chip ${paintMaterialId === material.id ? "selected" : ""}`}
+                        aria-pressed={paintMaterialId === material.id}
+                        onClick={() => setPaintMaterialId((current) => current === material.id ? null : material.id)}
+                      >
+                        <span className="swatch" style={{ background: material.base_color }} aria-hidden="true" />
+                        {ru ? material.name_ru : material.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="row">
                   <span className="muted">Brush</span>
@@ -7576,9 +7614,12 @@ export default function ProjectPage() {
                 {strokes.slice(-5).map((stroke, recentIndex) => {
                   const index = strokes.length - Math.min(5, strokes.length) + recentIndex;
                   return (
-                    <div className="row" key={`${index}-${stroke.colour}-${stroke.opacity}`}>
+                    <div className="row" key={`${index}-${stroke.catalogMaterialId ?? stroke.colour}-${stroke.opacity}`}>
                       <span className="swatch" style={{ background: stroke.colour }} aria-hidden="true" />
-                      <span className="muted">#{index + 1} · {Math.round(stroke.opacity * 100)}%</span>
+                      <span className="muted">
+                        #{index + 1} · {Math.round(stroke.opacity * 100)}%
+                        {stroke.catalogMaterialId ? ` · ${stroke.catalogMaterialId}` : ""}
+                      </span>
                       <span className="spacer" />
                       <button
                         type="button"

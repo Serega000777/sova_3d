@@ -6,6 +6,7 @@ import {
   movePaintLayerOrder,
   paintDraftMatchesContext,
   paintLayerSummaries,
+  paintStrokeBody,
   removePaintStroke,
 } from "../src/lib/paint-workflow.ts";
 
@@ -23,6 +24,18 @@ test("draft stroke removal is immutable and bounded", () => {
   assert.deepEqual(removePaintStroke(["a", "b", "c"], 1), ["a", "c"]);
   assert.deepEqual(removePaintStroke(["a", "b"], -1), ["a", "b"]);
   assert.deepEqual(removePaintStroke(["a", "b"], 5), ["a", "b"]);
+});
+
+test("trusted material strokes never send a client-authored colour beside the catalogue id", () => {
+  const region = { kind: "box", min_mm: [0, 0, 0], max_mm: [1, 1, 1] } as any;
+  assert.deepEqual(
+    paintStrokeBody({ colour: "#112233", catalogMaterialId: null, opacity: 0.75, region: { region } as any }),
+    { colour: "#112233", opacity: 0.75, region },
+  );
+  assert.deepEqual(
+    paintStrokeBody({ colour: "#aabbcc", catalogMaterialId: "architectural.concrete", opacity: 0.5, region: { region } as any }),
+    { catalog_material_id: "architectural.concrete", opacity: 0.5, region },
+  );
 });
 
 test("saved layer evidence rejects malformed provenance and reorders complete unique names", () => {
@@ -53,9 +66,16 @@ test("saved layer evidence rejects malformed provenance and reorders complete un
 
 test("web studio sends named opacity layers through the exact source-bound typed routes", () => {
   assert.match(studio, /paintDraftMatchesContext\(/);
-  assert.match(studio, /opacity: stroke\.opacity/);
+  assert.match(studio, /strokes: strokes\.map\(paintStrokeBody\)/);
   assert.match(studio, /layer_name: layerName/);
   assert.match(studio, /scene_node_id: sourceSceneNodeId/);
   assert.match(studio, /client\.reorderPaintLayers\(sourceVersionId, layerOrder, sourceSceneNodeId\)/);
   assert.match(studio, /removePaintStroke\(current, index\)/);
+});
+
+test("web studio chooses only server catalogue materials for paint strokes", () => {
+  assert.match(studio, /client\.listInteriorMaterials\(\)/);
+  assert.match(studio, /catalogMaterialId: paintMaterialId/);
+  assert.match(studio, /paintMaterialId && !paintMaterial/);
+  assert.match(studio, /paintMaterial\?\.base_color/);
 });
