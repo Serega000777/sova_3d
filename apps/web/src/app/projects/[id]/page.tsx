@@ -153,6 +153,13 @@ import {
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { interiorMaterialResultMatches } from "@/lib/interior-material";
 import {
+  movePaintLayerOrder,
+  paintDraftMatchesContext,
+  paintLayerSummaries,
+  removePaintStroke,
+  type PaintDraftStroke,
+} from "@/lib/paint-workflow";
+import {
   gameReadyColliderMatchesRequest,
   gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
@@ -1237,7 +1244,11 @@ export default function ProjectPage() {
   const [paintMode, setPaintMode] = useState(false);
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
-  const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
+  const [paintOpacity, setPaintOpacity] = useState(0.85);
+  const [paintLayerName, setPaintLayerName] = useState(ru ? "Слой 1" : "Layer 1");
+  const [paintSourceVersionId, setPaintSourceVersionId] = useState<string | null>(null);
+  const [paintSourceSceneNodeId, setPaintSourceSceneNodeId] = useState<string | null>(null);
+  const [strokes, setStrokes] = useState<PaintDraftStroke[]>([]);
 
   // T-207 follow-up: Outline/Paint disable orbit while active (ModelViewer's OrbitControls
   // reads `regionMode || paintMode`) and, until now, only their own toolbar toggle turned
@@ -1895,6 +1906,23 @@ export default function ProjectPage() {
     selectedSceneNode?.kind === "object" && !selectedSceneNode.instance_of
       ? selectedSceneNode.id
       : null;
+  const paintSceneNodeId = hasExplicitScene ? editableSceneNodeId : null;
+  const paintSceneNodeIdRef = useRef<string | null>(paintSceneNodeId);
+  paintSceneNodeIdRef.current = paintSceneNodeId;
+  const savedPaintLayers = paintLayerSummaries(activeVersion?.provenance, paintSceneNodeId);
+
+  useEffect(() => {
+    if (!strokes.length) return;
+    if (paintDraftMatchesContext(
+      paintSourceVersionId,
+      paintSourceSceneNodeId,
+      activeVersionId,
+      paintSceneNodeId,
+    )) return;
+    setStrokes([]);
+    setPaintSourceVersionId(null);
+    setPaintSourceSceneNodeId(null);
+  }, [activeVersionId, paintSceneNodeId, paintSourceSceneNodeId, paintSourceVersionId, strokes.length]);
 
   // Load the active version's model + latest analysis.
   useEffect(() => {
@@ -4166,21 +4194,95 @@ export default function ProjectPage() {
 
   /** T-109: send the strokes; the worker colours the mesh and the result is a new version. */
   async function applyPaint() {
-    if (!client || !activeVersion || !strokes.length) return;
+    if (!client || !activeVersion || !strokes.length || !canEditProject) return;
+    const sourceVersionId = paintSourceVersionId;
+    const sourceSceneNodeId = paintSourceSceneNodeId;
+    const layerName = paintLayerName.trim();
+    if (!layerName || layerName.length > 80) {
+      setError(ru ? "Название слоя должно содержать 1–80 символов." : "The layer name must contain 1–80 characters.");
+      return;
+    }
+    if (!sourceVersionId || !paintDraftMatchesContext(
+      sourceVersionId,
+      sourceSceneNodeId,
+      activeVersion.id,
+      paintSceneNodeId,
+    )) {
+      setStrokes([]);
+      setPaintSourceVersionId(null);
+      setPaintSourceSceneNodeId(null);
+      setError(
+        ru
+          ? "Версия или объект сцены изменились. Черновик покраски очищен."
+          : "The version or scene object changed. The paint draft was cleared.",
+      );
+      return;
+    }
     setError(null);
     try {
-      const accepted = await client.paintModel(activeVersion.id, {
-        strokes: strokes.map((stroke) => ({ colour: stroke.colour, region: stroke.region.region })),
-        label: `Paint · ${new Set(strokes.map((s) => s.colour)).size} colour(s)`,
+      const accepted = await client.paintModel(sourceVersionId, {
+        strokes: strokes.map((stroke) => ({
+          colour: stroke.colour,
+          opacity: stroke.opacity,
+          region: stroke.region.region,
+        })),
+        label: layerName,
+        layer_name: layerName,
+        scene_node_id: sourceSceneNodeId,
       });
-      const job = await trackJob("Painting", accepted.job_id);
+      const job = await trackJob(ru ? "Покраска" : "Painting", accepted.job_id);
       if (job.status !== "succeeded") {
-        setError((job.error as { message?: string })?.message ?? "the paint did not land");
+        setError((job.error as { message?: string })?.message ?? (ru ? "краска не нанесена" : "the paint did not land"));
         return;
       }
       setStrokes([]);
+      setPaintSourceVersionId(null);
+      setPaintSourceSceneNodeId(null);
       setPaintMode(false);
       await refresh();
+      if (
+        activeVersionIdRef.current !== sourceVersionId
+        || paintSceneNodeIdRef.current !== sourceSceneNodeId
+      ) {
+        setNotice(
+          ru
+            ? "Слой сохранён в новой версии, но активная версия или выбранный объект изменились."
+            : "The layer was saved in a new version, but the active version or selected object changed.",
+        );
+        return;
+      }
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function reorderSavedPaintLayer(index: number, direction: -1 | 1) {
+    if (!client || !activeVersion || !canEditProject) return;
+    const sourceVersionId = activeVersion.id;
+    const sourceSceneNodeId = paintSceneNodeId;
+    const layerOrder = movePaintLayerOrder(savedPaintLayers, index, direction);
+    if (!layerOrder) return;
+    setError(null);
+    try {
+      const accepted = await client.reorderPaintLayers(sourceVersionId, layerOrder, sourceSceneNodeId);
+      const job = await trackJob(ru ? "Меняем порядок слоёв" : "Reordering paint layers", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? (ru ? "порядок слоёв не изменён" : "the layer order was not changed"));
+        return;
+      }
+      await refresh();
+      if (
+        activeVersionIdRef.current !== sourceVersionId
+        || paintSceneNodeIdRef.current !== sourceSceneNodeId
+      ) {
+        setNotice(
+          ru
+            ? "Новый порядок сохранён, но активная версия или выбранный объект изменились."
+            : "The new order was saved, but the active version or selected object changed.",
+        );
+        return;
+      }
       await showResult(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -5215,7 +5317,28 @@ export default function ProjectPage() {
                 setRegion(next);
                 return;
               }
-              if (next) setStrokes((all) => [...all, { colour, region: next }]);
+              if (!next || !activeVersionId) return;
+              if (hasExplicitScene && !paintSceneNodeId) {
+                setError(
+                  ru
+                    ? "Для покраски выберите видимый самостоятельный объект сцены."
+                    : "Select a visible direct scene object before painting.",
+                );
+                return;
+              }
+              const nextStroke: PaintDraftStroke = { colour, opacity: paintOpacity, region: next };
+              if (!paintDraftMatchesContext(
+                paintSourceVersionId,
+                paintSourceSceneNodeId,
+                activeVersionId,
+                paintSceneNodeId,
+              )) {
+                setPaintSourceVersionId(activeVersionId);
+                setPaintSourceSceneNodeId(paintSceneNodeId);
+                setStrokes([nextStroke]);
+                return;
+              }
+              setStrokes((all) => [...all, nextStroke]);
             }}
           />
           {annotationAnchorMode && (
@@ -7344,18 +7467,62 @@ export default function ProjectPage() {
               <button
                 type="button"
                 className={`btn ${paintMode ? "primary" : ""}`}
-                disabled={!modelUrl}
+                disabled={!modelUrl || !canEditProject || (hasExplicitScene && !paintSceneNodeId)}
                 onClick={() => {
                   setPaintMode((on) => !on);
                   setRegionMode(false);
                   setRegion(null);
                 }}
               >
-                {paintMode ? "Painting…" : "Paint"}
+                {paintMode ? (ru ? "Рисуем…" : "Painting…") : (ru ? "Рисовать" : "Paint")}
               </button>
+            </div>
+            {hasExplicitScene && !paintSceneNodeId && (
+              <span className="muted">
+                {ru
+                  ? "Выберите видимый самостоятельный объект сцены; экземпляр сначала сделайте уникальным."
+                  : "Select a visible direct scene object; make an instance unique first."}
+              </span>
+            )}
+            <div className="stack" style={{ gap: 6 }}>
+              <strong>{ru ? "Сохранённые слои" : "Saved layers"}</strong>
+              {savedPaintLayers.length ? savedPaintLayers.map((layer, index) => (
+                <div className="row" key={`${layer.name}-${index}`}>
+                  <span className="chip">
+                    {layer.name} · {layer.strokeCount} · {layer.opacities.map((value) => `${Math.round(value * 100)}%`).join("/")}
+                    {layer.materialIds.length ? ` · ${layer.materialIds.join(", ")}` : ""}
+                  </span>
+                  <span className="spacer" />
+                  <button
+                    type="button"
+                    className="btn"
+                    aria-label={ru ? `Опустить слой ${layer.name}` : `Move ${layer.name} down`}
+                    disabled={index === 0 || !!busy || !canEditProject}
+                    onClick={() => void reorderSavedPaintLayer(index, -1)}
+                  >↓</button>
+                  <button
+                    type="button"
+                    className="btn"
+                    aria-label={ru ? `Поднять слой ${layer.name}` : `Move ${layer.name} up`}
+                    disabled={index === savedPaintLayers.length - 1 || !!busy || !canEditProject}
+                    onClick={() => void reorderSavedPaintLayer(index, 1)}
+                  >↑</button>
+                </div>
+              )) : (
+                <span className="muted">{ru ? "В этой версии именованных слоёв ещё нет." : "This version has no named layers yet."}</span>
+              )}
             </div>
             {paintMode && (
               <>
+                <label className="stack" style={{ gap: 4 }}>
+                  <span className="muted">{ru ? "Название нового слоя" : "New layer name"}</span>
+                  <input
+                    value={paintLayerName}
+                    maxLength={80}
+                    onChange={(event) => setPaintLayerName(event.target.value)}
+                    placeholder={ru ? "Например, акцент" : "For example, accent"}
+                  />
+                </label>
                 <div className="row">
                   {PALETTE.map((swatch) => (
                     <button
@@ -7387,31 +7554,79 @@ export default function ProjectPage() {
                     </button>
                   ))}
                 </div>
+                <div className="row">
+                  <span className="muted">{ru ? "Покрытие" : "Coverage"}</span>
+                  {[0.5, 0.75, 0.85, 1].map((opacity) => (
+                    <button
+                      key={opacity}
+                      type="button"
+                      className={`btn ${paintOpacity === opacity ? "primary" : ""}`}
+                      aria-pressed={paintOpacity === opacity}
+                      onClick={() => setPaintOpacity(opacity)}
+                    >
+                      {Math.round(opacity * 100)}%
+                    </button>
+                  ))}
+                </div>
                 <span className="muted">
-                  Sweep to paint a band, close a loop to fill it. The shape never changes —
-                  the paint is a new version on top of what is already there.
+                  {ru
+                    ? "Проведите кистью полосу или замкните контур для заливки. Покрытие смешивает цвет поверхности, но не делает геометрию прозрачной."
+                    : "Sweep a band or close a loop to fill it. Coverage blends the surface colour; it does not make geometry transparent."}
                 </span>
+                {strokes.slice(-5).map((stroke, recentIndex) => {
+                  const index = strokes.length - Math.min(5, strokes.length) + recentIndex;
+                  return (
+                    <div className="row" key={`${index}-${stroke.colour}-${stroke.opacity}`}>
+                      <span className="swatch" style={{ background: stroke.colour }} aria-hidden="true" />
+                      <span className="muted">#{index + 1} · {Math.round(stroke.opacity * 100)}%</span>
+                      <span className="spacer" />
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => setStrokes((current) => removePaintStroke(current, index))}
+                      >{ru ? "Убрать" : "Remove"}</button>
+                    </div>
+                  );
+                })}
                 <div className="row">
                   <span className="muted">
-                    {strokes.length} stroke{strokes.length === 1 ? "" : "s"}
+                    {ru ? `Штрихов: ${strokes.length}` : `${strokes.length} stroke${strokes.length === 1 ? "" : "s"}`}
                   </span>
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={!strokes.length || !!busy}
+                    onClick={() => setStrokes((current) => current.slice(0, -1))}
+                  >
+                    {ru ? "Отменить последний" : "Undo last"}
+                  </button>
                   <button
                     className="btn primary"
                     type="button"
-                    disabled={!strokes.length || !!busy}
+                    disabled={!strokes.length || !paintLayerName.trim() || !!busy}
                     onClick={applyPaint}
                   >
-                    Keep the paint
+                    {ru ? "Сохранить слой" : "Keep the layer"}
                   </button>
                   <button
                     className="btn"
                     type="button"
                     disabled={!strokes.length || !!busy}
-                    onClick={() => setStrokes([])}
+                    onClick={() => {
+                      setStrokes([]);
+                      setPaintSourceVersionId(null);
+                      setPaintSourceSceneNodeId(null);
+                    }}
                   >
-                    Start over
+                    {ru ? "Очистить черновик" : "Clear draft"}
                   </button>
                 </div>
+                {paintSourceVersionId && (
+                  <span className="muted mono">
+                    {ru ? "Черновик" : "Draft"}: {paintSourceVersionId.slice(0, 8)}
+                    {paintSourceSceneNodeId ? ` · ${paintSourceSceneNodeId}` : ""}
+                  </span>
+                )}
               </>
             )}
           </div>
