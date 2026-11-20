@@ -46,6 +46,7 @@ import {
   SymmetryPlanes,
   TopologyLayer,
 } from "@/components/TopologyOverlay";
+import type { CadOperationFeaturePreview } from "@/lib/cad-operation-preview";
 
 export interface ViewerBody {
   /** Stable selection id (the kernel body name, e.g. "body"). */
@@ -176,6 +177,8 @@ export interface ModelViewerProps {
   footprints?: [number, number, number][][];
   /** F-039: read-only model-space load-risk volumes from the engineering report. */
   riskRegions?: { key: string; min: [number, number, number]; max: [number, number, number] }[];
+  /** Exact face-normal hole/thread marker derived from immutable operation history. */
+  operationPreview?: CadOperationFeaturePreview | null;
   cameraPreset?: "iso" | "front" | "right" | "top";
   cameraRevision?: number;
   /** Click two surface points and report their model-space millimetre coordinates. */
@@ -610,6 +613,7 @@ export function ModelViewer({
   onComponentSelection,
   footprints = [],
   riskRegions = [],
+  operationPreview = null,
   cameraPreset = "iso",
   cameraRevision = 0,
   measurementMode = false,
@@ -1059,6 +1063,28 @@ export function ModelViewer({
               </mesh>
             );
           })}
+          {bounds && operationPreview ? (() => {
+            const faceCoordinate = operationPreview.sign === "+"
+              ? bounds.max[operationPreview.axis]
+              : bounds.min[operationPreview.axis];
+            const position: [number, number, number] = operationPreview.axis === "x"
+              ? [faceCoordinate, operationPreview.positionMm[0], operationPreview.positionMm[1]]
+              : operationPreview.axis === "y"
+                ? [operationPreview.positionMm[0], faceCoordinate, operationPreview.positionMm[1]]
+                : [operationPreview.positionMm[0], operationPreview.positionMm[1], faceCoordinate];
+            const rotation: [number, number, number] = operationPreview.axis === "x"
+              ? [0, Math.PI / 2, 0]
+              : operationPreview.axis === "y"
+                ? [Math.PI / 2, 0, 0]
+                : [0, 0, 0];
+            const radiusMm = operationPreview.diameterMm / 2;
+            return (
+              <mesh position={position} rotation={rotation} renderOrder={35}>
+                <torusGeometry args={[radiusMm, Math.max(radiusMm * 0.09, 0.18), 10, 48]} />
+                <meshBasicMaterial color="#ff6b35" depthTest={false} />
+              </mesh>
+            );
+          })() : null}
         </group>
         {showGrid && (
           <Grid

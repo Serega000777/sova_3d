@@ -189,6 +189,7 @@ import {
   type FacadeOpeningDraft,
 } from "@/lib/facade-openings";
 import { verifiedAppliedFacadeVariant } from "@/lib/facade-design-variants";
+import type { CadOperationFeaturePreview } from "@/lib/cad-operation-preview";
 
 const ModelViewer = dynamic(
   () => import("@/components/ModelViewer").then((m) => m.ModelViewer),
@@ -936,6 +937,7 @@ export default function ProjectPage() {
   const [gameCollider, setGameCollider] = useState<"convex" | "box" | "none">("convex");
   const [gameReadyLodResult, setGameReadyLodResult] = useState<GameReadyLodResult | null>(null);
   const [gameReadyLodBusy, setGameReadyLodBusy] = useState(false);
+  const [cadOperationPreview, setCadOperationPreview] = useState<CadOperationFeaturePreview | null>(null);
   const gameReadyLodRevision = useRef(0);
   const exchangeExportRevision = useRef(0);
   const [exportFormat, setExportFormat] = useState<WebExportFormat>(
@@ -5244,6 +5246,7 @@ export default function ProjectPage() {
               min: engineeringRiskRegion.region.min_mm,
               max: engineeringRiskRegion.region.max_mm,
             }] : []}
+            operationPreview={cadOperationPreview}
             cameraPreset={cameraView.preset}
             cameraRevision={cameraView.revision}
             measurementMode={tool === "measure" || annotationAnchorMode || modelCommentPicking}
@@ -7487,6 +7490,7 @@ export default function ProjectPage() {
                         disabled={!!busy || !isPro}
                         onApply={rebuildOperationStack}
                         onEditParameter={editOperationParameter}
+                        onSelectionChange={setCadOperationPreview}
                       />
                     )}
                     {meshModifierStack && (

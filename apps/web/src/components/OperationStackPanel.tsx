@@ -8,6 +8,8 @@ import {
 } from "@physical-ai/contracts";
 import { useEffect, useMemo, useState } from "react";
 
+import { cadOperationFacts, cadOperationFeaturePreview, type CadOperationFeaturePreview } from "../lib/cad-operation-preview";
+
 type Entry = OperationStack["operations"][number];
 
 const LABELS: Record<string, { ru: string; en: string }> = {
@@ -45,16 +47,19 @@ export function OperationStackPanel({
   disabled,
   onApply,
   onEditParameter,
+  onSelectionChange,
 }: {
   stack: OperationStack;
   ru: boolean;
   disabled: boolean;
   onApply: (operations: { id: string; enabled: boolean }[]) => Promise<void>;
   onEditParameter: (parameter: EditableOperationParameter, value: number) => Promise<void>;
+  onSelectionChange: (preview: CadOperationFeaturePreview | null) => void;
 }) {
   const [entries, setEntries] = useState<Entry[]>(stack.operations);
   const [dirty, setDirty] = useState(false);
   const [parameterInputs, setParameterInputs] = useState<Record<string, string>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const parameters = useMemo(
     () => editableOperationParameters(entries),
     [entries],
@@ -63,13 +68,16 @@ export function OperationStackPanel({
   useEffect(() => {
     setEntries(stack.operations);
     setDirty(false);
+    setSelectedId(null);
+    onSelectionChange(null);
     const next: Record<string, string> = {};
     const editable = editableOperationParameters(stack.operations);
     for (const [operationId, values] of Object.entries(editable)) {
       for (const parameter of values) next[`${operationId}:${parameter.parameter}`] = String(parameter.value);
     }
     setParameterInputs(next);
-  }, [stack]);
+    return () => onSelectionChange(null);
+  }, [onSelectionChange, stack]);
 
   function move(index: number, offset: -1 | 1) {
     const destination = index + offset;
@@ -107,6 +115,15 @@ export function OperationStackPanel({
         {entries.map((entry, index) => {
           const label = LABELS[entry.type]?.[ru ? "ru" : "en"] ?? entry.type;
           const editable = parameters[entry.id] ?? [];
+          const previewEntry = {
+            ...entry,
+            params: {
+              ...entry.params,
+              ...Object.fromEntries(editable.map((parameter) => [parameter.parameter, parameter.value])),
+            },
+          };
+          const featurePreview = cadOperationFeaturePreview(previewEntry);
+          const operationFacts = cadOperationFacts(previewEntry);
           return (
             <li key={entry.id} className={entry.enabled ? "" : "disabled"}>
               <div className="operation-stack-main">
@@ -159,6 +176,34 @@ export function OperationStackPanel({
                     })}
                   </div>
                 )}
+              {featurePreview ? (
+                <button
+                  type="button"
+                  className={`chip ${selectedId === entry.id ? "selected" : ""}`}
+                  disabled={disabled || !entry.enabled}
+                  onClick={() => {
+                    const next = selectedId === entry.id ? null : entry.id;
+                    setSelectedId(next);
+                    onSelectionChange(next ? featurePreview : null);
+                  }}
+                >
+                  {selectedId === entry.id
+                    ? (ru ? "Скрыть подсветку" : "Hide highlight")
+                    : (ru ? "Показать на модели" : "Show on model")}
+                </button>
+              ) : (
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {ru ? "Нет однозначной геометрической метки." : "No unambiguous geometry marker."}
+                </span>
+              )}
+              {selectedId === entry.id && operationFacts ? (
+                <div className="card stack" style={{ gap: 4 }}>
+                  <span className="muted">{ru ? "Тип" : "Type"}: {operationFacts.mode === "through" ? (ru ? "сквозное" : "through") : `${ru ? "глухое" : "blind"} · ${operationFacts.depthMm.toFixed(3)} mm`}</span>
+                  <span className="muted">{ru ? "Грань" : "Face"}: {operationFacts.face.toUpperCase()} · {ru ? "нормально к грани" : "normal to face"}</span>
+                  <span className="muted">{ru ? "Позиция" : "Position"}: {operationFacts.positionMm.map((value) => value.toFixed(3)).join(" × ")} mm</span>
+                  <span className="mono">{ru ? "Целевое тело" : "Target body"}: {operationFacts.target}</span>
+                </div>
+              ) : null}
               </div>
               <div className="operation-stack-arrows">
                 <button type="button" className="chip" disabled={disabled || index === 0} onClick={() => move(index, -1)} aria-label={ru ? "Выше" : "Move up"}>↑</button>
