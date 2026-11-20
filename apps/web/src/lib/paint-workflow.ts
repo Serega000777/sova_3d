@@ -3,6 +3,12 @@ import type { RegionSelection } from "@physical-ai/contracts";
 export interface PaintDraftStroke {
   colour: string;
   catalogMaterialId: string | null;
+  customTexture: {
+    assetId: string;
+    tileSizeMm: number;
+    roughness: number;
+    metallic: number;
+  } | null;
   opacity: number;
   region: RegionSelection;
 }
@@ -10,7 +16,25 @@ export interface PaintDraftStroke {
 export function paintStrokeBody(stroke: PaintDraftStroke): (
   | { colour: string; catalog_material_id?: never }
   | { colour?: never; catalog_material_id: string }
+  | {
+      colour?: never;
+      catalog_material_id?: never;
+      custom_texture_asset_id: string;
+      custom_texture_tile_size_mm: number;
+      custom_texture_roughness: number;
+      custom_texture_metallic: number;
+    }
 ) & { opacity: number; region: RegionSelection["region"] } {
+  if (stroke.customTexture) {
+    return {
+      custom_texture_asset_id: stroke.customTexture.assetId,
+      custom_texture_tile_size_mm: stroke.customTexture.tileSizeMm,
+      custom_texture_roughness: stroke.customTexture.roughness,
+      custom_texture_metallic: stroke.customTexture.metallic,
+      opacity: stroke.opacity,
+      region: stroke.region.region,
+    };
+  }
   if (stroke.catalogMaterialId) {
     return {
       catalog_material_id: stroke.catalogMaterialId,

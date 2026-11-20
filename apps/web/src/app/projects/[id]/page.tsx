@@ -1247,6 +1247,11 @@ export default function ProjectPage() {
   const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [paintOpacity, setPaintOpacity] = useState(0.85);
   const [paintMaterialId, setPaintMaterialId] = useState<string | null>(null);
+  const [paintCustomTexture, setPaintCustomTexture] = useState<{ assetId: string; filename: string } | null>(null);
+  const [paintCustomTileMm, setPaintCustomTileMm] = useState("250");
+  const [paintCustomRoughness, setPaintCustomRoughness] = useState(0.8);
+  const [paintCustomMetallic, setPaintCustomMetallic] = useState(0);
+  const [paintTextureUploading, setPaintTextureUploading] = useState(false);
   const [paintLayerName, setPaintLayerName] = useState(ru ? "Слой 1" : "Layer 1");
   const [paintSourceVersionId, setPaintSourceVersionId] = useState<string | null>(null);
   const [paintSourceSceneNodeId, setPaintSourceSceneNodeId] = useState<string | null>(null);
@@ -1915,7 +1920,7 @@ export default function ProjectPage() {
   const paintMaterial = paintMaterialId
     ? interiorMaterials.find((material) => material.id === paintMaterialId) ?? null
     : null;
-  const paintPreviewColour = paintMaterial?.base_color ?? colour;
+  const paintPreviewColour = paintCustomTexture ? "#a7a7a7" : paintMaterial?.base_color ?? colour;
 
   useEffect(() => {
     if (!strokes.length) return;
@@ -4199,6 +4204,25 @@ export default function ProjectPage() {
   }
 
   /** T-109: send the strokes; the worker colours the mesh and the result is a new version. */
+  async function uploadPaintTexture(file: File | null) {
+    if (!file || !client || !session) return;
+    if (!(["image/png", "image/jpeg"] as string[]).includes(file.type) || file.size < 1 || file.size > 6 * 1024 * 1024) {
+      setError(ru ? "Нужен PNG/JPEG размером до 6 МиБ." : "Choose a PNG/JPEG up to 6 MiB.");
+      return;
+    }
+    setPaintTextureUploading(true);
+    setError(null);
+    try {
+      const asset = await client.uploadFile(session.workspaceId, file, file.name, file.type);
+      setPaintCustomTexture({ assetId: asset.id, filename: file.name });
+      setPaintMaterialId(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setPaintTextureUploading(false);
+    }
+  }
+
   async function applyPaint() {
     if (!client || !activeVersion || !strokes.length || !canEditProject) return;
     const sourceVersionId = paintSourceVersionId;
@@ -5336,9 +5360,20 @@ export default function ProjectPage() {
                 );
                 return;
               }
+              const customTileSizeMm = Number(paintCustomTileMm.replace(",", "."));
+              if (paintCustomTexture && (!Number.isFinite(customTileSizeMm) || customTileSizeMm < 10 || customTileSizeMm > 5000)) {
+                setError(ru ? "Размер повтора текстуры должен быть 10–5000 мм." : "Texture repeat must be 10–5000 mm.");
+                return;
+              }
               const nextStroke: PaintDraftStroke = {
                 colour: paintPreviewColour,
-                catalogMaterialId: paintMaterialId,
+                catalogMaterialId: paintCustomTexture ? null : paintMaterialId,
+                customTexture: paintCustomTexture ? {
+                  assetId: paintCustomTexture.assetId,
+                  tileSizeMm: customTileSizeMm,
+                  roughness: paintCustomRoughness,
+                  metallic: paintCustomMetallic,
+                } : null,
                 opacity: paintOpacity,
                 region: next,
               };
@@ -7549,6 +7584,7 @@ export default function ProjectPage() {
                       onClick={() => {
                         setColour(swatch);
                         setPaintMaterialId(null);
+                        setPaintCustomTexture(null);
                       }}
                     />
                   ))}
@@ -7559,6 +7595,7 @@ export default function ProjectPage() {
                     onChange={(event) => {
                       setColour(event.target.value);
                       setPaintMaterialId(null);
+                      setPaintCustomTexture(null);
                     }}
                   />
                 </div>
@@ -7571,13 +7608,73 @@ export default function ProjectPage() {
                         type="button"
                         className={`chip ${paintMaterialId === material.id ? "selected" : ""}`}
                         aria-pressed={paintMaterialId === material.id}
-                        onClick={() => setPaintMaterialId((current) => current === material.id ? null : material.id)}
+                        onClick={() => {
+                          setPaintCustomTexture(null);
+                          setPaintMaterialId((current) => current === material.id ? null : material.id);
+                        }}
                       >
                         <span className="swatch" style={{ background: material.base_color }} aria-hidden="true" />
                         {ru ? material.name_ru : material.name}
                       </button>
                     ))}
                   </div>
+                </div>
+                <div className="stack" style={{ gap: 6 }}>
+                  <span className="muted">{ru ? "Своя текстура" : "Custom texture"}</span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    disabled={paintTextureUploading || !!busy}
+                    onChange={(event) => void uploadPaintTexture(event.currentTarget.files?.[0] ?? null)}
+                  />
+                  {paintCustomTexture && (
+                    <>
+                      <div className="row">
+                        <span className="chip">{paintCustomTexture.filename}</span>
+                        <button type="button" className="btn" onClick={() => setPaintCustomTexture(null)}>
+                          {ru ? "Убрать" : "Remove"}
+                        </button>
+                      </div>
+                      <label className="row">
+                        <span className="muted">{ru ? "Повтор, мм" : "Repeat, mm"}</span>
+                        <input
+                          type="number"
+                          min={10}
+                          max={5000}
+                          step={10}
+                          value={paintCustomTileMm}
+                          onChange={(event) => setPaintCustomTileMm(event.target.value)}
+                        />
+                      </label>
+                      <label className="row">
+                        <span className="muted">{ru ? "Шероховатость" : "Roughness"}</span>
+                        <input
+                          type="number"
+                          min={0.04}
+                          max={1}
+                          step={0.01}
+                          value={paintCustomRoughness}
+                          onChange={(event) => setPaintCustomRoughness(Math.min(1, Math.max(0.04, Number(event.target.value) || 0.04)))}
+                        />
+                      </label>
+                      <label className="row">
+                        <span className="muted">{ru ? "Металличность" : "Metallic"}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={paintCustomMetallic}
+                          onChange={(event) => setPaintCustomMetallic(Math.min(1, Math.max(0, Number(event.target.value) || 0)))}
+                        />
+                      </label>
+                      <span className="muted">
+                        {ru
+                          ? "Сервер повторно проверит SHA-256, формат, размер и декодирование; серый live-штрих — только маска области, текстура появится после сохранения версии."
+                          : "The server rechecks SHA-256, format, size and decoding; the grey live stroke is only a region mask, and the texture appears after the version is saved."}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className="row">
                   <span className="muted">Brush</span>
@@ -7614,11 +7711,12 @@ export default function ProjectPage() {
                 {strokes.slice(-5).map((stroke, recentIndex) => {
                   const index = strokes.length - Math.min(5, strokes.length) + recentIndex;
                   return (
-                    <div className="row" key={`${index}-${stroke.catalogMaterialId ?? stroke.colour}-${stroke.opacity}`}>
+                    <div className="row" key={`${index}-${stroke.customTexture?.assetId ?? stroke.catalogMaterialId ?? stroke.colour}-${stroke.opacity}`}>
                       <span className="swatch" style={{ background: stroke.colour }} aria-hidden="true" />
                       <span className="muted">
                         #{index + 1} · {Math.round(stroke.opacity * 100)}%
                         {stroke.catalogMaterialId ? ` · ${stroke.catalogMaterialId}` : ""}
+                        {stroke.customTexture ? ` · ${ru ? "текстура" : "texture"} ${stroke.customTexture.tileSizeMm} mm` : ""}
                       </span>
                       <span className="spacer" />
                       <button
