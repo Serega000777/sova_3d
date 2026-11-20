@@ -3,7 +3,7 @@
 import { GAME_BUDGETS } from "@physical-ai/contracts";
 import { useEffect, useState } from "react";
 
-import { parseLodShares, type VerifiedGameCollider, type VerifiedGameReadyObject, type VerifiedGameLod, type VerifiedUvAtlas } from "../lib/game-ready-lod";
+import { parseLodShares, type VerifiedGameCollider, type VerifiedGameMaterial, type VerifiedGameReadyObject, type VerifiedGameLod, type VerifiedUvAtlas } from "../lib/game-ready-lod";
 import { ModelViewer, type ViewerScenePart } from "./ModelViewer";
 
 export type GameColliderOption = "convex" | "box" | "none";
@@ -25,6 +25,10 @@ export interface GameReadyLodResult {
   uvAtlases: VerifiedUvAtlas[] | null;
   /** Present only for a single-object export when a collider was requested. */
   collider: VerifiedGameCollider | null;
+  /** Present only for a single-object export with a trusted catalogue material. */
+  material: VerifiedGameMaterial | null;
+  /** Worker-proven LOD0 atlas size when source paint/face colours were baked. */
+  bakedTexturePx: number | null;
 }
 
 interface GameReadyLodCardProps {
@@ -268,6 +272,11 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                       ? ` · ${entry.collider.name} (${entry.collider.kind}) ${entry.collider.triangles.toLocaleString()}/${entry.collider.triangleLimit.toLocaleString()} ▲`
                       : ""}
                     {entry.animated ? ` · ${ru ? "rigid-анимация" : "rigid animation"}` : ""}
+                    {entry.material
+                      ? ` · PBR ${entry.material.catalogMaterialId}${entry.material.sourceTextureSha256 ? ` · atlas ${entry.material.embeddedTexturePx.join("/")} px` : ""}`
+                      : entry.bakedTexturePx
+                        ? ` · ${ru ? "краска → atlas" : "paint → atlas"} ${entry.bakedTexturePx} px`
+                        : ""}
                   </span>
                 ))}
               </div>
@@ -296,6 +305,16 @@ export function GameReadyLodCard({ disabled, busy, hasExplicitScene, result, lan
                 <span className="mono" style={{ fontSize: 12 }}>
                   {result.collider.name} ({result.collider.kind}) · {result.collider.triangles.toLocaleString()}/{result.collider.triangleLimit.toLocaleString()} {ru ? "треуг." : "tris"}
                   {` · ${ru ? "выпуклый" : "convex"} ${result.collider.isConvex ? "✓" : "✗"} · ${ru ? "замкнутый" : "watertight"} ${result.collider.isWatertight ? "✓" : "✗"}`}
+                </span>
+              ) : null}
+              {result.material ? (
+                <span className="mono" style={{ fontSize: 12 }}>
+                  PBR {result.material.catalogMaterialId} · {result.material.baseColor} · roughness {result.material.roughness.toFixed(2)} · metallic {result.material.metallic.toFixed(2)}
+                  {result.material.sourceTextureSha256 ? ` · atlas ${result.material.embeddedTexturePx.join("/")} px` : ""}
+                </span>
+              ) : result.bakedTexturePx ? (
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {ru ? "Краска источника запечена в atlas LOD" : "Source paint baked into the LOD atlas"} · {result.bakedTexturePx} px
                 </span>
               ) : null}
             </div>

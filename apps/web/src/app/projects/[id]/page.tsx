@@ -164,9 +164,11 @@ import {
   gameReadyColliderMatchesRequest,
   gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
+  gameReadyMaterialMatchesLods,
   gameReadySceneReportMatchesRequest,
   gameReadyUvAtlasesMatchLods,
   type VerifiedGameCollider,
+  type VerifiedGameMaterial,
   type VerifiedGameLod,
 } from "@/lib/game-ready-lod";
 import { useSession } from "@/lib/session";
@@ -4634,6 +4636,7 @@ export default function ProjectPage() {
           lod_ratios: options.lodRatios,
           uv: true,
           pivot: "base",
+          texture_px: 1024,
         },
       });
       const job = await trackJob(
@@ -4657,6 +4660,8 @@ export default function ProjectPage() {
       let lods: VerifiedGameLod[] | null = null;
       let uvAtlases: ReturnType<typeof gameReadyUvAtlasesMatchLods> = null;
       let collider: VerifiedGameCollider | null = null;
+      let material: VerifiedGameMaterial | null = null;
+      let bakedTexturePx: number | null = null;
       if (hasExplicitScene) {
         objects = gameReadySceneReportMatchesRequest(
           result.report,
@@ -4666,6 +4671,7 @@ export default function ProjectPage() {
           options.lodRatios.length,
           true,
           options.collider,
+          1024,
         );
         if (!objects) {
           throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
@@ -4688,6 +4694,12 @@ export default function ProjectPage() {
           throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
         }
         collider = colliderResult.collider;
+        const materialResult = gameReadyMaterialMatchesLods(result.report, lods, 1024);
+        if (!materialResult.ok) {
+          throw new Error(ru ? "Экспорт завершился без проверяемого материала." : "The export completed without verifiable material evidence.");
+        }
+        material = materialResult.material;
+        bakedTexturePx = materialResult.bakedTexturePx;
       }
       // Reference 88: bind the signed download to the exact asset/byte-size the verified report
       // above already proved, reusing scenario 89's established download-binding convention
@@ -4715,6 +4727,8 @@ export default function ProjectPage() {
         objects,
         uvAtlases: objects ? null : uvAtlases,
         collider: objects ? null : collider,
+        material: objects ? null : material,
+        bakedTexturePx: objects ? null : bakedTexturePx,
       });
       setNotice(ru ? "LOD0–LOD2 готовы к скачиванию." : "LOD0-LOD2 are ready to download.");
     } catch (reason) {

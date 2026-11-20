@@ -70,6 +70,91 @@ export interface VerifiedUvAtlas {
   outOfBoundsVertices: number;
 }
 
+export interface VerifiedGameMaterial {
+  catalogMaterialId: string;
+  baseColor: string;
+  roughness: number;
+  metallic: number;
+  sourceTextureSha256: string | null;
+  embeddedTexturePx: number[];
+}
+
+export type VerifiedGameMaterialResult =
+  | { ok: true; material: VerifiedGameMaterial | null; bakedTexturePx: number | null }
+  | { ok: false };
+
+/** Material evidence is accepted only when it is coherent with the exact verified LOD set.
+ * A source texture must produce one bounded, deterministically-sized atlas per LOD. The separate
+ * baked texture field is the worker's proof that source face colours/paint were preserved. */
+export function gameReadyMaterialMatchesLods(
+  reportValue: unknown,
+  lods: VerifiedGameLod[],
+  requestedTexturePx: number,
+): VerifiedGameMaterialResult {
+  if (!reportValue || typeof reportValue !== "object") return { ok: false };
+  if (!Number.isInteger(requestedTexturePx) || requestedTexturePx < 256 || requestedTexturePx > 4096) {
+    return { ok: false };
+  }
+  const report = reportValue as { material?: unknown; baked_texture_px?: unknown };
+  const bakedTexturePx = report.baked_texture_px ?? null;
+  if (bakedTexturePx !== null && bakedTexturePx !== requestedTexturePx) return { ok: false };
+  if (report.material == null) {
+    return { ok: true, material: null, bakedTexturePx: bakedTexturePx as number | null };
+  }
+  if (typeof report.material !== "object") return { ok: false };
+  const candidate = report.material as Partial<{
+    catalog_material_id: unknown;
+    base_color: unknown;
+    roughness: unknown;
+    metallic: unknown;
+    source_texture_sha256: unknown;
+    embedded_texture_px: unknown;
+  }>;
+  const sourceTextureSha256 = candidate.source_texture_sha256;
+  if (
+    typeof candidate.catalog_material_id !== "string"
+    || candidate.catalog_material_id.length < 1
+    || candidate.catalog_material_id.length > 120
+    || typeof candidate.base_color !== "string"
+    || !/^#[0-9A-F]{6}$/.test(candidate.base_color)
+    || typeof candidate.roughness !== "number"
+    || !Number.isFinite(candidate.roughness)
+    || candidate.roughness < 0.04
+    || candidate.roughness > 1
+    || typeof candidate.metallic !== "number"
+    || !Number.isFinite(candidate.metallic)
+    || candidate.metallic < 0
+    || candidate.metallic > 1
+    || (sourceTextureSha256 !== null && (
+      typeof sourceTextureSha256 !== "string"
+      || !/^[0-9a-f]{64}$/.test(sourceTextureSha256)
+    ))
+    || !Array.isArray(candidate.embedded_texture_px)
+  ) return { ok: false };
+
+  const expectedTextureSizes = lods.map((_, index) => Math.max(requestedTexturePx >> index, 256));
+  if (
+    sourceTextureSha256 === null
+      ? candidate.embedded_texture_px.length !== 0
+      : candidate.embedded_texture_px.length !== lods.length
+        || candidate.embedded_texture_px.some((size, index) => size !== expectedTextureSizes[index])
+        || bakedTexturePx !== requestedTexturePx
+  ) return { ok: false };
+
+  return {
+    ok: true,
+    material: {
+      catalogMaterialId: candidate.catalog_material_id,
+      baseColor: candidate.base_color,
+      roughness: candidate.roughness,
+      metallic: candidate.metallic,
+      sourceTextureSha256: sourceTextureSha256 as string | null,
+      embeddedTexturePx: candidate.embedded_texture_px as number[],
+    },
+    bakedTexturePx: bakedTexturePx as number | null,
+  };
+}
+
 /** UV evidence must cover the exact verified LOD set, one atlas per LOD matched by name and
  * index. The summed triangle area is a measured percentage, not an overlap-aware packing or
  * distortion score, so it is only required to be finite and positive; degenerate/out-of-bounds
@@ -230,6 +315,8 @@ export interface VerifiedGameReadyObject {
   collider: VerifiedGameCollider | null;
   /** True only when the worker binds the one trusted rigid mechanism animation to this node id. */
   animated: boolean;
+  material: VerifiedGameMaterial | null;
+  bakedTexturePx: number | null;
 }
 
 /** A scene's aggregate LOD report is trustworthy only when every visible object's own LOD, UV
@@ -246,6 +333,7 @@ export function gameReadySceneReportMatchesRequest(
   requestedLighterLevels: number,
   uvRequested: boolean,
   colliderRequested: "convex" | "box" | "none",
+  requestedTexturePx = 1024,
 ): VerifiedGameReadyObject[] | null {
   if (!reportValue || typeof reportValue !== "object") return null;
   const report = reportValue as {
@@ -308,6 +396,8 @@ export function gameReadySceneReportMatchesRequest(
     if (!uvAtlases) return null;
     const colliderResult = gameReadyColliderMatchesRequest(entry.report, entry.name, colliderRequested);
     if (!colliderResult.ok) return null;
+    const materialResult = gameReadyMaterialMatchesLods(entry.report, objectLods, requestedTexturePx);
+    if (!materialResult.ok) return null;
     triangleSum += objectReport!.triangles_in as number;
     verified.push({
       nodeId: entry.node_id,
@@ -318,6 +408,8 @@ export function gameReadySceneReportMatchesRequest(
       uvAtlases,
       collider: colliderResult.collider,
       animated: entry.node_id === animatedNodeId,
+      material: materialResult.material,
+      bakedTexturePx: materialResult.bakedTexturePx,
     });
   }
   if (triangleSum !== report.triangles_in) return null;

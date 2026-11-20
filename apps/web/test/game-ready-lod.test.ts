@@ -6,6 +6,7 @@ import {
   gameReadyColliderMatchesRequest,
   gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
+  gameReadyMaterialMatchesLods,
   gameReadySceneReportMatchesRequest,
   gameReadyUvAtlasesMatchLods,
   parseLodShares,
@@ -92,6 +93,52 @@ test("UV atlas evidence must cover every verified LOD by name, with finite posit
     gameReadyUvAtlasesMatchLods({ uv: true, uv_atlases: [{ ...atlases[0], degenerate_triangles: -1 }, atlases[1], atlases[2]] }, lods, true),
     null,
   );
+});
+
+test("game-ready material and paint atlas evidence is exact, bounded and complete for every LOD", () => {
+  const lods = [makeLod(0, 9000), makeLod(1, 4500), makeLod(2, 1800)];
+  const textured = {
+    baked_texture_px: 1024,
+    material: {
+      catalog_material_id: "interior.wood.oak-natural.v1",
+      base_color: "#C9A66B",
+      roughness: 0.48,
+      metallic: 0,
+      source_texture_sha256: "a".repeat(64),
+      embedded_texture_px: [1024, 512, 256],
+    },
+  };
+  assert.deepEqual(gameReadyMaterialMatchesLods(textured, lods, 1024), {
+    ok: true,
+    material: {
+      catalogMaterialId: "interior.wood.oak-natural.v1",
+      baseColor: "#C9A66B",
+      roughness: 0.48,
+      metallic: 0,
+      sourceTextureSha256: "a".repeat(64),
+      embeddedTexturePx: [1024, 512, 256],
+    },
+    bakedTexturePx: 1024,
+  });
+  assert.deepEqual(gameReadyMaterialMatchesLods({ baked_texture_px: 1024, material: null }, lods, 1024), {
+    ok: true,
+    material: null,
+    bakedTexturePx: 1024,
+  });
+  assert.deepEqual(gameReadyMaterialMatchesLods({ baked_texture_px: null, material: null }, lods, 1024), {
+    ok: true,
+    material: null,
+    bakedTexturePx: null,
+  });
+  assert.deepEqual(gameReadyMaterialMatchesLods({ ...textured, baked_texture_px: 2048 }, lods, 1024), { ok: false });
+  assert.deepEqual(gameReadyMaterialMatchesLods({
+    ...textured,
+    material: { ...textured.material, embedded_texture_px: [1024, 256, 256] },
+  }, lods, 1024), { ok: false });
+  assert.deepEqual(gameReadyMaterialMatchesLods({
+    ...textured,
+    material: { ...textured.material, source_texture_sha256: "wrong" },
+  }, lods, 1024), { ok: false });
 });
 
 function makeObjectLod(engineName: string, index: number, triangles: number) {
@@ -386,17 +433,18 @@ test("aggregate scene report's rigid mechanism animation binds to exactly one ve
 });
 
 test("web wires the LOD card through the existing export job and fail-closed validators", () => {
-  assert.match(studio, /import \{\s*gameReadyColliderMatchesRequest,\s*gameReadyEnvelopeMatchesRequest,\s*gameReadyLodsMatchRequest,\s*gameReadySceneReportMatchesRequest,\s*gameReadyUvAtlasesMatchLods,/);
+  assert.match(studio, /gameReadyMaterialMatchesLods/);
   assert.match(studio, /async function runGameReadyLod/);
-  assert.match(studio, /collider: options\.collider,\s*lod_ratios: options\.lodRatios,\s*uv: true,\s*pivot: "base",/);
+  assert.match(studio, /collider: options\.collider,\s*lod_ratios: options\.lodRatios,\s*uv: true,\s*pivot: "base",\s*texture_px: 1024,/);
   assert.match(studio, /gameReadySceneReportMatchesRequest\(\s*result\.report,/);
   assert.match(studio, /gameReadyLodsMatchRequest\(reportLods, modelName, options\.maxTriangles, options\.lodRatios\.length\)/);
   assert.match(studio, /gameReadyEnvelopeMatchesRequest\(result\.report, result\.byte_size, "base"\)/);
   assert.match(studio, /gameReadyUvAtlasesMatchLods\(result\.report, lods, true\)/);
   // The explicit-scene path passes the requested collider type as the scene validator's
   // colliderRequested argument, and the single-object path separately verifies the collider.
-  assert.match(studio, /gameReadySceneReportMatchesRequest\(\s*result\.report,\s*result\.byte_size,\s*"base",\s*options\.maxTriangles,\s*options\.lodRatios\.length,\s*true,\s*options\.collider,\s*\)/);
+  assert.match(studio, /gameReadySceneReportMatchesRequest\(\s*result\.report,\s*result\.byte_size,\s*"base",\s*options\.maxTriangles,\s*options\.lodRatios\.length,\s*true,\s*options\.collider,\s*1024,\s*\)/);
   assert.match(studio, /gameReadyColliderMatchesRequest\(result\.report, modelName, options\.collider\)/);
+  assert.match(studio, /gameReadyMaterialMatchesLods\(result\.report, lods, 1024\)/);
   assert.match(studio, /collider: objects \? null : collider,/);
   assert.match(studio, /<GameReadyLodCard/);
   assert.match(studio, /onRun=\{runGameReadyLod\}/);
@@ -449,6 +497,14 @@ test("the whole-scene per-object list surfaces the trusted rigid mechanism anima
   assert.match(card, /\{entry\.animated \? ` · \$\{ru \? "rigid-анимация" : "rigid animation"\}` : ""\}/);
   assert.match(card, /result\.objects\.some\(\(entry\) => entry\.animated\)/);
   assert.match(card, /This scene has no single trusted rigid animation\./);
+});
+
+test("the web card surfaces only fail-closed catalogue material and painted-atlas evidence", () => {
+  assert.match(card, /entry\.material\.catalogMaterialId/);
+  assert.match(card, /entry\.material\.embeddedTexturePx\.join\("\/"\)/);
+  assert.match(card, /entry\.bakedTexturePx/);
+  assert.match(card, /result\.material\.catalogMaterialId/);
+  assert.match(card, /result\.bakedTexturePx/);
 });
 
 test("ModelViewer can load a named mesh from a multi-node GLB instead of always taking the first mesh", () => {
