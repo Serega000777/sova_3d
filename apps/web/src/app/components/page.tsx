@@ -1,6 +1,6 @@
 "use client";
 
-import type { Component } from "@physical-ai/contracts";
+import type { Component, Project, SceneGraphEdit, SceneNode } from "@physical-ai/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,6 +14,18 @@ import {
 import { useSession } from "@/lib/session";
 
 const CATEGORIES: ComponentCategory[] = ["all", "favorites", "electronics", "mechanics"];
+const SCENE_IDENTITY_TRANSFORM: SceneNode["transform"] = [
+  [1, 0, 0, 0],
+  [0, 1, 0, 0],
+  [0, 0, 1, 0],
+  [0, 0, 0, 1],
+];
+
+interface CreatedComponentModel {
+  projectId: string;
+  name: string;
+  modelAssetId: string;
+}
 
 export default function ComponentsPage() {
   const router = useRouter();
@@ -31,6 +43,9 @@ export default function ComponentsPage() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [createdModel, setCreatedModel] = useState<CreatedComponentModel | null>(null);
+  const [sceneTargets, setSceneTargets] = useState<Project[]>([]);
+  const [sceneTargetId, setSceneTargetId] = useState("");
   const loadRevision = useRef(0);
   const visible = useMemo(
     () => componentLibraryView(components, query, category, favoriteIds),
@@ -66,6 +81,26 @@ export default function ComponentsPage() {
     return () => { loadRevision.current += 1; };
   }, [load]);
 
+  useEffect(() => {
+    if (!client || !session || !createdModel) {
+      setSceneTargets([]);
+      setSceneTargetId("");
+      return;
+    }
+    let cancelled = false;
+    void client.listProjects(session.workspaceId).then((rows) => {
+      if (cancelled) return;
+      const candidates = rows.filter((project) => (
+        project.id !== createdModel.projectId && Boolean(project.head_version_id)
+      ));
+      setSceneTargets(candidates);
+      setSceneTargetId(candidates[0]?.id ?? "");
+    }).catch((reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+    });
+    return () => { cancelled = true; };
+  }, [client, createdModel, session]);
+
   async function toggleFavorite(componentId: string) {
     if (!client || busy) return;
     const wasFavorite = favoriteIds.has(componentId);
@@ -96,8 +131,10 @@ export default function ComponentsPage() {
   async function createMountingModel() {
     if (!client || !session || !selected || busy) return;
     const sourceId = selected.id;
+    const sourceName = selected.name;
     setBusy(`model:${sourceId}`);
     setError(null);
+    setCreatedModel(null);
     try {
       const accepted = await client.createComponentModel(sourceId, {
         workspace_id: session.workspaceId,
@@ -112,11 +149,79 @@ export default function ComponentsPage() {
       const job = await client.waitForJob(accepted.job.job_id, {
         onProgress: (update) => setBusy(`model:${sourceId}:${update.progress}`),
       });
-      if (job.status !== "succeeded" || job.project_id !== accepted.project_id) {
+      const result = job.result as { model_asset_id?: unknown } | null;
+      if (
+        job.status !== "succeeded"
+        || job.project_id !== accepted.project_id
+        || typeof result?.model_asset_id !== "string"
+        || result.model_asset_id.length === 0
+      ) {
         const detail = job.error as { message?: string } | null;
         throw new Error(detail?.message ?? (ru ? "Монтажную модель не удалось построить." : "The mounting model did not build."));
       }
-      router.push(`/projects/${accepted.project_id}`);
+      setCreatedModel({ projectId: accepted.project_id, name: sourceName, modelAssetId: result.model_asset_id });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function insertIntoScene() {
+    if (!client || !createdModel || busy) return;
+    const target = sceneTargets.find((project) => project.id === sceneTargetId);
+    if (!target?.head_version_id) return;
+    setBusy(`insert:${target.id}`);
+    setError(null);
+    try {
+      const freshTarget = await client.getProject(target.id);
+      if (freshTarget.id !== target.id || !freshTarget.head_version_id) {
+        throw new Error(ru ? "Проект больше не имеет сохранённой версии." : "The project no longer has a saved version.");
+      }
+      const targetVersionId = freshTarget.head_version_id;
+      const scene = await client.getScene(targetVersionId);
+      if (scene.version_id !== targetVersionId) {
+        throw new Error(ru ? "Сервер вернул структуру другой версии." : "The server returned another version's scene.");
+      }
+      const usedIds = new Set(scene.nodes.map((node) => node.id));
+      let nodeId = `component_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+      while (usedIds.has(nodeId)) nodeId = `component_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+      const body: SceneGraphEdit = {
+        label: ru ? `Добавлена модель: ${createdModel.name}` : `Added model: ${createdModel.name}`,
+        nodes: [
+          ...scene.nodes.map((node) => ({
+            id: node.id,
+            name: node.name,
+            kind: node.kind,
+            parent_id: node.parent_id ?? null,
+            visible: node.visible,
+            transform: node.transform,
+            asset_id: node.asset_id ?? null,
+            instance_of: node.instance_of ?? null,
+            footprint_mm: node.footprint_mm ?? null,
+          })),
+          {
+            id: nodeId,
+            name: createdModel.name,
+            kind: "object",
+            parent_id: null,
+            visible: true,
+            transform: SCENE_IDENTITY_TRANSFORM,
+            asset_id: createdModel.modelAssetId,
+            instance_of: null,
+            footprint_mm: null,
+          },
+        ],
+      };
+      const updated = await client.updateScene(targetVersionId, body);
+      if (updated.parent_version_id !== targetVersionId || !updated.nodes.some((node) => (
+        node.id === nodeId
+        && node.asset_id === createdModel.modelAssetId
+        && node.parent_id == null
+      ))) {
+        throw new Error(ru ? "Новая версия не подтвердила вставленный объект." : "The new version did not confirm the inserted object.");
+      }
+      router.push(`/projects/${target.id}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -202,6 +307,33 @@ export default function ComponentsPage() {
           </aside>
         )}
       </div>
+      {createdModel ? (
+        <section className="card stack" aria-label={ru ? "Готовая монтажная модель" : "Built mounting model"}>
+          <strong>{ru ? `Готово: ${createdModel.name}` : `Ready: ${createdModel.name}`}</strong>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <button className="btn primary" type="button" onClick={() => router.push(`/projects/${createdModel.projectId}`)}>
+              {ru ? "Открыть как новый проект" : "Open as a new project"}
+            </button>
+          </div>
+          {sceneTargets.length > 0 ? (
+            <div className="stack">
+              <span className="muted">
+                {ru
+                  ? "Или вставьте ту же проверенную модель отдельным объектом в существующий проект. Объект появится в начале координат — переместите его штатным редактором сцены."
+                  : "Or insert the same verified model as a separate object in an existing project. It starts at the origin; reposition it with the scene editor."}
+              </span>
+              <select className="input" value={sceneTargetId} onChange={(event) => setSceneTargetId(event.target.value)} aria-label={ru ? "Проект для вставки" : "Insertion project"}>
+                {sceneTargets.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+              <button className="btn" type="button" disabled={Boolean(busy) || !sceneTargetId} onClick={() => void insertIntoScene()}>
+                {busy?.startsWith("insert:") ? (ru ? "Добавляем…" : "Inserting…") : (ru ? "Вставить в выбранный проект" : "Insert into selected project")}
+              </button>
+            </div>
+          ) : (
+            <span className="muted">{ru ? "Других сохранённых проектов для вставки пока нет." : "There are no other saved projects available for insertion."}</span>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }
