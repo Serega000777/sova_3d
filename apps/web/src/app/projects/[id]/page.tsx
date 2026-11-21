@@ -57,6 +57,7 @@ import type {
 import {
   ApiError,
   GUIDED_PHOTO_VIEWS,
+  REPLACEMENT_DIMENSIONS,
   assessGuidedPhotos,
   calibratedPhotoDistanceMm,
   type AnyCadProfileSeed,
@@ -83,6 +84,8 @@ import {
   nextPinNumber,
   parseMeshRepairJobResult,
   parseMeshRepairReport,
+  parseReplacementMeasurements,
+  replacementDimensionLabel,
   setParameterOperation,
   suggestGridStep,
 } from "@physical-ai/contracts";
@@ -1105,6 +1108,14 @@ export default function ProjectPage() {
   const [photos, setPhotos] = useState<CommandPhoto[]>([]);
   const [guidedPhotos, setGuidedPhotos] = useState(false);
   const guidedPhotoAssessment = useMemo(() => assessGuidedPhotos(photos), [photos]);
+  const [replacementPartMode, setReplacementPartMode] = useState(false);
+  const [replacementMeasurements, setReplacementMeasurements] = useState<
+    Partial<Record<(typeof REPLACEMENT_DIMENSIONS)[number], string>>
+  >({});
+  const measuredReplacement = useMemo(
+    () => parseReplacementMeasurements(replacementMeasurements),
+    [replacementMeasurements],
+  );
   const [video, setVideo] = useState<File | null>(null);
   const [reference, setReference] = useState("");
   const photoInput = useRef<HTMLInputElement>(null);
@@ -2615,6 +2626,7 @@ export default function ProjectPage() {
   }
 
   function toggleGuidedPhotos() {
+    if (replacementPartMode) return;
     setGuidedPhotos((enabled) => {
       const next = !enabled;
       setPhotos((current) =>
@@ -2623,6 +2635,24 @@ export default function ProjectPage() {
           view: next ? (GUIDED_PHOTO_VIEWS[index] ?? null) : null,
         })),
       );
+      return next;
+    });
+  }
+
+  function toggleReplacementPartMode() {
+    setReplacementPartMode((enabled) => {
+      const next = !enabled;
+      if (next) {
+        setGuidedPhotos(true);
+        setVideo(null);
+        setReference("");
+        setPhotos((current) =>
+          current.map((photo, index) => ({
+            ...photo,
+            view: GUIDED_PHOTO_VIEWS[index] ?? null,
+          })),
+        );
+      }
       return next;
     });
   }
@@ -2764,6 +2794,8 @@ export default function ProjectPage() {
     photos.forEach((photo) => URL.revokeObjectURL(photo.url));
     setPhotos([]);
     setGuidedPhotos(false);
+    setReplacementPartMode(false);
+    setReplacementMeasurements({});
     setReference("");
   }
 
@@ -2775,7 +2807,11 @@ export default function ProjectPage() {
     event?.preventDefault();
     const typed = (spoken ?? prompt).trim();
     // A photo or video alone is a request too: "build what you see".
-    const seeIt = language === "ru" ? "Смоделируй предмет по вложению" : "Model the object in the attachment";
+    const seeIt = replacementPartMode
+      ? (language === "ru"
+          ? "Построй печатаемую замену детали только по видимым и указанным размерам"
+          : "Build a printable replacement only from visible and stated dimensions")
+      : (language === "ru" ? "Смоделируй предмет по вложению" : "Model the object in the attachment");
     const text = typed || (photos.length > 0 || video ? seeIt : "");
     if (!client || !session || !text) return;
     if (guidedPhotos && !guidedPhotoAssessment.ready) {
@@ -2783,6 +2819,14 @@ export default function ProjectPage() {
         ru
           ? "Заполните четыре разных ракурса и замените кадры с предупреждениями."
           : "Fill all four distinct views and replace the photos with warnings.",
+      );
+      return;
+    }
+    if (replacementPartMode && measuredReplacement === null) {
+      setError(
+        ru
+          ? "Для замены укажите хотя бы один корректный размер от 0 до 10 000 мм."
+          : "Provide at least one valid replacement dimension from 0 to 10,000 mm.",
       );
       return;
     }
@@ -2855,6 +2899,14 @@ export default function ProjectPage() {
           throw new Error(language === "ru" ? "Видео не дало кадров" : "No frames were extracted from the video");
         }
       }
+      const replacementViews = replacementPartMode
+        ? Object.fromEntries(
+            GUIDED_PHOTO_VIEWS.map((view) => [
+              view,
+              imageAssetIds[GUIDED_PHOTO_VIEWS.findIndex((candidate) => candidate === view)],
+            ]),
+          ) as Record<(typeof GUIDED_PHOTO_VIEWS)[number], string>
+        : null;
       const accepted = await client.createAiCommand(projectId, {
         prompt: text,
         units: "mm",
@@ -2863,18 +2915,23 @@ export default function ProjectPage() {
         project_version_id: activeVersion?.id ?? null,
         preview: previewMode,
         region,
-        image_asset_ids: imageAssetIds,
+        image_asset_ids: replacementPartMode ? [] : imageAssetIds,
         reference:
-          [
-            reference.trim(),
-            guidedPhotos
-              ? (ru
-                  ? "Порядок фото: спереди, справа, сзади, слева."
-                  : "Photo order: front, right, back, left.")
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" ") || null,
+          replacementPartMode
+            ? null
+            : [
+                reference.trim(),
+                guidedPhotos
+                  ? (ru
+                      ? "Порядок фото: спереди, справа, сзади, слева."
+                      : "Photo order: front, right, back, left.")
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ") || null,
+        replacement_part: replacementPartMode
+          ? { views: replacementViews!, measurements: measuredReplacement! }
+          : null,
       });
       const job = await trackJob("Planning & building", accepted.job_id);
       const previewShown = await afterAiJob(accepted.ai_request_id, job, { command: text, region });
@@ -6057,11 +6114,21 @@ export default function ProjectPage() {
               <button
                 type="button"
                 className={`btn ${guidedPhotos ? "primary" : ""}`}
-                disabled={!!busy}
+                disabled={!!busy || replacementPartMode}
                 onClick={toggleGuidedPhotos}
                 aria-pressed={guidedPhotos}
               >
                 {ru ? "4 обязательных ракурса" : "4 required views"}
+              </button>
+              <button
+                type="button"
+                className={`btn ${replacementPartMode ? "primary" : ""}`}
+                disabled={!!busy}
+                onClick={toggleReplacementPartMode}
+                aria-pressed={replacementPartMode}
+                title={ru ? "Четыре ракурса и хотя бы один измеренный размер" : "Four views and at least one measured dimension"}
+              >
+                {ru ? "Замена детали" : "Replacement part"}
               </button>
               {!guidedPhotos && photos.length < 3 && (
                 <span className="muted">
@@ -6084,7 +6151,7 @@ export default function ProjectPage() {
               <button
                 type="button"
                 className={`btn ${video ? "primary" : ""}`}
-                disabled={!!busy}
+                disabled={!!busy || replacementPartMode}
                 onClick={() => videoInput.current?.click()}
                 title={language === "ru" ? "До 60 секунд, не выше 1080p" : "Up to 60 seconds and 1080p"}
               >
@@ -6157,13 +6224,41 @@ export default function ProjectPage() {
                       {" · "}{ru ? "однотонный контрастный фон" : "plain contrasting background"}
                     </span>
                   )}
-                  <input
-                    className="input"
-                    style={{ maxWidth: 260 }}
-                    placeholder={ru ? "известный размер: «карта», «ширина 80 мм»" : "known size: “credit card”, “width 80 mm”"}
-                    value={reference}
-                    onChange={(event) => setReference(event.target.value)}
-                  />
+                  {replacementPartMode ? (
+                    <div className="stack" style={{ minWidth: 280, flex: "1 1 360px" }}>
+                      <strong>{ru ? "Какие размеры вы измерили?" : "Which dimensions did you measure?"}</strong>
+                      <div className="row" style={{ flexWrap: "wrap" }}>
+                        {REPLACEMENT_DIMENSIONS.map((dimension) => (
+                          <label key={dimension} className="stack" style={{ minWidth: 150 }}>
+                            <span className="muted">{replacementDimensionLabel(dimension, language)}</span>
+                            <input
+                              className="input"
+                              inputMode="decimal"
+                              placeholder={ru ? "мм (необязательно)" : "mm (optional)"}
+                              value={replacementMeasurements[dimension] ?? ""}
+                              onChange={(event) => setReplacementMeasurements((current) => ({
+                                ...current,
+                                [dimension]: event.target.value,
+                              }))}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <span className="status-yellow">
+                        {ru
+                          ? "Нужен хотя бы один размер. Ракурсы и замеры доказывают только указанные габариты, а не скрытую или утраченную геометрию."
+                          : "At least one dimension is required. Views and measurements prove only stated dimensions, not hidden or missing geometry."}
+                      </span>
+                    </div>
+                  ) : (
+                    <input
+                      className="input"
+                      style={{ maxWidth: 260 }}
+                      placeholder={ru ? "известный размер: «карта», «ширина 80 мм»" : "known size: “credit card”, “width 80 mm”"}
+                      value={reference}
+                      onChange={(event) => setReference(event.target.value)}
+                    />
+                  )}
                   <button className="btn" type="button" onClick={dropPhotos}>
                     {ru ? "убрать все" : "remove all"}
                   </button>
@@ -6196,7 +6291,7 @@ export default function ProjectPage() {
               <button
                 className="btn primary"
                 type="submit"
-                disabled={!!busy || !!commandProposal || (!prompt.trim() && photos.length === 0 && !video) || (guidedPhotos && !guidedPhotoAssessment.ready)}
+                disabled={!!busy || !!commandProposal || (!prompt.trim() && photos.length === 0 && !video) || (guidedPhotos && !guidedPhotoAssessment.ready) || (replacementPartMode && measuredReplacement === null)}
               >
                 {language === "ru" ? "Построить" : "Build"}
               </button>
@@ -9108,7 +9203,7 @@ export default function ProjectPage() {
             placeholder={ru ? "Скажите ИИ, что построить или изменить…" : "Tell the AI what to build or change…"}
             disabled={!!busy}
           />
-          <button className="btn primary" type="submit" disabled={!!busy || (!prompt.trim() && photos.length === 0 && !video) || (guidedPhotos && !guidedPhotoAssessment.ready)}>
+          <button className="btn primary" type="submit" disabled={!!busy || (!prompt.trim() && photos.length === 0 && !video) || (guidedPhotos && !guidedPhotoAssessment.ready) || (replacementPartMode && measuredReplacement === null)}>
             {ru ? "Построить" : "Build"}
           </button>
           <button className="btn" type="button" disabled={!!busy || !prompt.trim()} onClick={() => void buildVariants()}>
