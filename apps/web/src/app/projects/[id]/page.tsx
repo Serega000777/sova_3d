@@ -134,6 +134,7 @@ import {
   type FragmentRestorationBoundary,
   type FragmentRestorationProposal,
 } from "@/lib/fragment-restoration";
+import { cadReconstructionSummaryForVersion } from "@/lib/cad-reconstruction-summary";
 import { isProTierLockedTool } from "@/lib/proGate";
 import {
   matchingSizeFamily,
@@ -912,7 +913,6 @@ export default function ProjectPage() {
   const sizeFamilyRevision = useRef(0);
   const sizeFamilyContextRef = useRef("");
   const [engineeringHistory, setEngineeringHistory] = useState<EngineeringReport[]>([]);
-  const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
   const [selectedRepairDefectIds, setSelectedRepairDefectIds] = useState<string[]>([]);
@@ -921,6 +921,10 @@ export default function ProjectPage() {
   const [reinforceReplacement, setReinforceReplacement] = useState(false);
   const [reinforcementPercent, setReinforcementPercent] = useState(20);
   const [reconstructionProposal, setReconstructionProposal] = useState<FragmentRestorationProposal | null>(null);
+  const reconstructionSummary = useMemo(
+    () => activeVersion ? cadReconstructionSummaryForVersion(activeVersion) : null,
+    [activeVersion],
+  );
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
   const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve" | "analytic_surface_patch">("loft");
   const [cadProfileSeed, setCadProfileSeed] = useState<AnyCadProfileSeed | null>(null);
@@ -3356,7 +3360,6 @@ export default function ProjectPage() {
       return;
     }
     setError(null);
-    setReconstruction(null);
     try {
       const accepted = await client.reconstruct(proposal.sourceVersionId, proposal.body);
       const job = await trackJob(ru ? "Распознаём геометрию" : "Recognizing geometry", accepted.job_id);
@@ -3393,7 +3396,6 @@ export default function ProjectPage() {
       setReconstructionProposal(null);
       await refresh();
       if (activeVersionIdRef.current === proposal.sourceVersionId) {
-        setReconstruction(result);
         setActiveVersion(child);
       } else {
         setNotice(
@@ -8145,23 +8147,34 @@ export default function ProjectPage() {
                     {ru ? "Отменить план" : "Discard plan"}
                   </button>
                 )}
-                {reconstruction && (
-                  <div className="reconstruction-report stack">
+                {reconstructionSummary && (
+                  <div className="reconstruction-report stack" data-testid="cad-reconstruction-summary">
                     <div className="row">
-                      <span className="chip">{reconstruction.features.reconstruction?.fidelity ?? "CAD"}</span>
-                      <span className="chip">{reconstruction.features.cylinders.length} {ru ? "цилиндров" : "cylinders"}</span>
-                      <span className="chip">{reconstruction.features.planes.length} {ru ? "плоскостей" : "planes"}</span>
+                      <span className="chip">{reconstructionSummary.fidelity}</span>
+                      <span className="chip">{reconstructionSummary.planeCount} {ru ? "плоскостей" : "planes"}</span>
+                      <span className="chip">{reconstructionSummary.holeCount} {ru ? "отверстий" : "holes"}</span>
+                      <span className="chip">{reconstructionSummary.patternCount} {ru ? "шаблонов" : "patterns"}</span>
+                      <span className="chip">{reconstructionSummary.threadCount} {ru ? "резьб" : "threads"}</span>
                     </div>
+                    <span className="muted">
+                      {reconstructionSummary.faceCount} {ru ? "граней" : "faces"} · {reconstructionSummary.watertight ? (ru ? "замкнуто" : "watertight") : (ru ? "не замкнуто" : "not watertight")} · {reconstructionSummary.levels} {ru ? "уровн." : "levels"}
+                      {reconstructionSummary.unexplainedLevels > 0 ? ` · ${ru ? "не объяснено" : "unexplained"}: ${reconstructionSummary.unexplainedLevels}` : ""}
+                    </span>
+                    {reconstructionSummary.dimensionsMm && (
+                      <strong>
+                        {ru ? "Точные габариты CAD" : "Exact CAD dimensions"}: {reconstructionSummary.dimensionsMm.map((value) => value.toFixed(3)).join(" × ")} {ru ? "мм" : "mm"} (X × Y × Z)
+                      </strong>
+                    )}
                     <strong>
-                      {ru ? "Точность новой модели" : "Rebuild accuracy"}: p95 {reconstruction.deviation.p95_mm.toFixed(3)} mm
+                      {ru ? "Точность новой модели" : "Rebuild accuracy"}: p95 {reconstructionSummary.p95Mm.toFixed(3)} mm
                     </strong>
                     <span className="muted">
-                      {ru ? "Среднее" : "Mean"} {reconstruction.deviation.mean_mm.toFixed(3)} mm · max {reconstruction.deviation.max_mm.toFixed(3)} mm · {Math.round(reconstruction.deviation.within_tolerance * 100)}% {ru ? "в допуске" : "within tolerance"}
+                      {ru ? "Среднее" : "Mean"} {reconstructionSummary.meanMm.toFixed(3)} mm · max {reconstructionSummary.maxMm.toFixed(3)} mm · {Math.round(reconstructionSummary.withinTolerance * 100)}% ≤ {reconstructionSummary.toleranceMm.toFixed(3)} mm · n={reconstructionSummary.samples}
                     </span>
-                    <div className="progress" title={`${Math.round(reconstruction.deviation.within_tolerance * 100)}%`}>
-                      <div style={{ width: `${reconstruction.deviation.within_tolerance * 100}%` }} />
+                    <div className="progress" title={`${Math.round(reconstructionSummary.withinTolerance * 100)}%`}>
+                      <div style={{ width: `${reconstructionSummary.withinTolerance * 100}%` }} />
                     </div>
-                    {reconstruction.features.warnings.map((warning) => (
+                    {reconstructionSummary.warnings.map((warning) => (
                       <span key={warning} className="status-yellow">{warning}</span>
                     ))}
                   </div>
