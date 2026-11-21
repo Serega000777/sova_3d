@@ -17,6 +17,16 @@ export type CadOperationFacts = {
   | { mode: "blind"; depthMm: number }
 );
 
+export type CadEdgeDetailFacts = {
+  kind: "fillet" | "chamfer";
+  target: string;
+  amountMm: number;
+  selector:
+    | { kind: "all_edges" }
+    | { kind: "edges_parallel_to"; axis: "x" | "y" | "z"; outer: boolean }
+    | { kind: "edges_of_face"; face: "all" | `${"x" | "y" | "z"}${"+" | "-"}` };
+};
+
 type OperationEntry = { id: string; type: string; params: Record<string, unknown> };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -73,4 +83,50 @@ export function cadOperationFacts(entry: OperationEntry): CadOperationFacts | nu
       ? { mode: "through" as const, depthMm: null }
       : { mode: "blind" as const, depthMm: depth }),
   };
+}
+
+/** Read exact symbolic fillet/chamfer scope without pretending it identifies rendered edge ids. */
+export function cadEdgeDetailFacts(entry: OperationEntry): CadEdgeDetailFacts | null {
+  if (entry.type !== "fillet" && entry.type !== "chamfer") return null;
+  const target = entry.params.target;
+  const amount = entry.type === "fillet" ? entry.params.radius_mm : entry.params.distance_mm;
+  const edges = record(entry.params.edges);
+  if (
+    typeof target !== "string"
+    || target.length === 0
+    || typeof amount !== "number"
+    || !Number.isFinite(amount)
+    || amount <= 0
+    || !edges
+  ) return null;
+
+  let selector: CadEdgeDetailFacts["selector"] | null = null;
+  if (edges.kind === "all_edges") {
+    selector = { kind: "all_edges" };
+  } else if (
+    edges.kind === "edges_parallel_to"
+    && ["x", "y", "z"].includes(String(edges.axis))
+    && (edges.outer === undefined || typeof edges.outer === "boolean")
+  ) {
+    selector = {
+      kind: "edges_parallel_to",
+      axis: edges.axis as "x" | "y" | "z",
+      outer: edges.outer === true,
+    };
+  } else if (edges.kind === "edges_of_face") {
+    const face = record(edges.face);
+    if (face?.kind === "all_faces") {
+      selector = { kind: "edges_of_face", face: "all" };
+    } else if (
+      face?.kind === "face_by_normal"
+      && ["x", "y", "z"].includes(String(face.axis))
+      && (face.sign === "+" || face.sign === "-")
+    ) {
+      selector = {
+        kind: "edges_of_face",
+        face: `${face.axis}${face.sign}` as "x+" | "x-" | "y+" | "y-" | "z+" | "z-",
+      };
+    }
+  }
+  return selector ? { kind: entry.type, target, amountMm: amount, selector } : null;
 }

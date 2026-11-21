@@ -8,7 +8,7 @@ import {
 } from "@physical-ai/contracts";
 import { useEffect, useMemo, useState } from "react";
 
-import { cadOperationFacts, cadOperationFeaturePreview, type CadOperationFeaturePreview } from "../lib/cad-operation-preview";
+import { cadEdgeDetailFacts, cadOperationFacts, cadOperationFeaturePreview, type CadOperationFeaturePreview } from "../lib/cad-operation-preview";
 
 type Entry = OperationStack["operations"][number];
 
@@ -124,6 +124,7 @@ export function OperationStackPanel({
           };
           const featurePreview = cadOperationFeaturePreview(previewEntry);
           const operationFacts = cadOperationFacts(previewEntry);
+          const edgeDetailFacts = cadEdgeDetailFacts(previewEntry);
           return (
             <li key={entry.id} className={entry.enabled ? "" : "disabled"}>
               <div className="operation-stack-main">
@@ -176,7 +177,7 @@ export function OperationStackPanel({
                     })}
                   </div>
                 )}
-              {featurePreview ? (
+              {featurePreview || edgeDetailFacts ? (
                 <button
                   type="button"
                   className={`chip ${selectedId === entry.id ? "selected" : ""}`}
@@ -184,12 +185,12 @@ export function OperationStackPanel({
                   onClick={() => {
                     const next = selectedId === entry.id ? null : entry.id;
                     setSelectedId(next);
-                    onSelectionChange(next ? featurePreview : null);
+                    onSelectionChange(next && featurePreview ? featurePreview : null);
                   }}
                 >
                   {selectedId === entry.id
-                    ? (ru ? "Скрыть подсветку" : "Hide highlight")
-                    : (ru ? "Показать на модели" : "Show on model")}
+                    ? (featurePreview ? (ru ? "Скрыть подсветку" : "Hide highlight") : (ru ? "Скрыть детали" : "Hide details"))
+                    : (featurePreview ? (ru ? "Показать на модели" : "Show on model") : (ru ? "Показать детали" : "Show details"))}
                 </button>
               ) : (
                 <span className="muted" style={{ fontSize: 12 }}>
@@ -202,6 +203,26 @@ export function OperationStackPanel({
                   <span className="muted">{ru ? "Грань" : "Face"}: {operationFacts.face.toUpperCase()} · {ru ? "нормально к грани" : "normal to face"}</span>
                   <span className="muted">{ru ? "Позиция" : "Position"}: {operationFacts.positionMm.map((value) => value.toFixed(3)).join(" × ")} mm</span>
                   <span className="mono">{ru ? "Целевое тело" : "Target body"}: {operationFacts.target}</span>
+                </div>
+              ) : null}
+              {selectedId === entry.id && edgeDetailFacts ? (
+                <div className="card stack" style={{ gap: 4 }} data-testid="cad-edge-detail-facts">
+                  <span className="muted">
+                    {edgeDetailFacts.kind === "fillet" ? (ru ? "Радиус" : "Radius") : (ru ? "Расстояние фаски" : "Chamfer distance")}: {edgeDetailFacts.amountMm.toFixed(3)} mm
+                  </span>
+                  <span className="muted">
+                    {ru ? "Символический выбор" : "Symbolic selection"}: {edgeDetailFacts.selector.kind === "all_edges"
+                      ? (ru ? "все рёбра" : "all edges")
+                      : edgeDetailFacts.selector.kind === "edges_parallel_to"
+                        ? `${ru ? "рёбра параллельно" : "edges parallel to"} ${edgeDetailFacts.selector.axis.toUpperCase()}${edgeDetailFacts.selector.outer ? ` · ${ru ? "только внешние" : "outer only"}` : ""}`
+                        : edgeDetailFacts.selector.face === "all"
+                          ? (ru ? "рёбра всех граней" : "edges of all faces")
+                          : `${ru ? "рёбра грани" : "edges of face"} ${edgeDetailFacts.selector.face.toUpperCase()}`}
+                  </span>
+                  <span className="muted">
+                    {ru ? "Это сохранённое правило выбора, а не угаданные ID рёбер в текущем рендере." : "This is the persisted selection rule, not guessed edge IDs in the current render."}
+                  </span>
+                  <span className="mono">{ru ? "Целевое тело" : "Target body"}: {edgeDetailFacts.target}</span>
                 </div>
               ) : null}
               </div>

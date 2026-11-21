@@ -14,6 +14,7 @@ import { useIsTablet } from "./layout";
 import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 import {
+  cadEdgeDetailFacts,
   cadOperationFacts,
   cadOperationFeaturePreview,
   type CadOperationFeaturePreview,
@@ -220,6 +221,13 @@ export function CadHistorySheet({
               ...Object.fromEntries(editable.map((parameter) => [parameter.parameter, parameter.value])),
             },
           });
+          const edgeDetailFacts = cadEdgeDetailFacts({
+            ...entry,
+            params: {
+              ...entry.params,
+              ...Object.fromEntries(editable.map((parameter) => [parameter.parameter, parameter.value])),
+            },
+          });
           return (
           <View
             key={entry.id}
@@ -268,20 +276,20 @@ export function CadHistorySheet({
                 <Text style={styles.chipText}>↓</Text>
               </Pressable>
             </View>
-            {featurePreview ? (
+            {featurePreview || edgeDetailFacts ? (
               <Pressable
                 style={[styles.chip, { alignSelf: "flex-start" }, selectedId === entry.id && { borderColor: colors.accent }]}
                 disabled={disabled || !entry.enabled}
                 onPress={() => {
                   const next = selectedId === entry.id ? null : entry.id;
                   setSelectedId(next);
-                  onSelectionChange(next ? featurePreview : null);
+                  onSelectionChange(next && featurePreview ? featurePreview : null);
                 }}
               >
                 <Text style={styles.chipText}>
                   {selectedId === entry.id
-                    ? ru ? "Скрыть подсветку" : "Hide highlight"
-                    : ru ? "Показать на модели" : "Show on model"}
+                    ? featurePreview ? ru ? "Скрыть подсветку" : "Hide highlight" : ru ? "Скрыть детали" : "Hide details"
+                    : featurePreview ? ru ? "Показать на модели" : "Show on model" : ru ? "Показать детали" : "Show details"}
                 </Text>
               </Pressable>
             ) : (
@@ -306,6 +314,26 @@ export function CadHistorySheet({
                   {ru ? "Позиция на грани" : "Position on face"}: {operationFacts.positionMm.map((value) => value.toFixed(3)).join(" × ")} {ru ? "мм" : "mm"}
                 </Text>
                 <Text style={styles.mono}>{ru ? "Целевое тело" : "Target body"}: {operationFacts.target}</Text>
+              </View>
+            ) : null}
+            {selectedId === entry.id && edgeDetailFacts ? (
+              <View style={[styles.card, { gap: 4, backgroundColor: colors.panel }]} accessibilityLabel={ru ? "Детали выбора рёбер" : "Edge selection details"}>
+                <Text style={styles.muted}>
+                  {edgeDetailFacts.kind === "fillet" ? ru ? "Радиус" : "Radius" : ru ? "Расстояние фаски" : "Chamfer distance"}: {edgeDetailFacts.amountMm.toFixed(3)} {ru ? "мм" : "mm"}
+                </Text>
+                <Text style={styles.muted}>
+                  {ru ? "Символический выбор" : "Symbolic selection"}: {edgeDetailFacts.selector.kind === "all_edges"
+                    ? ru ? "все рёбра" : "all edges"
+                    : edgeDetailFacts.selector.kind === "edges_parallel_to"
+                      ? `${ru ? "рёбра параллельно" : "edges parallel to"} ${edgeDetailFacts.selector.axis.toUpperCase()}${edgeDetailFacts.selector.outer ? ` · ${ru ? "только внешние" : "outer only"}` : ""}`
+                      : edgeDetailFacts.selector.face === "all"
+                        ? ru ? "рёбра всех граней" : "edges of all faces"
+                        : `${ru ? "рёбра грани" : "edges of face"} ${edgeDetailFacts.selector.face.toUpperCase()}`}
+                </Text>
+                <Text style={styles.muted}>
+                  {ru ? "Это сохранённое правило выбора, а не угаданные ID рёбер в текущем рендере." : "This is the persisted selection rule, not guessed edge IDs in the current render."}
+                </Text>
+                <Text style={styles.mono}>{ru ? "Целевое тело" : "Target body"}: {edgeDetailFacts.target}</Text>
               </View>
             ) : null}
             {editable.map((parameter) => {

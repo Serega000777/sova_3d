@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  cadEdgeDetailFacts,
   cadOperationFacts,
   cadOperationFeaturePreview,
 } from "../src/cad-operation-preview.ts";
@@ -82,6 +83,29 @@ test("hole facts fail closed for malformed depth, target, or face selectors", ()
   }), null);
 });
 
+test("fillet and chamfer history exposes exact symbolic selectors without fake edge ids", () => {
+  assert.deepEqual(cadEdgeDetailFacts({
+    id: "fillet_1",
+    type: "fillet",
+    params: { target: "body", radius_mm: 3, edges: { kind: "edges_parallel_to", axis: "y", outer: false } },
+  }), {
+    kind: "fillet",
+    target: "body",
+    amountMm: 3,
+    selector: { kind: "edges_parallel_to", axis: "y", outer: false },
+  });
+  assert.deepEqual(cadEdgeDetailFacts({
+    id: "chamfer_1",
+    type: "chamfer",
+    params: { target: "body", distance_mm: 1.25, edges: { kind: "edges_of_face", face: { kind: "all_faces" } } },
+  })?.selector, { kind: "edges_of_face", face: "all" });
+  assert.equal(cadEdgeDetailFacts({
+    id: "bad",
+    type: "fillet",
+    params: { target: "body", radius_mm: 3, edges: { kind: "edge_ids", ids: [7] } },
+  }), null);
+});
+
 test("rejects ambiguous or malformed feature locations", () => {
   assert.equal(cadOperationFeaturePreview({
     id: "hole_1",
@@ -115,5 +139,7 @@ test("history selection is wired to the real model viewer", () => {
   assert.match(sheet, /Направление/);
   assert.match(sheet, /Позиция на грани/);
   assert.match(sheet, /Object\.fromEntries\(editable\.map/);
+  assert.match(sheet, /cadEdgeDetailFacts/);
+  assert.match(sheet, /not guessed edge IDs/);
   assert.match(viewer, /new THREE\.TorusGeometry/);
 });
