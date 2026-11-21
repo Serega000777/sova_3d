@@ -5,8 +5,22 @@
  * then the fused model with its scale claim, and the way into the workspace.
  */
 import { ScanProgressModal } from "@/components/ScanProgress";
-import type { Job, Scan, ScanFrame, ScanPrintIdeas } from "@physical-ai/contracts";
-import { floorPlanMeasurements, parseFloorPlan, scanFrameWarnings } from "@physical-ai/contracts";
+import type {
+  BrokenPartSectionId,
+  Job,
+  Scan,
+  ScanFrame,
+  ScanPrintIdeas,
+} from "@physical-ai/contracts";
+import {
+  BROKEN_PART_SECTIONS,
+  brokenPartCoveragePercent,
+  floorPlanMeasurements,
+  parseBrokenPartScaleMm,
+  parseFloorPlan,
+  scanFrameWarnings,
+  uncoveredBrokenPartSections,
+} from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -16,6 +30,10 @@ import type { FragmentSource } from "@/components/FragmentsViewer";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { NavIcon } from "@/components/NavIcon";
 import { ScanMaskEditor, type FrameMaskCorrection } from "@/components/ScanMaskEditor";
+import {
+  guidedBrokenPartAngle,
+  landedBrokenPartCounts,
+} from "@/lib/broken-part-capture";
 import { useSession } from "@/lib/session";
 
 const FragmentsViewer = dynamic(
@@ -49,6 +67,8 @@ export default function ScannerSessionPage() {
   const [error, setError] = useState<string | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressSyncing, setProgressSyncing] = useState(false);
+  const [brokenPartSection, setBrokenPartSection] = useState<BrokenPartSectionId>("whole");
+  const [brokenPartScaleInput, setBrokenPartScaleInput] = useState("");
   const known = useRef(new Set<string>());
   const previousStatus = useRef<string | null>(null);
   const autoOpenedProgress = useRef(new Set<string>());
@@ -173,7 +193,40 @@ export default function ScannerSessionPage() {
         void Notification.requestPermission();
       }
       const subject = (scan.capabilities as { subject?: unknown }).subject;
+      const brokenPart = (scan.capabilities as { capture_plan?: unknown }).capture_plan === "broken_part_sections_v1";
+      const brokenPartCounts = landedBrokenPartCounts(frames);
+      const brokenPartMissing = uncoveredBrokenPartSections(brokenPartCounts);
+      const brokenPartScaleMm = parseBrokenPartScaleMm(brokenPartScaleInput);
+      if (brokenPart && brokenPartMissing.length > 0) {
+        throw new Error(
+          `${language === "ru" ? "Не покрыто" : "Missing coverage"}: ${brokenPartMissing
+            .map((entry) => entry.titleRu)
+            .join(", ")}.`,
+        );
+      }
+      if (brokenPart && brokenPartScaleMm === null) {
+        throw new Error(
+          language === "ru"
+            ? "Укажите измеренный максимальный размер сохранившейся детали от 1 до 10 000 мм."
+            : "Enter a measured maximum surviving span from 1 to 10,000 mm.",
+        );
+      }
+      if (brokenPart) {
+        await client.updateCaptureStats(scan.id, {
+          broken_part: {
+            capture_plan: "broken_part_sections_v1",
+            section_counts: brokenPartCounts,
+            coverage_pct: brokenPartCoveragePercent(brokenPartCounts),
+            evidence: "user_labelled_capture_sections",
+            measured_max_span_mm: brokenPartScaleMm,
+            metric_scale: "user_measured_max_span",
+            damage_detection: "not_performed",
+            hidden_geometry: "not_proven",
+          },
+        });
+      }
       const accepted = await client.finalizeScan(scan.id, {
+        ...(brokenPart ? { scale_hint_mm: brokenPartScaleMm ?? undefined } : {}),
         mask_object:
           scan.mode !== "scanner" &&
           subject === "object" &&
@@ -192,6 +245,76 @@ export default function ScannerSessionPage() {
       previousStatus.current = "reconstructing";
       setScan({ ...scan, status: "reconstructing", job_id: accepted.job_id });
       await client.waitForJob(accepted.job_id);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function uploadBrokenPartFrame(file: File) {
+    if (!client || !scan || busy) return;
+    if (!new Set(["image/jpeg", "image/png"]).has(file.type)) {
+      setError(language === "ru" ? "Нужен JPEG или PNG." : "Choose a JPEG or PNG image.");
+      return;
+    }
+    setBusy(language === "ru" ? "Загружаем кадр…" : "Uploading frame…");
+    setError(null);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (bytes.byteLength <= 0) throw new Error(language === "ru" ? "Файл пуст." : "The file is empty.");
+      // Re-read the canonical landed frames before assigning a sequence number. The browser's
+      // polling view may lag behind a phone or another tab that is contributing to this session.
+      const canonicalFrames = await client.listScanFrames(scan.id);
+      const counts = landedBrokenPartCounts(canonicalFrames);
+      const sequenceNo = canonicalFrames.reduce(
+        (highest, frame) => Math.max(highest, frame.sequence_no + 1),
+        0,
+      );
+      const instructedAngle = guidedBrokenPartAngle(brokenPartSection, counts[brokenPartSection]);
+      const upload = await client.createUpload({
+        workspace_id: scan.workspace_id,
+        filename: `broken-${brokenPartSection}-${String(sequenceNo).padStart(3, "0")}.${file.type === "image/png" ? "png" : "jpg"}`,
+        content_type: file.type,
+        byte_size: bytes.byteLength,
+      });
+      const put = await fetch(upload.url, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: bytes,
+      });
+      if (!put.ok) throw new Error(`frame upload failed (${put.status})`);
+      const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer);
+      const sha256 = Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+      const asset = await client.completeUpload({ upload_id: upload.upload_id, sha256 });
+      const landed = await client.addScanFrame(scan.id, {
+        asset_id: asset.id,
+        sequence_no: sequenceNo,
+        kind: "rgb",
+        pose: {
+          azimuth_deg: instructedAngle,
+          pose_source: "user_confirmed_guided_step",
+          pose_evidence: "commanded_not_measured",
+          position_available: false,
+          orientation_rad: null,
+          depth_available: false,
+          gps_used_for_geometry: false,
+          broken_part_section: brokenPartSection,
+        },
+        quality: {
+          bytes: bytes.byteLength,
+          source: "web_guided_capture",
+          method: "not_measured",
+        },
+      });
+      const nextFrames = [...canonicalFrames.filter((frame) => frame.id !== landed.id), landed];
+      const nextCounts = landedBrokenPartCounts(nextFrames);
+      const nextMissing = uncoveredBrokenPartSections(nextCounts);
+      const nextSection = nextMissing[0]?.id ?? brokenPartSection;
+      setBrokenPartSection(nextSection);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -339,6 +462,12 @@ export default function ScannerSessionPage() {
     scan.mode !== "scanner" &&
     (scan.capabilities as { subject?: unknown }).subject === "object" &&
     frames.some((frame) => frame.kind === "rgb");
+  const isBrokenPart =
+    (scan.capabilities as { capture_plan?: unknown }).capture_plan === "broken_part_sections_v1";
+  const brokenPartCounts = landedBrokenPartCounts(frames);
+  const brokenPartMissing = uncoveredBrokenPartSections(brokenPartCounts);
+  const brokenPartScaleMm = parseBrokenPartScaleMm(brokenPartScaleInput);
+  const brokenPartReady = !isBrokenPart || (brokenPartMissing.length === 0 && brokenPartScaleMm !== null);
   const frameWarnings = scanFrameWarnings(frames);
   const roomPlanStats = (scan.capture_stats as {
     room_plan?: {
@@ -579,6 +708,92 @@ export default function ScannerSessionPage() {
           )}
           {live && scan.status !== "reconstructing" && (
             <div className="stack">
+              {isBrokenPart && (
+                <section className="card stack" aria-label={ru ? "Съёмка сломанной детали" : "Broken-part capture"}>
+                  <div>
+                    <strong>{ru ? "Сломанная деталь" : "Broken part"}</strong>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                      {ru
+                        ? "Выберите серию и подтвердите каждый подсказанный шаг вокруг детали. Угол — команда съёмки, не измеренная поза камеры. Кадр засчитывается только после успешной загрузки."
+                        : "Choose a series and confirm each guided step around the part. The angle is a capture instruction, not a measured camera pose. A frame counts only after upload succeeds."}
+                    </div>
+                  </div>
+                  <div className="row" style={{ flexWrap: "wrap" }}>
+                    {BROKEN_PART_SECTIONS.map((section) => {
+                      const count = brokenPartCounts[section.id];
+                      return (
+                        <button
+                          className={`btn ${brokenPartSection === section.id ? "primary" : ""}`}
+                          type="button"
+                          key={section.id}
+                          disabled={!!busy}
+                          onClick={() => setBrokenPartSection(section.id)}
+                        >
+                          {section.titleRu} · {count}/{section.targetFrames}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="card stack" style={{ gap: 6 }}>
+                    <strong>
+                      {BROKEN_PART_SECTIONS.find((entry) => entry.id === brokenPartSection)?.titleRu}
+                      {" · "}
+                      {ru ? "шаг" : "step"}{" "}
+                      {Math.min(
+                        brokenPartCounts[brokenPartSection] + 1,
+                        BROKEN_PART_SECTIONS.find((entry) => entry.id === brokenPartSection)?.targetFrames ?? 1,
+                      )}
+                    </strong>
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      {BROKEN_PART_SECTIONS.find((entry) => entry.id === brokenPartSection)?.guidanceRu}
+                    </span>
+                    <span className="chip mono" style={{ width: "fit-content" }}>
+                      {ru ? "Подтвердите положение" : "Confirm position"} · {guidedBrokenPartAngle(
+                        brokenPartSection,
+                        brokenPartCounts[brokenPartSection],
+                      )}°
+                    </span>
+                    <label className="btn primary" style={{ width: "fit-content" }}>
+                      {busy?.includes(ru ? "Загружаем" : "Uploading")
+                        ? busy
+                        : ru ? "Снять или выбрать кадр" : "Capture or choose a frame"}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        capture="environment"
+                        disabled={!!busy}
+                        hidden
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.currentTarget.value = "";
+                          if (file) void uploadBrokenPartFrame(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <label className="stack" style={{ gap: 4 }}>
+                    <span>{ru ? "Измеренный максимальный размер сохранившейся детали, мм" : "Measured maximum surviving span, mm"}</span>
+                    <input
+                      className="input"
+                      inputMode="decimal"
+                      value={brokenPartScaleInput}
+                      disabled={!!busy}
+                      placeholder="1–10 000"
+                      onChange={(event) => setBrokenPartScaleInput(event.target.value)}
+                    />
+                  </label>
+                  {brokenPartScaleInput && brokenPartScaleMm === null && (
+                    <span className="status-yellow">
+                      {ru ? "Введите число от 1 до 10 000 мм." : "Enter a number from 1 to 10,000 mm."}
+                    </span>
+                  )}
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {ru
+                      ? `Покрытие ${brokenPartCoveragePercent(brokenPartCounts)}%. Серии и один размер не доказывают скрытую или утраченную геометрию, материал и точный контур слома.`
+                      : `Coverage ${brokenPartCoveragePercent(brokenPartCounts)}%. The series and one measurement do not prove hidden or missing geometry, material, or the exact fracture contour.`}
+                  </span>
+                </section>
+              )}
               {canMaskObject && (
                 <>
                   <label className="card row" style={{ alignItems: "flex-start" }}>
@@ -631,7 +846,7 @@ export default function ScannerSessionPage() {
                 <button
                   className="btn primary"
                   type="button"
-                  disabled={!!busy}
+                  disabled={!!busy || !brokenPartReady}
                   onClick={() => void finish()}
                 >
                   {busy
@@ -646,6 +861,16 @@ export default function ScannerSessionPage() {
                     : ru ? "Мост завершит сессию сам, когда устройство остановится." : "The bridge finishes on its own when the device stops."}
                 </span>
               </div>
+              {isBrokenPart && brokenPartMissing.length > 0 && (
+                <span className="status-yellow">
+                  {ru ? "Не покрыто" : "Missing coverage"}: {brokenPartMissing.map((entry) => entry.titleRu).join(", ")}.
+                </span>
+              )}
+              {isBrokenPart && brokenPartScaleMm === null && (
+                <span className="status-yellow">
+                  {ru ? "До сборки нужен один измеренный размер." : "One measured span is required before reconstruction."}
+                </span>
+              )}
             </div>
           )}
           {scan.status === "reconstructing" && (

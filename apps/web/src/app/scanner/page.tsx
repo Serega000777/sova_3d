@@ -53,6 +53,33 @@ export default function ScannerPage() {
     }
   }
 
+  async function startBrokenPartCapture() {
+    if (!client || !session || starting) return;
+    setStarting(true);
+    setError(null);
+    try {
+      const scan = await client.createScan({
+        workspace_id: session.workspaceId,
+        project_id: null,
+        mode: "rgb",
+        label: "Сломанная деталь · web capture",
+        capabilities: {
+          runtime: "web",
+          depth_scan: false,
+          subject: "object",
+          capture_plan: "broken_part_sections_v1",
+          camera_pose: "user_confirmed_guided_step",
+          metric_scale: "user_measured_max_span",
+          broken_part: true,
+        },
+      });
+      router.push(`/scanner/${encodeURIComponent(scan.id)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStarting(false);
+    }
+  }
+
   const refresh = useCallback(async () => {
     if (!client || !session) return;
     try { setScans(await client.listScans(session.workspaceId, 100)); }
@@ -124,6 +151,22 @@ export default function ScannerPage() {
                 <span aria-hidden="true">{subject.icon}</span><strong>{subject.title}</strong><small>{subject.note}</small><em>Открыть на телефоне →</em>
               </a>
             ))}
+          </div>
+          <div className="card stack" style={{ gap: 8 }}>
+            <strong>Сломанная деталь в браузере</strong>
+            <span className="muted" style={{ fontSize: 12 }}>
+              Снимите или выберите 8 общих кадров, 4 кадра границы слома и 4 кадра видимых
+              внутренних/нижних поверхностей. Шаги вокруг детали подтверждаете вы; это не
+              измеренная поза камеры и не распознавание утраченной геометрии.
+            </span>
+            <button
+              className="btn primary"
+              type="button"
+              disabled={starting}
+              onClick={() => void startBrokenPartCapture()}
+            >
+              {starting ? "Создаём сессию…" : "Начать web-съёмку сломанной детали"}
+            </button>
           </div>
           <p className="scanner-capability-note">Фотокадры работают на обычном телефоне. LiDAR RoomPlan доступен только в iOS development build на поддерживаемом iPhone/iPad; фотографии не выдаются за измеренную глубину.</p>
           <Link href="/convert" className="scanner-import-link">Уже есть скан в PLY, OBJ, STL или GLB? Импортировать файл →</Link>
