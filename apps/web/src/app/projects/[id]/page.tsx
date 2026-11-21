@@ -129,6 +129,11 @@ import { StudioToolIcon, type StudioToolIconName } from "@/components/StudioTool
 import { VersionImageComparison } from "@/components/VersionImageComparison";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
+import {
+  buildFragmentRestorationProposal,
+  type FragmentRestorationBoundary,
+  type FragmentRestorationProposal,
+} from "@/lib/fragment-restoration";
 import { isProTierLockedTool } from "@/lib/proGate";
 import {
   matchingSizeFamily,
@@ -912,9 +917,10 @@ export default function ProjectPage() {
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
   const [selectedRepairDefectIds, setSelectedRepairDefectIds] = useState<string[]>([]);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
-  const [restoreMissingHalf, setRestoreMissingHalf] = useState<"" | "x_min" | "x_max" | "y_min" | "y_max" | "z_min" | "z_max">("");
+  const [restoreMissingHalf, setRestoreMissingHalf] = useState<"" | FragmentRestorationBoundary>("");
   const [reinforceReplacement, setReinforceReplacement] = useState(false);
   const [reinforcementPercent, setReinforcementPercent] = useState(20);
+  const [reconstructionProposal, setReconstructionProposal] = useState<FragmentRestorationProposal | null>(null);
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
   const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve" | "analytic_surface_patch">("loft");
   const [cadProfileSeed, setCadProfileSeed] = useState<AnyCadProfileSeed | null>(null);
@@ -1805,6 +1811,7 @@ export default function ProjectPage() {
   const sizeFamilyContext = [projectId, activeVersionId ?? ""].join("|");
   sizeFamilyContextRef.current = sizeFamilyContext;
   useEffect(() => setCommandProposal(null), [activeVersionId]);
+  useEffect(() => setReconstructionProposal(null), [activeVersionId]);
   useEffect(() => {
     exchangeExportRevision.current += 1;
     setExchangePreview(null);
@@ -3319,18 +3326,39 @@ export default function ProjectPage() {
     }
   }
 
-  /** F-024/F-011: turn a triangle mesh into an editable feature tree, then measure it. */
-  async function reconstructCad() {
+  function prepareCadReconstruction() {
+    if (!activeVersion) return;
+    setError(null);
+    try {
+      setReconstructionProposal(buildFragmentRestorationProposal({
+        sourceVersionId: activeVersion.id,
+        toleranceMm: reconstructionTolerance,
+        boundary: restoreMissingHalf || null,
+        reinforce: reinforceReplacement,
+        reinforcementPercent,
+      }));
+    } catch (reason) {
+      setReconstructionProposal(null);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  /** F-024/F-011: apply the exact source-bound preview as one immutable CAD job. */
+  async function reconstructCad(proposal: FragmentRestorationProposal) {
     if (!client || !activeVersion) return;
+    if (proposal.sourceVersionId !== activeVersion.id) {
+      setReconstructionProposal(null);
+      setError(
+        ru
+          ? "Исходная версия изменилась. Подготовьте план восстановления заново."
+          : "The source version changed. Prepare the restoration plan again.",
+      );
+      return;
+    }
     setError(null);
     setReconstruction(null);
     try {
-      const accepted = await client.reconstruct(activeVersion.id, {
-        tolerance_mm: reconstructionTolerance,
-        threads: true,
-        restore_missing_half: restoreMissingHalf || null,
-        reinforce_thickness_percent: reinforceReplacement ? reinforcementPercent : null,
-      });
+      const accepted = await client.reconstruct(proposal.sourceVersionId, proposal.body);
       const job = await trackJob(ru ? "Распознаём геометрию" : "Recognizing geometry", accepted.job_id);
       if (job.status !== "succeeded") {
         setError(
@@ -3339,9 +3367,41 @@ export default function ProjectPage() {
         );
         return;
       }
-      setReconstruction(job.result as unknown as ReconstructionResult);
+      const result = job.result as ReconstructionResult | null;
+      if (
+        !result
+        || result.source_version_id !== proposal.sourceVersionId
+        || typeof result.version_id !== "string"
+        || !result.version_id
+        || !Number.isFinite(result.deviation?.p95_mm)
+        || !Number.isFinite(result.deviation?.within_tolerance)
+      ) {
+        throw new Error(
+          ru
+            ? "Результат восстановления не совпал с исходной версией."
+            : "The restoration result did not match the source version.",
+        );
+      }
+      const child = await client.getVersion(result.version_id);
+      if (child.parent_version_id !== proposal.sourceVersionId) {
+        throw new Error(
+          ru
+            ? "Сервер вернул версию с другим родителем."
+            : "The server returned a version with a different parent.",
+        );
+      }
+      setReconstructionProposal(null);
       await refresh();
-      await showResult(job);
+      if (activeVersionIdRef.current === proposal.sourceVersionId) {
+        setReconstruction(result);
+        setActiveVersion(child);
+      } else {
+        setNotice(
+          ru
+            ? "CAD-версия создана, но текущий просмотр не изменён: вы уже открыли другую версию."
+            : "The CAD version was created, but the current view stayed unchanged because you opened another version.",
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -7977,7 +8037,10 @@ export default function ProjectPage() {
                     max="5"
                     step="0.05"
                     value={reconstructionTolerance}
-                    onChange={(event) => setReconstructionTolerance(Number(event.target.value))}
+                    onChange={(event) => {
+                      setReconstructionTolerance(Number(event.target.value));
+                      setReconstructionProposal(null);
+                    }}
                   />
                 </label>
                 <label className="stack" style={{ gap: 6 }}>
@@ -7985,7 +8048,10 @@ export default function ProjectPage() {
                   <select
                     className="input"
                     value={restoreMissingHalf}
-                    onChange={(event) => setRestoreMissingHalf(event.target.value as typeof restoreMissingHalf)}
+                    onChange={(event) => {
+                      setRestoreMissingHalf(event.target.value as typeof restoreMissingHalf);
+                      setReconstructionProposal(null);
+                    }}
                   >
                     <option value="">{ru ? "не восстанавливать" : "do not restore"}</option>
                     <option value="x_min">X−</option>
@@ -8005,7 +8071,10 @@ export default function ProjectPage() {
                   <input
                     type="checkbox"
                     checked={reinforceReplacement}
-                    onChange={(event) => setReinforceReplacement(event.target.checked)}
+                    onChange={(event) => {
+                      setReinforceReplacement(event.target.checked);
+                      setReconstructionProposal(null);
+                    }}
                   />
                   <span className="stack" style={{ gap: 6 }}>
                     <span>{ru ? "Усиленная замена" : "Reinforced replacement"}</span>
@@ -8026,9 +8095,33 @@ export default function ProjectPage() {
                       max="50"
                       step="1"
                       value={reinforcementPercent}
-                      onChange={(event) => setReinforcementPercent(Number(event.target.value))}
+                      onChange={(event) => {
+                        setReinforcementPercent(Number(event.target.value));
+                        setReconstructionProposal(null);
+                      }}
                     />
                   </label>
+                )}
+                {reconstructionProposal && reconstructionProposal.sourceVersionId === activeVersion?.id && (
+                  <div className="card stack" data-testid="fragment-restoration-preview">
+                    <strong>{ru ? "План готов — задача ещё не запущена" : "Plan ready — no job started"}</strong>
+                    <span>
+                      {reconstructionProposal.body.restore_missing_half
+                        ? `${ru ? "Зеркально достроить половину от" : "Mirror the surviving half from"} ${reconstructionProposal.body.restore_missing_half.replace("_min", "−").replace("_max", "+").toUpperCase()}`
+                        : (ru ? "Перестроить распознанную сетку без зеркального достроения" : "Rebuild the recognized mesh without mirrored restoration")}
+                    </span>
+                    <span className="muted">
+                      {ru ? "Допуск" : "Tolerance"}: {reconstructionProposal.body.tolerance_mm} {ru ? "мм" : "mm"}
+                      {reconstructionProposal.body.reinforce_thickness_percent !== null
+                        ? ` · ${ru ? "усиление" : "reinforcement"} ${reconstructionProposal.body.reinforce_thickness_percent}%`
+                        : ""}
+                    </span>
+                    <span className="muted">
+                      {ru
+                        ? "Это точный план операции для выбранной исходной версии, а не предсказанный контур слома. Проект изменится только после явного применения и успешного server job."
+                        : "This is an exact operation plan for the selected source version, not a predicted fracture contour. The project changes only after explicit apply and a succeeded server job."}
+                    </span>
+                  </div>
                 )}
                 <button
                   className="btn primary"
@@ -8039,10 +8132,19 @@ export default function ProjectPage() {
                     !Number.isFinite(reconstructionTolerance) ||
                     (reinforceReplacement && (!Number.isFinite(reinforcementPercent) || reinforcementPercent <= 0 || reinforcementPercent > 50))
                   }
-                  onClick={() => void reconstructCad()}
+                  onClick={() => reconstructionProposal
+                    ? void reconstructCad(reconstructionProposal)
+                    : prepareCadReconstruction()}
                 >
-                  {ru ? "Сделать редактируемой" : "Make editable"}
+                  {reconstructionProposal
+                    ? (ru ? "Применить как новую версию" : "Apply as a new version")
+                    : (ru ? "Подготовить план" : "Prepare plan")}
                 </button>
+                {reconstructionProposal && (
+                  <button className="btn" type="button" disabled={!!busy} onClick={() => setReconstructionProposal(null)}>
+                    {ru ? "Отменить план" : "Discard plan"}
+                  </button>
+                )}
                 {reconstruction && (
                   <div className="reconstruction-report stack">
                     <div className="row">

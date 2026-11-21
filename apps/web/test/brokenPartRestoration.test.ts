@@ -5,14 +5,16 @@ import test from "node:test";
 const studio = readFileSync(new URL("../src/app/projects/[id]/page.tsx", import.meta.url), "utf8");
 
 test("broken-part reconstruction sends an explicit bounded symmetry boundary", () => {
-  assert.match(studio, /restore_missing_half: restoreMissingHalf \|\| null/);
+  assert.match(studio, /boundary: restoreMissingHalf \|\| null/);
+  assert.match(studio, /proposal\.sourceVersionId !== activeVersion\.id/);
+  assert.match(studio, /client\.reconstruct\(proposal\.sourceVersionId, proposal\.body\)/);
   assert.match(studio, /value="x_min"/);
   assert.match(studio, /value="z_max"/);
   assert.match(studio, /Результат нужно проверить по реальной детали/);
 });
 
 test("reinforced replacement is bounded to explicit geometric thickening", () => {
-  assert.match(studio, /reinforce_thickness_percent: reinforceReplacement \? reinforcementPercent : null/);
+  assert.match(studio, /reinforce: reinforceReplacement/);
   assert.match(studio, /Усиленная замена/);
   assert.match(studio, /Это не сертификационный расчёт/);
   assert.match(studio, /reinforcementPercent > 50/);
