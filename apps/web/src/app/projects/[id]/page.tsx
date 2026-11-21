@@ -111,6 +111,7 @@ import { ProvenanceGraph } from "@/components/ProvenanceGraph";
 import { PublishCard } from "@/components/PublishCard";
 import { PartsCard } from "@/components/PartsCard";
 import { PhysicalComparisonPanel } from "@/components/PhysicalComparisonPanel";
+import { ProjectDashboardCard } from "@/components/ProjectDashboardCard";
 import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
@@ -661,6 +662,7 @@ function photoIssueLabel(issue: GuidedPhotoIssue, ru: boolean): string {
 }
 
 type Tool =
+  | "dashboard"
   | "catalog"
   | "chat"
   | "shape"
@@ -4975,6 +4977,7 @@ export default function ProjectPage() {
     latestRepair && latestRepair.versionId === activeVersion?.id ? latestRepair.report : persistedRepair;
 
   const tools: { id: Tool; label: string; icon: StudioToolIconName; hint: string; section?: string; advanced?: boolean }[] = [
+    { id: "dashboard", label: ru ? "Проект" : "Project", icon: "origin", hint: ru ? "Подтверждённые факты и следующие действия" : "Canonical facts and next actions", section: ru ? "Проект" : "Project" },
     { id: "catalog", label: ru ? "Каталог" : "Catalog", icon: "catalog", hint: ru ? "Поиск точных инструментов продвинутого режима" : "Search the advanced-mode exact tools", section: ru ? "Продвинутый" : "Advanced", advanced: true },
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", icon: "chat", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change", section: ru ? "Создание" : "Create" },
     { id: "shape", label: ru ? "Форма" : "Shape", icon: "shape", hint: ru ? "Коробка, цилиндр, сфера, конус или кольцо" : "Box, cylinder, sphere, cone or ring" },
@@ -5734,6 +5737,25 @@ export default function ProjectPage() {
             </button>
           </div>
           <div className="studio-panel-body">
+            {tool === "dashboard" && project && client && (
+              <ProjectDashboardCard
+                client={client}
+                project={project}
+                version={activeVersion}
+                versionCount={versions.length}
+                previewUrl={activeVersion
+                  ? versionThumbnailUrls[activeVersion.id]?.iso
+                    ?? versionThumbnailUrls[activeVersion.id]?.front
+                    ?? versionThumbnailUrls[activeVersion.id]?.top
+                    ?? null
+                  : null}
+                language={language}
+                onCheck={() => setTool("integrity")}
+                onComments={() => setTool("comments")}
+                onVersions={() => setTool("versions")}
+                onExport={() => setTool("export")}
+              />
+            )}
             {tool === "catalog" && (
               <div className="stack pro-catalog">
                 <label className="muted" htmlFor="pro-tool-search">{ru ? "Найти инструмент" : "Find a tool"}</label>
