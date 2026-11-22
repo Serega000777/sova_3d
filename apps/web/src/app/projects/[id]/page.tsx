@@ -81,6 +81,7 @@ import {
   getProjectGoal,
   guidedPhotoViewLabel,
   isScanDerivedVersion,
+  latestRestorableLocalEditDraft,
   nextPinNumber,
   parseMeshRepairJobResult,
   parseMeshRepairReport,
@@ -101,7 +102,11 @@ import { FastenerPanel } from "@/components/FastenerPanel";
 import { FitTestCard } from "@/components/FitTestCard";
 import { GameReadyLodCard, type GameColliderOption, type GameReadyLodResult } from "@/components/GameReadyLodCard";
 import { LicenceCard } from "@/components/LicenceCard";
-import { localEditPreviewVersion, type LocalEditPreviewSide } from "@/local-edit-preview";
+import {
+  localEditPreviewVersion,
+  previewMatchesSource,
+  type LocalEditPreviewSide,
+} from "@/local-edit-preview";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { ManufacturingEstimateCard } from "@/components/ManufacturingEstimateCard";
 import { OptimizeCard, type OptimizationDraft } from "@/components/OptimizeCard";
@@ -1108,6 +1113,7 @@ export default function ProjectPage() {
     region?: RegionSelection | null;
   } | null>(null);
   const [previewSide, setPreviewSide] = useState<LocalEditPreviewSide>("after");
+  const localEditRecoveryId = useRef<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   // F-075: several answers to one request, each a preview; the user keeps one.
   const [variants, setVariants] = useState<
@@ -1453,6 +1459,58 @@ export default function ProjectPage() {
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
   }, [refresh]);
+
+  // Reference 76: an unresolved server-owned region draft survives route changes and a
+  // relaunch. Restore only the exact immutable child/snapshot pair; malformed or unrelated
+  // drafts remain ordinary version rows and never become a local-edit decision card.
+  useEffect(() => {
+    if (!client || preview) return;
+    const recovered = latestRestorableLocalEditDraft(versions);
+    if (!recovered) {
+      localEditRecoveryId.current = null;
+      return;
+    }
+    if (localEditRecoveryId.current === recovered.version.id) return;
+    localEditRecoveryId.current = recovered.version.id;
+    let current = true;
+    let restored = false;
+    void (async () => {
+      const diff = await client.compareVersion(recovered.version.id);
+      if (!previewMatchesSource(recovered.version, diff, recovered.sourceVersionId)) return;
+      const beforeVersion = await client.getVersion(recovered.sourceVersionId).catch(() => null);
+      const [beforeUrls, afterUrls] = await Promise.all([
+        beforeVersion
+          ? client.versionThumbnailUrls(beforeVersion.id, beforeVersion.assets).catch(() => ({}))
+          : Promise.resolve({}),
+        client.versionThumbnailUrls(recovered.version.id, recovered.version.assets).catch(() => ({})),
+      ]);
+      if (!current) return;
+      restored = true;
+      setPreview({
+        version: recovered.version,
+        diff,
+        beforeVersion,
+        beforeUrls,
+        afterUrls,
+        command: recovered.command,
+        region: recovered.region,
+      });
+      setPreviewSide("after");
+      setRegion(recovered.region);
+      setActiveVersion(recovered.version);
+      setNotice(ru
+        ? "Восстановлен незавершённый черновик локальной правки."
+        : "The unresolved local-edit draft was restored.");
+    })().catch(() => {
+      // Fail closed: the version remains visible in history, but no decision card is built.
+    });
+    return () => {
+      current = false;
+      if (!restored && localEditRecoveryId.current === recovered.version.id) {
+        localEditRecoveryId.current = null;
+      }
+    };
+  }, [client, preview, ru, versions]);
 
   useEffect(() => {
     if (!client) return;
@@ -3133,13 +3191,13 @@ export default function ProjectPage() {
       if (keep) await client.acceptVersion(preview.version.id);
       else await client.discardVersion(preview.version.id);
       const hadRegion = Boolean(preview.region);
-      setPreview(null);
-      setPreviewSide("after");
       if (hadRegion) {
         setRegion(null);
         setRegionMode(false);
       }
       await refresh();
+      setPreview(null);
+      setPreviewSide("after");
       const summary = await client.getProject(projectId);
       setActiveVersion(summary.head_version ?? null);
     } catch (err) {

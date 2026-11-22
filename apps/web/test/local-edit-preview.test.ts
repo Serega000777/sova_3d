@@ -56,3 +56,11 @@ test("the viewport switches only between the exact immutable source and the exac
   assert.match(studio, /Показать 3D после/);
   assert.match(showPreviewIfDraft, /localEditPreviewVersion\("after", beforeVersion, version\)/);
 });
+
+test("an unresolved server-owned local edit is restored after navigation", () => {
+  assert.match(studio, /latestRestorableLocalEditDraft\(versions\)/);
+  assert.match(studio, /previewMatchesSource\(recovered\.version, diff, recovered\.sourceVersionId\)/);
+  assert.match(studio, /command: recovered\.command/);
+  assert.match(studio, /region: recovered\.region/);
+  assert.match(studio, /setActiveVersion\(recovered\.version\)/);
+});

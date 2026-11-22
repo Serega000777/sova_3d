@@ -148,6 +148,8 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
 
     # --- version -----------------------------------------------------------------------------
     bodies = executed.bodies
+    preview = bool((request.context or {}).get("preview"))
+    region = (request.context or {}).get("region")
     provenance: dict[str, Any] = {
         "ai_request_id": str(request.id),
         "job_id": str(ctx.job.id),
@@ -159,6 +161,18 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
         "bodies": bodies,
         "expected_outputs": list(plan.expected_outputs),
     }
+    # Reference 76: a region-scoped preview is an unresolved user decision, so the draft
+    # must carry enough server-owned context to restore that decision after navigation or
+    # relaunch. Keep this snapshot only for the exact local-edit case; generic previews use
+    # their own typed workflows and must not be misidentified as region commands.
+    if preview and region is not None and request.project_version_id is not None:
+        provenance["local_edit"] = {
+            "schema_version": 1,
+            "ai_request_id": str(request.id),
+            "source_version_id": str(request.project_version_id),
+            "command": request.prompt,
+            "region": region,
+        }
     if parts:
         provenance["parts"] = parts
     if carried:
@@ -223,7 +237,6 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
             )
         )
     ctx.db.flush()
-    preview = bool((request.context or {}).get("preview"))
     if not preview:
         projects.finalize_version(ctx.db, version)
     for asset in (model_asset, source_asset):

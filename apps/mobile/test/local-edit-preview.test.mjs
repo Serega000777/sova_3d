@@ -49,3 +49,11 @@ test("initial region command is bound to the exact draft decision", () => {
   assert.match(send, /command: text/);
   assert.match(send, /region: region \?\? undefined/);
 });
+
+test("mobile restores the exact unresolved local edit after navigation", () => {
+  assert.match(project, /latestRestorableLocalEditDraft\(versions\)/);
+  assert.match(project, /previewMatchesSource\(recovered\.version, diff, recovered\.sourceVersionId\)/);
+  assert.match(project, /command: recovered\.command/);
+  assert.match(project, /region: recovered\.region/);
+  assert.match(project, /setActive\(recovered\.version\)/);
+});

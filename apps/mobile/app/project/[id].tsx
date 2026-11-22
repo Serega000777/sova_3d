@@ -61,6 +61,7 @@ import {
   getProjectGoal,
   guidedPhotoViewLabel,
   isScanDerivedVersion,
+  latestRestorableLocalEditDraft,
   parseMeshRepairJobResult,
   parseMeshRepairReport,
   nextPinNumber,
@@ -400,6 +401,7 @@ export default function ProjectScreen() {
     };
   } | null>(null);
   const [localEditPreviewSide, setLocalEditPreviewSide] = useState<LocalEditPreviewSide>("after");
+  const localEditRecoveryId = useRef<string | null>(null);
   const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
   const [modelCheckVersionId, setModelCheckVersionId] = useState<string | null>(null);
   const [workspaceParticipantCount, setWorkspaceParticipantCount] = useState<number | null>(null);
@@ -631,6 +633,62 @@ export default function ProjectScreen() {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [client, id]);
+
+  // Reference 76: restore the latest exact server-owned local-edit draft after navigation or
+  // relaunch. The shared parser rejects generic previews and malformed provenance first.
+  useEffect(() => {
+    if (!client || localEditPreview) return;
+    const recovered = latestRestorableLocalEditDraft(versions);
+    if (!recovered) {
+      localEditRecoveryId.current = null;
+      return;
+    }
+    if (localEditRecoveryId.current === recovered.version.id) return;
+    localEditRecoveryId.current = recovered.version.id;
+    let current = true;
+    let restored = false;
+    void (async () => {
+      const diff = await client.compareVersion(recovered.version.id);
+      if (!previewMatchesSource(recovered.version, diff, recovered.sourceVersionId)) return;
+      const beforeVersion = await client.getVersion(recovered.sourceVersionId).catch(() => null);
+      const [beforeUrls, afterUrls] = await Promise.all([
+        beforeVersion
+          ? client.versionThumbnailUrls(beforeVersion.id, beforeVersion.assets).catch(() => ({}))
+          : Promise.resolve({}),
+        client.versionThumbnailUrls(recovered.version.id, recovered.version.assets).catch(() => ({})),
+      ]);
+      if (!current) return;
+      restored = true;
+      setLocalEditPreview({
+        version: recovered.version,
+        beforeVersion,
+        diff,
+        beforeUrls,
+        afterUrls,
+        context: {
+          kind: "local",
+          command: recovered.command,
+          region: recovered.region,
+          sourceVersionId: recovered.sourceVersionId,
+        },
+      });
+      setLocalEditPreviewSide("after");
+      setRegion(recovered.region);
+      setMode("orbit");
+      setActive(recovered.version);
+      setNotice(ru
+        ? "Восстановлен незавершённый черновик локальной правки."
+        : "The unresolved local-edit draft was restored.");
+    })().catch(() => {
+      // Fail closed: leave the draft in version history without inventing a decision card.
+    });
+    return () => {
+      current = false;
+      if (!restored && localEditRecoveryId.current === recovered.version.id) {
+        localEditRecoveryId.current = null;
+      }
+    };
+  }, [client, localEditPreview, ru, versions]);
 
   useEffect(() => {
     const details = versionHistory.find((item) => item.id === active?.id);
@@ -2195,13 +2253,13 @@ export default function ProjectScreen() {
     try {
       if (keep) await client.acceptVersion(localEditPreview.version.id);
       else await client.discardVersion(localEditPreview.version.id);
-      setLocalEditPreview(null);
-      setLocalEditPreviewSide("after");
       if (!optimization) {
         setRegion(null);
         setMode("orbit");
       }
       await refresh();
+      setLocalEditPreview(null);
+      setLocalEditPreviewSide("after");
       const summary = await client.getProject(id);
       setActive(summary.head_version ?? null);
       setNotice(

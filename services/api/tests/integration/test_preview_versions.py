@@ -59,9 +59,48 @@ def test_a_preview_is_built_but_does_not_become_the_project(
 
     draft = db_session.get(ProjectVersion, result["version_id"])
     assert draft is not None and draft.state is VersionState.draft
+    assert "local_edit" not in draft.provenance
     project = db_session.get(Project, project_id)
     assert project is not None
     assert str(project.head_version_id) == accepted_id  # the project has not moved
+
+
+def test_region_preview_persists_exact_local_edit_decision_context(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    project_id, accepted_id = build(api_client, actor, db_session, storage)
+    region = {
+        "region": {"kind": "box", "min_mm": [1, 2, 3], "max_mm": [11, 12, 13]},
+        "target": "body",
+        "surface_axis": "z",
+        "surface_sign": "+",
+    }
+    response = command(
+        api_client,
+        actor,
+        project_id,
+        "Add a 6 mm hole here",
+        project_version_id=accepted_id,
+        preview=True,
+        region=region,
+    )
+    assert response.status_code == 202, response.text
+    accepted = response.json()
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    draft = db_session.get(ProjectVersion, (job.result or {})["version_id"])
+    assert draft is not None
+    assert draft.provenance["local_edit"] == {
+        "schema_version": 1,
+        "ai_request_id": accepted["ai_request_id"],
+        "source_version_id": accepted_id,
+        "command": "Add a 6 mm hole here",
+        "region": region,
+    }
 
 
 def test_the_comparison_says_what_would_change(
