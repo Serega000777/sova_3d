@@ -420,6 +420,7 @@ def test_l_turn_stair_fails_closed_before_enqueue(api_client: TestClient, actor:
         "shape": "rectangle",
     }
     l_stair = {"kind": "l_turn", "lower_step_count": 8, "upper_step_count": 8}
+    u_stair = {"kind": "u_turn", "flight_step_count": 8}
     cases = [
         ({**base, "width_mm": 3_500, "stair": l_stair}, "do not fit"),
         ({**base, "floor_height_mm": 6_000, "stair": l_stair}, "120-220 mm rise"),
@@ -429,6 +430,9 @@ def test_l_turn_stair_fails_closed_before_enqueue(api_client: TestClient, actor:
         ({**base, "stair": {"kind": "spiral"}}, "spiral"),
         ({**base, "floors": 1, "stair": l_stair}, "at least two floors"),
         ({**base, "stair": {**l_stair, "material_id": "interior.wood.forged.v1"}}, "forged"),
+        ({**base, "width_mm": 2_600, "stair": u_stair}, "do not fit"),
+        ({**base, "stair": {**u_stair, "flight_step_count": 4}}, "flight_step_count"),
+        ({**base, "stair": {**u_stair, "step_count": 17}}, "step_count"),
     ]
     for payload, message in cases:
         rejected = api_client.post("/api/v1/house-boxes", json=payload, headers=actor.headers)
@@ -439,6 +443,71 @@ def test_l_turn_stair_fails_closed_before_enqueue(api_client: TestClient, actor:
     )
     assert projects.status_code == 200, projects.text
     assert projects.json() == []
+
+
+def test_u_turn_stair_creates_parallel_plan_scene_and_operation_log(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    response = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "label": "Дом с П-лестницей",
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 2,
+            "shape": "rectangle",
+            "stair": {
+                "kind": "u_turn",
+                "width_mm": 1_000,
+                "tread_depth_mm": 280,
+                "flight_step_count": 8,
+                "turn": "right",
+                "placement": "center",
+                "railing": True,
+                "material_id": "interior.wood.oak-natural.v1",
+            },
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    project_id = response.json()["project_id"]
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    version_id = result["version_id"]
+    assert result["house_box"]["request"]["stair"]["kind"] == "u_turn"
+
+    floors = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert floors.status_code == 200, floors.text
+    up = floors.json()["levels"][0]["plan"]["stairs"][0]
+    assert up["kind"] == "u_turn" and up["turn"] == "right"
+    assert len(up["outline"]) == 4 and len(up["landing"]) == 4
+    assert [flight["direction"] for flight in up["flights"]] == ["+x", "-x"]
+    assert [flight["step_count"] for flight in up["flights"]] == [8, 8]
+
+    scene = api_client.get(f"/api/v1/models/{version_id}/scene", headers=actor.headers)
+    assert scene.status_code == 200, scene.text
+    nodes = {node["id"]: node for node in scene.json()["nodes"]}
+    assert nodes["stair_1_2"]["name"].startswith("П-образная лестница")
+    for rail in ("lower_inner", "landing_left", "landing_back", "landing_right", "upper_outer"):
+        node = nodes[f"rail_{rail}_1_2"]
+        assert node["parent_id"] == "floor_1_group"
+        assert node["appearance"]["catalog_material_id"] == "interior.wood.oak-natural.v1"
+
+    logged = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == uuid.UUID(version_id))
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert len(logged) == 51
+    assert sum(op.operation_type == "rotate" for op in logged) == 4
 
 
 def test_rectangular_house_auto_layout_creates_an_immutable_plan_version(

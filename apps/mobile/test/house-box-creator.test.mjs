@@ -14,15 +14,16 @@ test("mobile house creation exposes the exact typed house-box job", () => {
   assert.match(creator, /onCreated\(accepted\.project_id\)/);
 });
 
-test("mobile sends discriminated straight or L-turn stair parameters", () => {
+test("mobile sends discriminated straight, L-turn or U-turn stair parameters", () => {
   assert.match(creator, /kind: "straight"[\s\S]+step_count: dimensions\.straightSteps/);
   assert.match(creator, /kind: "l_turn"[\s\S]+lower_step_count: dimensions\.lowerSteps/);
   assert.match(creator, /upper_step_count: dimensions\.upperSteps/);
+  assert.match(creator, /kind: "u_turn"[\s\S]+flight_step_count: dimensions\.uFlightSteps/);
   assert.match(creator, /turn,[\s\S]+placement: "center"/);
   assert.match(creator, /2 \* rise \+ dimensions\.tread < 550/);
   assert.match(creator, /footprintLength > dimensions\.length - 700/);
   assert.match(creator, /footprintWidth > dimensions\.width - 700/);
-  assert.match(creator, /stairKind === "straight"[\s\S]+\[dimensions\.straightSteps\][\s\S]+\[dimensions\.lowerSteps, dimensions\.upperSteps\]/);
+  assert.match(creator, /stairKind === "straight"[\s\S]+\[dimensions\.straightSteps\][\s\S]+\[dimensions\.lowerSteps, dimensions\.upperSteps\][\s\S]+\[dimensions\.uFlightSteps\]/);
   assert.match(creator, /Лестницы пока доступны только для прямоугольного дома/);
 });
 

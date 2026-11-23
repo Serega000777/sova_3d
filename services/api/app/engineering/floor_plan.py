@@ -16,8 +16,10 @@ from pydantic import BaseModel, Field, model_validator
 from app.engineering.house_box import (
     HouseBoxRequest,
     LTurnStairRequest,
+    UTurnStairRequest,
     _stair_origin,
     l_stair_layout,
+    u_stair_layout,
 )
 from app.engineering.house_walls import HouseWallsRequest, ordered_wall_outline
 
@@ -77,11 +79,11 @@ class PlanRoom(BaseModel):
 
 
 class PlanStairFlight(BaseModel):
-    """One straight flight of an L-turn stair, climbing in ``direction``."""
+    """One straight flight of a turning stair, climbing in ``direction``."""
 
     outline: list[Point] = Field(min_length=4, max_length=4)
     step_count: int = Field(ge=3, le=26)
-    direction: Literal["+x", "+y", "-y"]
+    direction: Literal["+x", "-x", "+y", "-y"]
 
 
 class PlanStair(BaseModel):
@@ -97,7 +99,7 @@ class PlanStair(BaseModel):
     riser_height_mm: float = Field(ge=120, le=220)
     railing: bool
     material_id: str | None = Field(default=None, min_length=1, max_length=120)
-    kind: Literal["straight", "l_turn"] = "straight"
+    kind: Literal["straight", "l_turn", "u_turn"] = "straight"
     turn: Literal["left", "right"] | None = None
     flights: list[PlanStairFlight] = Field(default_factory=list, max_length=2)
     landing: list[Point] | None = Field(default=None, min_length=4, max_length=4)
@@ -108,15 +110,26 @@ class PlanStair(BaseModel):
             if len(self.outline) != 4 or self.flights or self.landing is not None or self.turn:
                 raise ValueError("a straight stair has a 4-point outline and no flights/landing")
             return self
+        expected_outline = 6 if self.kind == "l_turn" else 4
         if (
-            len(self.outline) != 6
+            len(self.outline) != expected_outline
             or len(self.flights) != 2
             or self.landing is None
             or self.turn is None
         ):
-            raise ValueError("an L-turn stair needs a 6-point outline, two flights and a landing")
+            raise ValueError(
+                f"a {self.kind.replace('_', '-')} stair needs a {expected_outline}-point outline, "
+                "two flights and a landing"
+            )
         if sum(flight.step_count for flight in self.flights) + 1 != self.step_count:
-            raise ValueError("L-turn flight steps plus the landing must equal the riser count")
+            raise ValueError("turning flight steps plus the landing must equal the riser count")
+        if self.kind == "l_turn":
+            if self.flights[0].direction != "+x" or self.flights[1].direction not in ("+y", "-y"):
+                raise ValueError("L-turn flights must climb +x then +y or -y")
+        elif self.flights[0].step_count != self.flights[1].step_count or [
+            flight.direction for flight in self.flights
+        ] != ["+x", "-x"]:
+            raise ValueError("U-turn flights must have equal step counts and climb +x then -x")
         return self
 
 
@@ -192,7 +205,7 @@ def floor_plans_from_house_box(
     stair = request.stair
     stair_fields: dict[str, object] | None = None
     if isinstance(stair, LTurnStairRequest):
-        layout = l_stair_layout(request)
+        l_layout = l_stair_layout(request)
 
         def corners(rect: tuple[float, float, float, float]) -> list[Point]:
             min_x, min_y, max_x, max_y = rect
@@ -201,21 +214,47 @@ def floor_plans_from_house_box(
         stair_fields = {
             "kind": "l_turn",
             "turn": stair.turn,
-            "outline": layout.outline,
+            "outline": l_layout.outline,
             "run_mm": stair.tread_depth_mm * (stair.lower_step_count + stair.upper_step_count),
             "flights": [
                 PlanStairFlight(
-                    outline=corners(layout.lower),
+                    outline=corners(l_layout.lower),
                     step_count=stair.lower_step_count,
                     direction="+x",
                 ),
                 PlanStairFlight(
-                    outline=corners(layout.upper),
+                    outline=corners(l_layout.upper),
                     step_count=stair.upper_step_count,
                     direction="+y" if stair.turn == "left" else "-y",
                 ),
             ],
-            "landing": corners(layout.landing),
+            "landing": corners(l_layout.landing),
+        }
+    elif isinstance(stair, UTurnStairRequest):
+        u_layout = u_stair_layout(request)
+
+        def corners(rect: tuple[float, float, float, float]) -> list[Point]:
+            min_x, min_y, max_x, max_y = rect
+            return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
+
+        stair_fields = {
+            "kind": "u_turn",
+            "turn": stair.turn,
+            "outline": u_layout.outline,
+            "run_mm": stair.tread_depth_mm * 2 * stair.flight_step_count,
+            "flights": [
+                PlanStairFlight(
+                    outline=corners(u_layout.lower),
+                    step_count=stair.flight_step_count,
+                    direction="+x",
+                ),
+                PlanStairFlight(
+                    outline=corners(u_layout.upper),
+                    step_count=stair.flight_step_count,
+                    direction="-x",
+                ),
+            ],
+            "landing": corners(u_layout.landing),
         }
     elif stair is not None:
         x, y = _stair_origin(request)

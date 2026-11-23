@@ -35,9 +35,10 @@ export function HouseBoxWizard({
   const [stairWidthMm, setStairWidthMm] = useState(1_000);
   const [treadDepthMm, setTreadDepthMm] = useState(280);
   const [stepCount, setStepCount] = useState(17);
-  const [stairKind, setStairKind] = useState<"straight" | "l_turn">("straight");
+  const [stairKind, setStairKind] = useState<"straight" | "l_turn" | "u_turn">("straight");
   const [lowerSteps, setLowerSteps] = useState(8);
   const [upperSteps, setUpperSteps] = useState(8);
+  const [uFlightSteps, setUFlightSteps] = useState(8);
   const [stairTurn, setStairTurn] = useState<"left" | "right">("left");
   const [stairPlacement, setStairPlacement] = useState<"left" | "center" | "right">("center");
   const [railing, setRailing] = useState(true);
@@ -47,24 +48,28 @@ export function HouseBoxWizard({
   const [error, setError] = useState<string | null>(null);
   const stairEnabled = floors > 1 && shape === "rectangle" && addStair;
   const lTurn = stairKind === "l_turn";
-  // An L-turn landing counts as one riser, mirroring the server's derivation.
-  const riserCount = lTurn ? lowerSteps + upperSteps + 1 : stepCount;
+  const uTurn = stairKind === "u_turn";
+  const turning = lTurn || uTurn;
+  // A turning landing counts as one riser, mirroring the server's derivation.
+  const riserCount = lTurn ? lowerSteps + upperSteps + 1 : uTurn ? 2 * uFlightSteps + 1 : stepCount;
   const riserMm = floorHeightMm / riserCount;
-  const stairRunMm = treadDepthMm * (lTurn ? lowerSteps + upperSteps : stepCount);
+  const stairRunMm = treadDepthMm * (lTurn ? lowerSteps + upperSteps : uTurn ? 2 * uFlightSteps : stepCount);
   const strideMm = 2 * riserMm + treadDepthMm;
-  const lFootprint = lTurn
+  const turningFootprint = lTurn
     ? { x: treadDepthMm * lowerSteps + stairWidthMm, y: stairWidthMm + treadDepthMm * upperSteps }
+    : uTurn
+      ? { x: treadDepthMm * uFlightSteps + stairWidthMm, y: 2 * stairWidthMm }
     : null;
-  const lProblem = !lTurn
+  const turningProblem = !turning
     ? null
     : riserCount < 10 || riserCount > 30
       ? (ru ? "Нужно 10–30 подъёмов вместе с площадкой." : "Use 10–30 risers including the landing.")
       : strideMm < 550 || strideMm > 700
         ? (ru ? "2 × подъём + проступь должно быть 550–700 мм." : "2 × rise + tread must be 550–700 mm.")
-        : lFootprint && (lFootprint.x > lengthMm - 700 || lFootprint.y > widthMm - 700)
-          ? (ru ? "Г-образная лестница с проёмом не помещается в дом (отступ 350 мм от стен)." : "The L stair and its opening do not fit inside the house (350 mm wall clearance).")
+        : turningFootprint && (turningFootprint.x > lengthMm - 700 || turningFootprint.y > widthMm - 700)
+          ? (ru ? `${uTurn ? "П" : "Г"}-образная лестница с проёмом не помещается в дом (отступ 350 мм от стен).` : `The ${uTurn ? "U" : "L"} stair and its opening do not fit inside the house (350 mm wall clearance).`)
           : null;
-  const stairInvalid = stairEnabled && (riserMm < 120 || riserMm > 220 || lProblem !== null);
+  const stairInvalid = stairEnabled && (riserMm < 120 || riserMm > 220 || turningProblem !== null);
 
   useEffect(() => {
     void client.listInteriorMaterials()
@@ -100,6 +105,17 @@ export function HouseBoxWizard({
                   railing,
                   material_id: stairMaterialId || null,
                 }
+              : uTurn
+                ? {
+                    kind: "u_turn",
+                    width_mm: stairWidthMm,
+                    tread_depth_mm: treadDepthMm,
+                    flight_step_count: uFlightSteps,
+                    turn: stairTurn,
+                    placement: stairPlacement,
+                    railing,
+                    material_id: stairMaterialId || null,
+                  }
               : {
                   kind: "straight",
                   width_mm: stairWidthMm,
@@ -177,6 +193,7 @@ export function HouseBoxWizard({
                     {([
                       { id: "straight", glyph: "▬", ru: "Прямая", en: "Straight" },
                       { id: "l_turn", glyph: "⌐", ru: "Г-образная с площадкой", en: "L-turn with landing" },
+                      { id: "u_turn", glyph: "∩", ru: "П-образная с площадкой", en: "U-turn with landing" },
                     ] as const).map((option) => (
                       <button
                         key={option.id}
@@ -201,6 +218,17 @@ export function HouseBoxWizard({
                       <NumberField label={ru ? "Ступеней в верхнем марше" : "Upper flight steps"} value={upperSteps} min={3} max={26} step={1} onChange={setUpperSteps} />
                       <label>
                         <span>{ru ? "Поворот" : "Turn"}</span>
+                        <select className="input" value={stairTurn} onChange={(event) => setStairTurn(event.target.value as typeof stairTurn)}>
+                          <option value="left">{ru ? "Налево" : "Left"}</option>
+                          <option value="right">{ru ? "Направо" : "Right"}</option>
+                        </select>
+                      </label>
+                    </>
+                  ) : uTurn ? (
+                    <>
+                      <NumberField label={ru ? "Ступеней в каждом марше" : "Steps per flight"} value={uFlightSteps} min={5} max={14} step={1} onChange={setUFlightSteps} />
+                      <label>
+                        <span>{ru ? "Сторона разворота" : "Turn side"}</span>
                         <select className="input" value={stairTurn} onChange={(event) => setStairTurn(event.target.value as typeof stairTurn)}>
                           <option value="left">{ru ? "Налево" : "Left"}</option>
                           <option value="right">{ru ? "Направо" : "Right"}</option>
@@ -232,10 +260,10 @@ export function HouseBoxWizard({
                 </div>
                 <p className="house-total">
                   {ru ? "Подъём / проступь / длина" : "Rise / tread / run"}: <strong>{riserMm.toFixed(1)} / {treadDepthMm.toFixed(0)} / {stairRunMm.toFixed(0)} {ru ? "мм" : "mm"}</strong>
-                  {lFootprint && (
+                  {turningFootprint && (
                     <>
-                      {" · "}{ru ? "площадка" : "landing"} {stairWidthMm.toFixed(0)}×{stairWidthMm.toFixed(0)}
-                      {" · "}{ru ? "габарит" : "footprint"} <strong>{lFootprint.x.toFixed(0)}×{lFootprint.y.toFixed(0)} {ru ? "мм" : "mm"}</strong>
+                      {" · "}{ru ? "площадка" : "landing"} {stairWidthMm.toFixed(0)}×{(stairWidthMm * (uTurn ? 2 : 1)).toFixed(0)}
+                      {" · "}{ru ? "габарит" : "footprint"} <strong>{turningFootprint.x.toFixed(0)}×{turningFootprint.y.toFixed(0)} {ru ? "мм" : "mm"}</strong>
                       {" · "}{riserCount} {ru ? "подъёмов" : "risers"}
                     </>
                   )}
@@ -243,10 +271,10 @@ export function HouseBoxWizard({
                 {(riserMm < 120 || riserMm > 220) && <div className="error" role="alert">{ru
                   ? "Измените число ступеней: высота ступени должна быть 120–220 мм."
                   : "Change the step count: rise must be 120–220 mm."}</div>}
-                {lProblem && riserMm >= 120 && riserMm <= 220 && <div className="error" role="alert">{lProblem}</div>}
-                {lTurn && <span className="muted">{ru
-                  ? "Площадка квадратная (ширина марша) и считается одним подъёмом. Забежные, U-образные и винтовые лестницы пока не поддерживаются."
-                  : "The square landing equals the flight width and counts as one riser. Winder, U and spiral stairs are not supported yet."}</span>}
+                {turningProblem && riserMm >= 120 && riserMm <= 220 && <div className="error" role="alert">{turningProblem}</div>}
+                {turning && <span className="muted">{ru
+                  ? `Площадка ${uTurn ? "соединяет два равных параллельных марша" : "квадратная (ширина марша)"} и считается одним подъёмом. Забежные и винтовые лестницы пока не поддерживаются.`
+                  : `The landing ${uTurn ? "joins two equal parallel flights" : "is square (one flight width)"} and counts as one riser. Winder and spiral stairs are not supported yet.`}</span>}
               </>
             ) : null}
           </fieldset>

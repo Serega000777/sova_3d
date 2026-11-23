@@ -10,8 +10,11 @@ from app.engineering.house_box import (
     HouseBoxRequest,
     LTurnStairRequest,
     StraightStairRequest,
+    UTurnStairRequest,
     l_stair_layout,
     l_stair_rail_ids,
+    u_stair_layout,
+    u_stair_rail_ids,
 )
 from app.geometry.operations import CreateBox
 
@@ -397,3 +400,98 @@ def test_stored_requests_without_kind_stay_straight_and_kinds_do_not_mix() -> No
             floors=2,
             stair={"kind": "spiral"},  # type: ignore[arg-type]
         )
+
+
+def _u_request(**stair: object) -> HouseBoxRequest:
+    values: dict[str, object] = {
+        "length_mm": 12_000,
+        "width_mm": 8_000,
+        "floor_height_mm": 3_000,
+        "floors": 2,
+        "shape": "rectangle",
+    }
+    values.update(stair.pop("house", {}))  # type: ignore[arg-type]
+    return HouseBoxRequest(**values, stair=UTurnStairRequest(kind="u_turn", **stair))
+
+
+@pytest.mark.parametrize("turn", ["left", "right"])
+def test_u_turn_stair_builds_parallel_flights_full_landing_and_one_opening(turn: str) -> None:
+    request = _u_request(flight_step_count=8, turn=turn, railing=True)
+    plan = request.build()
+
+    assert plan.goal == "2-floor house with a U-turn stair"
+    assert plan.expected_outputs == [
+        "floor_1",
+        "floor_2",
+        "roof",
+        "stair_1_2_step_1",
+        *u_stair_rail_ids(0),
+    ]
+    assert len(plan.operations) == 51
+    cuts = [op for op in plan.operations if op.type == "boolean" and op.op == "cut"]
+    assert len(cuts) == 1 and cuts[0].target == "floor_2"
+    boxes = {op.id: op for op in plan.operations if isinstance(op, CreateBox)}
+    rise = 3_000 / 17
+    landing = boxes["stair_1_2_landing"]
+    assert (landing.width_mm, landing.depth_mm, landing.height_mm) == pytest.approx(
+        (1_000, 2_000, rise * 9)
+    )
+    top = boxes["stair_1_2_step_16"]
+    assert top.height_mm == pytest.approx(3_000)
+    layout = u_stair_layout(request)
+    assert top.origin_mm[0] == pytest.approx(layout.upper[0])
+    assert layout.outline[0][1] == pytest.approx(min(layout.lower[1], layout.upper[1]))
+    assert layout.outline[2][1] == pytest.approx(max(layout.lower[3], layout.upper[3]))
+    rotations = [op for op in plan.operations if op.type == "rotate"]
+    assert len(rotations) == 4 and {op.axis for op in rotations} == {"y"}
+
+
+def test_u_turn_floor_plans_preserve_equal_parallel_flights() -> None:
+    request = _u_request(house={"floors": 3}, flight_step_count=8, turn="right")
+    floors = floor_plans_from_house_box(
+        request, project_id="project", version_id="version", name="House"
+    )
+    up = floors.levels[0].plan.stairs[0]
+    assert up.kind == "u_turn" and up.turn == "right"
+    assert len(up.outline) == 4 and len(up.flights) == 2
+    assert [flight.direction for flight in up.flights] == ["+x", "-x"]
+    assert [flight.step_count for flight in up.flights] == [8, 8]
+    assert up.step_count == 17 and up.run_mm == 280 * 16
+    assert up.landing is not None
+
+    with pytest.raises(ValidationError, match="equal step counts"):
+        payload = up.model_dump()
+        payload["flights"][1]["step_count"] = 7
+        payload["step_count"] = 16
+        PlanStair.model_validate(payload)
+
+
+def test_maximum_u_turn_stair_stays_within_operation_plan_limit() -> None:
+    plan = _u_request(
+        house={"length_mm": 30_000, "width_mm": 12_000, "floor_height_mm": 4_350, "floors": 3},
+        width_mm=2_000,
+        tread_depth_mm=300,
+        flight_step_count=14,
+        placement="left",
+        railing=True,
+    ).build()
+    assert len(plan.operations) == 147
+    assert len(plan.operations) <= 256
+
+
+@pytest.mark.parametrize(
+    ("house", "stair", "message"),
+    [
+        ({"length_mm": 3_900}, {}, "do not fit"),
+        ({"width_mm": 2_600}, {}, "do not fit"),
+        ({"floor_height_mm": 6_000}, {}, "120-220 mm rise"),
+        ({}, {"tread_depth_mm": 400}, "550-700 mm"),
+        ({}, {"flight_step_count": 4}, "greater than or equal to 5"),
+        ({}, {"flight_step_count": 15}, "less than or equal to 14"),
+    ],
+)
+def test_invalid_u_turn_stairs_fail_before_kernel(
+    house: dict[str, object], stair: dict[str, object], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        _u_request(house=house, **stair)

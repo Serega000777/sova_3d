@@ -15,6 +15,7 @@ from app.engineering.house_box import (
     LTurnStairRequest,
     StairRequest,
     StraightStairRequest,
+    UTurnStairRequest,
     stair_kind,
 )
 from app.engineering.house_text import HouseTextError, ParsedHouseText, parse_house_text
@@ -55,8 +56,25 @@ class LTurnStairBody(BaseModel):
     material_id: str | None = Field(default=None, min_length=1, max_length=120)
 
 
+class UTurnStairBody(BaseModel):
+    """Two equal parallel flights and one half-turn landing spanning both flights."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["u_turn"]
+    width_mm: float = Field(default=1_000, ge=700, le=2_000)
+    tread_depth_mm: float = Field(default=280, ge=200, le=400)
+    flight_step_count: int = Field(default=8, ge=5, le=14)
+    turn: Literal["left", "right"] = "left"
+    placement: Literal["left", "center", "right"] = "center"
+    railing: bool = True
+    material_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 StairBody = Annotated[
-    Annotated[StraightStairBody, Tag("straight")] | Annotated[LTurnStairBody, Tag("l_turn")],
+    Annotated[StraightStairBody, Tag("straight")]
+    | Annotated[LTurnStairBody, Tag("l_turn")]
+    | Annotated[UTurnStairBody, Tag("u_turn")],
     Discriminator(stair_kind),
 ]
 
@@ -64,6 +82,8 @@ StairBody = Annotated[
 def _stair_request(body: StairBody) -> StairRequest:
     if isinstance(body, LTurnStairBody):
         return LTurnStairRequest(**body.model_dump())
+    if isinstance(body, UTurnStairBody):
+        return UTurnStairRequest(**body.model_dump())
     return StraightStairRequest(**body.model_dump())
 
 

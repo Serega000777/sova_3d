@@ -25229,6 +25229,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/LTurnStairBody"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UTurnStairBody"
                   }
                 ]
               },
@@ -30286,7 +30289,8 @@
             "type": "string",
             "enum": [
               "straight",
-              "l_turn"
+              "l_turn",
+              "u_turn"
             ],
             "title": "Kind",
             "default": "straight"
@@ -30388,6 +30392,7 @@
             "type": "string",
             "enum": [
               "+x",
+              "-x",
               "+y",
               "-y"
             ],
@@ -30401,7 +30406,7 @@
           "direction"
         ],
         "title": "PlanStairFlight",
-        "description": "One straight flight of an L-turn stair, climbing in ``direction``."
+        "description": "One straight flight of a turning stair, climbing in ``direction``."
       },
       "PlanWall": {
         "properties": {
@@ -37278,6 +37283,80 @@
           "reports"
         ],
         "title": "TuningOut"
+      },
+      "UTurnStairBody": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "u_turn",
+            "title": "Kind"
+          },
+          "width_mm": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": 700.0,
+            "title": "Width Mm",
+            "default": 1000
+          },
+          "tread_depth_mm": {
+            "type": "number",
+            "maximum": 400.0,
+            "minimum": 200.0,
+            "title": "Tread Depth Mm",
+            "default": 280
+          },
+          "flight_step_count": {
+            "type": "integer",
+            "maximum": 14.0,
+            "minimum": 5.0,
+            "title": "Flight Step Count",
+            "default": 8
+          },
+          "turn": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ],
+            "title": "Turn",
+            "default": "left"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ],
+            "title": "Placement",
+            "default": "center"
+          },
+          "railing": {
+            "type": "boolean",
+            "title": "Railing",
+            "default": true
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "UTurnStairBody",
+        "description": "Two equal parallel flights and one half-turn landing spanning both flights."
       },
       "Units": {
         "type": "string",

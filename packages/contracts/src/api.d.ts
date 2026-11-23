@@ -7009,7 +7009,7 @@ export interface components {
              */
             shape: "rectangle" | "l_shape" | "t_shape";
             /** Stair */
-            stair?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"]) | null;
+            stair?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"] | components["schemas"]["UTurnStairBody"]) | null;
         };
         /** HouseTextApplyBody */
         HouseTextApplyBody: {
@@ -8791,7 +8791,7 @@ export interface components {
              * @default straight
              * @enum {string}
              */
-            kind: "straight" | "l_turn";
+            kind: "straight" | "l_turn" | "u_turn";
             /** Turn */
             turn?: ("left" | "right") | null;
             /** Flights */
@@ -8804,7 +8804,7 @@ export interface components {
         };
         /**
          * PlanStairFlight
-         * @description One straight flight of an L-turn stair, climbing in ``direction``.
+         * @description One straight flight of a turning stair, climbing in ``direction``.
          */
         PlanStairFlight: {
             /** Outline */
@@ -8818,7 +8818,7 @@ export interface components {
              * Direction
              * @enum {string}
              */
-            direction: "+x" | "+y" | "-y";
+            direction: "+x" | "-x" | "+y" | "-y";
         };
         /** PlanWall */
         PlanWall: {
@@ -11345,6 +11345,51 @@ export interface components {
             reports: {
                 [key: string]: unknown;
             }[];
+        };
+        /**
+         * UTurnStairBody
+         * @description Two equal parallel flights and one half-turn landing spanning both flights.
+         */
+        UTurnStairBody: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "u_turn";
+            /**
+             * Width Mm
+             * @default 1000
+             */
+            width_mm: number;
+            /**
+             * Tread Depth Mm
+             * @default 280
+             */
+            tread_depth_mm: number;
+            /**
+             * Flight Step Count
+             * @default 8
+             */
+            flight_step_count: number;
+            /**
+             * Turn
+             * @default left
+             * @enum {string}
+             */
+            turn: "left" | "right";
+            /**
+             * Placement
+             * @default center
+             * @enum {string}
+             */
+            placement: "left" | "center" | "right";
+            /**
+             * Railing
+             * @default true
+             */
+            railing: boolean;
+            /** Material Id */
+            material_id?: string | null;
         };
         /**
          * Units

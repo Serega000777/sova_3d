@@ -9,7 +9,13 @@ from typing import Any
 
 from app.api.errors import ValidationFailedError
 from app.engineering.floor_plan import floor_plan_from_house_box, floor_plans_from_house_box
-from app.engineering.house_box import HouseBoxRequest, LTurnStairRequest, l_stair_rail_ids
+from app.engineering.house_box import (
+    HouseBoxRequest,
+    LTurnStairRequest,
+    UTurnStairRequest,
+    l_stair_rail_ids,
+    u_stair_rail_ids,
+)
 from app.interior_materials import material_by_id, snapshot_for
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
@@ -24,6 +30,15 @@ _L_RAIL_NAMES = {
     "lower_outer": "нижний марш, внешнее",
     "landing_side": "площадка, торец",
     "landing_back": "площадка, задняя сторона",
+    "upper_inner": "верхний марш, внутреннее",
+    "upper_outer": "верхний марш, внешнее",
+}
+_U_RAIL_NAMES = {
+    "lower_inner": "нижний марш, внутреннее",
+    "lower_outer": "нижний марш, внешнее",
+    "landing_left": "площадка, левая сторона",
+    "landing_back": "площадка, задняя сторона",
+    "landing_right": "площадка, правая сторона",
     "upper_inner": "верхний марш, внутреннее",
     "upper_outer": "верхний марш, внешнее",
 }
@@ -128,12 +143,15 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
             flight_prefix = f"stair_{floor_index + 1}_{floor_index + 2}"
             flight_body = f"{flight_prefix}_step_1"
             l_turn = isinstance(request.stair, LTurnStairRequest)
+            u_turn = isinstance(request.stair, UTurnStairRequest)
             nodes.append(
                 {
                     "id": flight_prefix,
                     "name": (
                         f"Г-образная лестница {floor_index + 1} → {floor_index + 2}"
                         if l_turn
+                        else f"П-образная лестница {floor_index + 1} → {floor_index + 2}"
+                        if u_turn
                         else f"Лестница {floor_index + 1} → {floor_index + 2}"
                     ),
                     "kind": "object",
@@ -146,13 +164,17 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                     "appearance": appearance,
                 }
             )
-            if request.stair.railing and l_turn:
-                for rail_body in l_stair_rail_ids(floor_index):
+            if request.stair.railing and (l_turn or u_turn):
+                rail_names = _L_RAIL_NAMES if l_turn else _U_RAIL_NAMES
+                rail_ids = (
+                    l_stair_rail_ids(floor_index) if l_turn else u_stair_rail_ids(floor_index)
+                )
+                for rail_body in rail_ids:
                     part = rail_body.removeprefix("rail_").rsplit("_", 2)[0]
                     nodes.append(
                         {
                             "id": rail_body,
-                            "name": f"Ограждение · {_L_RAIL_NAMES[part]} · {floor_index + 1} этаж",
+                            "name": f"Ограждение · {rail_names[part]} · {floor_index + 1} этаж",
                             "kind": "object",
                             "parent_id": group_id,
                             "visible": True,

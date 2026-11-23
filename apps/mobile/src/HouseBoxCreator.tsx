@@ -5,7 +5,7 @@ import { Pressable, Text, TextInput, View } from "react-native";
 import { colors, styles } from "./theme";
 
 type Shape = "rectangle" | "l_shape" | "t_shape";
-type StairKind = "straight" | "l_turn";
+type StairKind = "straight" | "l_turn" | "u_turn";
 
 function millimetres(value: string): number {
   return Number(value.replace(",", ".")) * 1_000;
@@ -70,6 +70,7 @@ export function HouseBoxCreator({
   const [straightSteps, setStraightSteps] = useState("17");
   const [lowerSteps, setLowerSteps] = useState("8");
   const [upperSteps, setUpperSteps] = useState("8");
+  const [uFlightSteps, setUFlightSteps] = useState("8");
   const [turn, setTurn] = useState<"left" | "right">("left");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,13 +85,16 @@ export function HouseBoxCreator({
     straightSteps: numberValue(straightSteps),
     lowerSteps: numberValue(lowerSteps),
     upperSteps: numberValue(upperSteps),
-  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps]);
+    uFlightSteps: numberValue(uFlightSteps),
+  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps, uFlightSteps]);
 
   const stairProblem = useMemo(() => {
     if (!addStair || !stairAllowed) return null;
     const risers = stairKind === "straight"
       ? dimensions.straightSteps
-      : dimensions.lowerSteps + dimensions.upperSteps + 1;
+      : stairKind === "l_turn"
+        ? dimensions.lowerSteps + dimensions.upperSteps + 1
+        : 2 * dimensions.uFlightSteps + 1;
     const rise = dimensions.floorHeight / risers;
     if (
       stairKind === "l_turn"
@@ -101,17 +105,27 @@ export function HouseBoxCreator({
         || dimensions.upperSteps < 3
         || dimensions.upperSteps > 26)
     ) return "В каждом марше нужно 3–26 ступеней.";
+    if (
+      stairKind === "u_turn"
+      && (!Number.isInteger(dimensions.uFlightSteps)
+        || dimensions.uFlightSteps < 5
+        || dimensions.uFlightSteps > 14)
+    ) return "В каждом равном марше нужно 5–14 ступеней.";
     if (!Number.isInteger(risers) || risers < 10 || risers > 30) return "Нужно 10–30 подъёмов.";
     if (rise < 120 || rise > 220) return "Высота подъёма должна быть 120–220 мм.";
-    if (stairKind === "l_turn" && (2 * rise + dimensions.tread < 550 || 2 * rise + dimensions.tread > 700)) {
-      return "Для Г-лестницы 2 × подъём + проступь должно быть 550–700 мм.";
+    if (stairKind !== "straight" && (2 * rise + dimensions.tread < 550 || 2 * rise + dimensions.tread > 700)) {
+      return "Для поворотной лестницы 2 × подъём + проступь должно быть 550–700 мм.";
     }
     const footprintLength = stairKind === "straight"
       ? dimensions.tread * dimensions.straightSteps
-      : dimensions.tread * dimensions.lowerSteps + dimensions.stairWidth;
+      : stairKind === "l_turn"
+        ? dimensions.tread * dimensions.lowerSteps + dimensions.stairWidth
+        : dimensions.tread * dimensions.uFlightSteps + dimensions.stairWidth;
     const footprintWidth = stairKind === "straight"
       ? dimensions.stairWidth
-      : dimensions.stairWidth + dimensions.tread * dimensions.upperSteps;
+      : stairKind === "l_turn"
+        ? dimensions.stairWidth + dimensions.tread * dimensions.upperSteps
+        : 2 * dimensions.stairWidth;
     if (
       footprintLength > dimensions.length - 700
       || footprintWidth > dimensions.width - 700
@@ -129,7 +143,9 @@ export function HouseBoxCreator({
       dimensions.tread,
       ...(stairKind === "straight"
         ? [dimensions.straightSteps]
-        : [dimensions.lowerSteps, dimensions.upperSteps]),
+        : stairKind === "l_turn"
+          ? [dimensions.lowerSteps, dimensions.upperSteps]
+          : [dimensions.uFlightSteps]),
     ];
     if (
       !label.trim()
@@ -164,7 +180,8 @@ export function HouseBoxCreator({
             railing: true,
             material_id: null,
           }
-        : {
+        : stairKind === "l_turn"
+          ? {
             kind: "l_turn",
             width_mm: dimensions.stairWidth,
             tread_depth_mm: dimensions.tread,
@@ -174,7 +191,17 @@ export function HouseBoxCreator({
             placement: "center",
             railing: true,
             material_id: null,
-          };
+          }
+          : {
+              kind: "u_turn",
+              width_mm: dimensions.stairWidth,
+              tread_depth_mm: dimensions.tread,
+              flight_step_count: dimensions.uFlightSteps,
+              turn,
+              placement: "center",
+              railing: true,
+              material_id: null,
+            };
     setBusy(true);
     try {
       const accepted = await client.buildHouseBox(
@@ -235,6 +262,7 @@ export function HouseBoxCreator({
               <View style={styles.row} accessibilityRole="radiogroup">
                 <Choice value="straight" selected={stairKind} label="Прямая" disabled={busy} onChange={setStairKind} />
                 <Choice value="l_turn" selected={stairKind} label="Г-образная" disabled={busy} onChange={setStairKind} />
+                <Choice value="u_turn" selected={stairKind} label="П-образная" disabled={busy} onChange={setStairKind} />
               </View>
               <View style={styles.row}>
                 <TextInput style={[styles.input, { flex: 1 }]} value={stairWidthMm} editable={!busy} onChangeText={setStairWidthMm} keyboardType="number-pad" placeholder="Марш, мм" placeholderTextColor={colors.muted} />
@@ -242,7 +270,7 @@ export function HouseBoxCreator({
               </View>
               {stairKind === "straight" ? (
                 <TextInput style={styles.input} value={straightSteps} editable={!busy} onChangeText={setStraightSteps} keyboardType="number-pad" placeholder="Подъёмов" placeholderTextColor={colors.muted} />
-              ) : (
+              ) : stairKind === "l_turn" ? (
                 <>
                   <View style={styles.row}>
                     <TextInput style={[styles.input, { flex: 1 }]} value={lowerSteps} editable={!busy} onChangeText={setLowerSteps} keyboardType="number-pad" placeholder="Нижний марш" placeholderTextColor={colors.muted} />
@@ -251,6 +279,14 @@ export function HouseBoxCreator({
                   <View style={styles.row} accessibilityRole="radiogroup">
                     <Choice value="left" selected={turn} label="Поворот налево" disabled={busy} onChange={setTurn} />
                     <Choice value="right" selected={turn} label="Поворот направо" disabled={busy} onChange={setTurn} />
+                  </View>
+                </>
+              ) : (
+                <>
+                  <TextInput style={styles.input} value={uFlightSteps} editable={!busy} onChangeText={setUFlightSteps} keyboardType="number-pad" placeholder="Ступеней в каждом марше" placeholderTextColor={colors.muted} />
+                  <View style={styles.row} accessibilityRole="radiogroup">
+                    <Choice value="left" selected={turn} label="Разворот налево" disabled={busy} onChange={setTurn} />
+                    <Choice value="right" selected={turn} label="Разворот направо" disabled={busy} onChange={setTurn} />
                   </View>
                 </>
               )}
