@@ -9,7 +9,7 @@ from typing import Any
 
 from app.api.errors import ValidationFailedError
 from app.engineering.floor_plan import floor_plan_from_house_box, floor_plans_from_house_box
-from app.engineering.house_box import HouseBoxRequest
+from app.engineering.house_box import HouseBoxRequest, LTurnStairRequest, l_stair_rail_ids
 from app.interior_materials import material_by_id, snapshot_for
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
@@ -18,6 +18,15 @@ from app.models.execution import JobArtifact, Operation
 from app.models.versioning import AssetRole
 from app.services import projects, scenes
 from app.services.house_boxes import HOUSE_BOX_JOB
+
+_L_RAIL_NAMES = {
+    "lower_inner": "нижний марш, внутреннее",
+    "lower_outer": "нижний марш, внешнее",
+    "landing_side": "площадка, торец",
+    "landing_back": "площадка, задняя сторона",
+    "upper_inner": "верхний марш, внутреннее",
+    "upper_outer": "верхний марш, внешнее",
+}
 
 
 @register(HOUSE_BOX_JOB)
@@ -120,10 +129,15 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                 continue
             flight_prefix = f"stair_{floor_index + 1}_{floor_index + 2}"
             flight_body = f"{flight_prefix}_step_1"
+            l_turn = isinstance(request.stair, LTurnStairRequest)
             nodes.append(
                 {
                     "id": flight_prefix,
-                    "name": f"Лестница {floor_index + 1} → {floor_index + 2}",
+                    "name": (
+                        f"Г-образная лестница {floor_index + 1} → {floor_index + 2}"
+                        if l_turn
+                        else f"Лестница {floor_index + 1} → {floor_index + 2}"
+                    ),
                     "kind": "object",
                     "parent_id": group_id,
                     "visible": True,
@@ -134,7 +148,24 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                     "appearance": appearance,
                 }
             )
-            if request.stair.railing:
+            if request.stair.railing and l_turn:
+                for rail_body in l_stair_rail_ids(floor_index):
+                    part = rail_body.removeprefix("rail_").rsplit("_", 2)[0]
+                    nodes.append(
+                        {
+                            "id": rail_body,
+                            "name": f"Ограждение · {_L_RAIL_NAMES[part]} · {floor_index + 1} этаж",
+                            "kind": "object",
+                            "parent_id": group_id,
+                            "visible": True,
+                            "transform": scenes.IDENTITY,
+                            "asset_id": str(part_assets[rail_body][0].id),
+                            "instance_of": None,
+                            "footprint_mm": None,
+                            "appearance": appearance,
+                        }
+                    )
+            elif request.stair.railing:
                 for side in ("left", "right"):
                     rail_body = f"rail_{side}_{floor_index + 1}_{floor_index + 2}"
                     nodes.append(

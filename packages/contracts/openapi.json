@@ -25223,12 +25223,20 @@
           "stair": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StraightStairBody"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/StraightStairBody"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LTurnStairBody"
+                  }
+                ]
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Stair"
           }
         },
         "type": "object",
@@ -26094,6 +26102,87 @@
         ],
         "title": "Knurl",
         "description": "V-grooves cut into the surface: one set (straight) or two crossing sets (diamond)."
+      },
+      "LTurnStairBody": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "l_turn",
+            "title": "Kind"
+          },
+          "width_mm": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": 700.0,
+            "title": "Width Mm",
+            "default": 1000
+          },
+          "tread_depth_mm": {
+            "type": "number",
+            "maximum": 400.0,
+            "minimum": 200.0,
+            "title": "Tread Depth Mm",
+            "default": 280
+          },
+          "lower_step_count": {
+            "type": "integer",
+            "maximum": 26.0,
+            "minimum": 3.0,
+            "title": "Lower Step Count",
+            "default": 8
+          },
+          "upper_step_count": {
+            "type": "integer",
+            "maximum": 26.0,
+            "minimum": 3.0,
+            "title": "Upper Step Count",
+            "default": 8
+          },
+          "turn": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ],
+            "title": "Turn",
+            "default": "left"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ],
+            "title": "Placement",
+            "default": "center"
+          },
+          "railing": {
+            "type": "boolean",
+            "title": "Railing",
+            "default": true
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "LTurnStairBody",
+        "description": "Two flights and one square quarter-turn landing; the landing counts as one riser.\n\nUnknown fields are rejected so a straight-stair ``step_count`` cannot be silently ignored."
       },
       "LassoRegion": {
         "properties": {
@@ -30142,7 +30231,7 @@
               "minItems": 2
             },
             "type": "array",
-            "maxItems": 4,
+            "maxItems": 6,
             "minItems": 4,
             "title": "Outline"
           },
@@ -30192,6 +30281,64 @@
               }
             ],
             "title": "Material Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "straight",
+              "l_turn"
+            ],
+            "title": "Kind",
+            "default": "straight"
+          },
+          "turn": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "left",
+                  "right"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn"
+          },
+          "flights": {
+            "items": {
+              "$ref": "#/components/schemas/PlanStairFlight"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Flights"
+          },
+          "landing": {
+            "anyOf": [
+              {
+                "items": {
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Landing"
           }
         },
         "type": "object",
@@ -30209,6 +30356,52 @@
           "railing"
         ],
         "title": "PlanStair"
+      },
+      "PlanStairFlight": {
+        "properties": {
+          "outline": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Outline"
+          },
+          "step_count": {
+            "type": "integer",
+            "maximum": 26.0,
+            "minimum": 3.0,
+            "title": "Step Count"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "+x",
+              "+y",
+              "-y"
+            ],
+            "title": "Direction"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outline",
+          "step_count",
+          "direction"
+        ],
+        "title": "PlanStairFlight",
+        "description": "One straight flight of an L-turn stair, climbing in ``direction``."
       },
       "PlanWall": {
         "properties": {
@@ -36198,6 +36391,12 @@
       },
       "StraightStairBody": {
         "properties": {
+          "kind": {
+            "type": "string",
+            "const": "straight",
+            "title": "Kind",
+            "default": "straight"
+          },
           "width_mm": {
             "type": "number",
             "maximum": 2000.0,

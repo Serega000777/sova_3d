@@ -66,18 +66,54 @@ treads and UP/DOWN direction, and keeps annotations isolated by plan id.
 Historical versions without `floor_plans` deliberately return one legacy level. A previous
 `floors` height multiplier is not reinterpreted as proof of separately modelled floors.
 
+## L-turn follow-up (quarter-turn with landing)
+
+`HouseBoxRequest.stair` is now a discriminated union on `kind`. Historical requests and plans
+without a `kind` are read as `straight`, and the straight-stair `OperationPlan` is byte-identical
+to the previous builder. `kind: "l_turn"` accepts only:
+
+- width 700–2000 mm (the landing is a `width × width` square);
+- tread depth 200–400 mm;
+- lower and upper flight step counts 3–26 each;
+- turn left (second flight climbs +Y) or right (−Y);
+- placement left, centre or right across the house width;
+- railing on/off and an optional existing interior-material id.
+
+The API body forbids unknown fields, so a straight `step_count` sent with `kind: "l_turn"` is
+rejected rather than ignored. The server derives `risers = lower + upper + 1` (the landing is one
+riser), requires 10–30 risers and a 120–220 mm rise, applies the 550–700 mm `2 × rise + tread`
+comfort rule, and places the whole L bounding box with the same 350 mm wall clearance. Any
+failure is a 422 before a job is enqueued and is re-checked inside the worker job.
+
+Per transition the plan builds every lower step, one landing box and every upper step as exact
+boxes with cumulative heights, fused into `stair_<a>_<b>_step_1`. Each upper floor is cut by two
+overlapping openings (lower flight + landing, then the upper flight) with the existing 50 mm
+margin. Rails are six exact bodies: inner/outer sloped rails for both flights (rotate about Y and
+X) and two horizontal guards on the landing's open outer sides. The maximum accepted request
+(three floors, 30 risers, rails) is 153 operations; the first rejected riser count is 31.
+
+`PlanStair` gains `kind`, `turn`, two `flights` (outline, step count, climbing direction) and a
+`landing`; an L outline has six corners. Web parsing, translation and the plan editor's tread and
+walking-line drawing use the shared `stairPlanLines` contract helper. Scene nodes keep the same
+floor groups, so visibility and cutaway work unchanged. The existing auto-layout keeps rooms out of
+the stair's whole bounding-box band.
+
+Real OCCT 7.8.1 (`physical-ai-geometry:multifloor-shell`, no kernel source change since) executed
+the 153-operation maximum plan and a two-floor right-turn plan: every floor, roof, flight and rail
+body was a valid single solid, and each flight with its landing fused into one solid.
+
 ## Explicit limits
 
 This is not a general staircase or building-information model. It does not claim:
 
-- L-, U-, winder or spiral stairs;
+- U-, winder or spiral stairs, or L stairs with unequal landing size or winder treads;
 - independently configured flights per transition;
 - arbitrary, L- or T-shaped multi-floor footprints;
 - pitched roofs in this multi-floor scene path;
 - floor-elevation-aware room auto-layout or furniture placement;
 - facade rebuilding of the multi-body scene (the existing facade endpoint rejects this lineage
   fail closed instead of silently replacing it with its historical single shell);
-- structural-code compliance, landings, stringers or baluster detailing;
+- structural-code compliance (the 550–700 mm stride is a comfort rule, not a code check), stringers, headroom proof or baluster detailing;
 - a mobile creator;
 - physical browser/device visual acceptance.
 

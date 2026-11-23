@@ -35,6 +35,10 @@ export function HouseBoxWizard({
   const [stairWidthMm, setStairWidthMm] = useState(1_000);
   const [treadDepthMm, setTreadDepthMm] = useState(280);
   const [stepCount, setStepCount] = useState(17);
+  const [stairKind, setStairKind] = useState<"straight" | "l_turn">("straight");
+  const [lowerSteps, setLowerSteps] = useState(8);
+  const [upperSteps, setUpperSteps] = useState(8);
+  const [stairTurn, setStairTurn] = useState<"left" | "right">("left");
   const [stairPlacement, setStairPlacement] = useState<"left" | "center" | "right">("center");
   const [railing, setRailing] = useState(true);
   const [stairMaterialId, setStairMaterialId] = useState<string>("interior.wood.oak-natural.v1");
@@ -42,8 +46,25 @@ export function HouseBoxWizard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const stairEnabled = floors > 1 && shape === "rectangle" && addStair;
-  const riserMm = floorHeightMm / stepCount;
-  const stairRunMm = treadDepthMm * stepCount;
+  const lTurn = stairKind === "l_turn";
+  // An L-turn landing counts as one riser, mirroring the server's derivation.
+  const riserCount = lTurn ? lowerSteps + upperSteps + 1 : stepCount;
+  const riserMm = floorHeightMm / riserCount;
+  const stairRunMm = treadDepthMm * (lTurn ? lowerSteps + upperSteps : stepCount);
+  const strideMm = 2 * riserMm + treadDepthMm;
+  const lFootprint = lTurn
+    ? { x: treadDepthMm * lowerSteps + stairWidthMm, y: stairWidthMm + treadDepthMm * upperSteps }
+    : null;
+  const lProblem = !lTurn
+    ? null
+    : riserCount < 10 || riserCount > 30
+      ? (ru ? "Нужно 10–30 подъёмов вместе с площадкой." : "Use 10–30 risers including the landing.")
+      : strideMm < 550 || strideMm > 700
+        ? (ru ? "2 × подъём + проступь должно быть 550–700 мм." : "2 × rise + tread must be 550–700 mm.")
+        : lFootprint && (lFootprint.x > lengthMm - 700 || lFootprint.y > widthMm - 700)
+          ? (ru ? "Г-образная лестница с проёмом не помещается в дом (отступ 350 мм от стен)." : "The L stair and its opening do not fit inside the house (350 mm wall clearance).")
+          : null;
+  const stairInvalid = stairEnabled && (riserMm < 120 || riserMm > 220 || lProblem !== null);
 
   useEffect(() => {
     void client.listInteriorMaterials()
@@ -65,16 +86,29 @@ export function HouseBoxWizard({
           floor_height_mm: floorHeightMm,
           floors,
           shape,
-          stair: stairEnabled
-            ? {
-                width_mm: stairWidthMm,
-                tread_depth_mm: treadDepthMm,
-                step_count: stepCount,
-                placement: stairPlacement,
-                railing,
-                material_id: stairMaterialId || null,
-              }
-            : null,
+          stair: !stairEnabled
+            ? null
+            : lTurn
+              ? {
+                  kind: "l_turn",
+                  width_mm: stairWidthMm,
+                  tread_depth_mm: treadDepthMm,
+                  lower_step_count: lowerSteps,
+                  upper_step_count: upperSteps,
+                  turn: stairTurn,
+                  placement: stairPlacement,
+                  railing,
+                  material_id: stairMaterialId || null,
+                }
+              : {
+                  kind: "straight",
+                  width_mm: stairWidthMm,
+                  tread_depth_mm: treadDepthMm,
+                  step_count: stepCount,
+                  placement: stairPlacement,
+                  railing,
+                  material_id: stairMaterialId || null,
+                },
         },
         crypto.randomUUID(),
       );
@@ -130,7 +164,7 @@ export function HouseBoxWizard({
                 disabled={shape !== "rectangle"}
                 onChange={(event) => setAddStair(event.target.checked)}
               />
-              {ru ? "Добавить точную прямую лестницу и шахты" : "Add an exact straight stair and openings"}
+              {ru ? "Добавить точную лестницу и проёмы перекрытий" : "Add an exact stair and floor openings"}
             </label>
             {shape !== "rectangle" ? (
               <span className="muted">{ru
@@ -138,10 +172,44 @@ export function HouseBoxWizard({
                 : "The first bounded stair flow supports rectangular houses."}</span>
             ) : addStair ? (
               <>
+                <div className="house-shapes" role="radiogroup" aria-label={ru ? "Тип лестницы" : "Stair type"}>
+                  <div>
+                    {([
+                      { id: "straight", glyph: "▬", ru: "Прямая", en: "Straight" },
+                      { id: "l_turn", glyph: "⌐", ru: "Г-образная с площадкой", en: "L-turn with landing" },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={stairKind === option.id}
+                        className={stairKind === option.id ? "house-shape active" : "house-shape"}
+                        onClick={() => setStairKind(option.id)}
+                      >
+                        <span aria-hidden="true">{option.glyph}</span>
+                        <strong>{option[language]}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="house-dimensions">
                   <NumberField label={ru ? "Ширина марша, мм" : "Flight width, mm"} value={stairWidthMm} min={700} max={2_000} step={50} onChange={setStairWidthMm} />
                   <NumberField label={ru ? "Глубина ступени, мм" : "Tread depth, mm"} value={treadDepthMm} min={200} max={400} step={10} onChange={setTreadDepthMm} />
-                  <NumberField label={ru ? "Количество ступеней" : "Step count"} value={stepCount} min={10} max={30} step={1} onChange={setStepCount} />
+                  {lTurn ? (
+                    <>
+                      <NumberField label={ru ? "Ступеней в нижнем марше" : "Lower flight steps"} value={lowerSteps} min={3} max={26} step={1} onChange={setLowerSteps} />
+                      <NumberField label={ru ? "Ступеней в верхнем марше" : "Upper flight steps"} value={upperSteps} min={3} max={26} step={1} onChange={setUpperSteps} />
+                      <label>
+                        <span>{ru ? "Поворот" : "Turn"}</span>
+                        <select className="input" value={stairTurn} onChange={(event) => setStairTurn(event.target.value as typeof stairTurn)}>
+                          <option value="left">{ru ? "Налево" : "Left"}</option>
+                          <option value="right">{ru ? "Направо" : "Right"}</option>
+                        </select>
+                      </label>
+                    </>
+                  ) : (
+                    <NumberField label={ru ? "Количество ступеней" : "Step count"} value={stepCount} min={10} max={30} step={1} onChange={setStepCount} />
+                  )}
                   <label>
                     <span>{ru ? "Расположение" : "Placement"}</span>
                     <select className="input" value={stairPlacement} onChange={(event) => setStairPlacement(event.target.value as typeof stairPlacement)}>
@@ -164,10 +232,21 @@ export function HouseBoxWizard({
                 </div>
                 <p className="house-total">
                   {ru ? "Подъём / проступь / длина" : "Rise / tread / run"}: <strong>{riserMm.toFixed(1)} / {treadDepthMm.toFixed(0)} / {stairRunMm.toFixed(0)} {ru ? "мм" : "mm"}</strong>
+                  {lFootprint && (
+                    <>
+                      {" · "}{ru ? "площадка" : "landing"} {stairWidthMm.toFixed(0)}×{stairWidthMm.toFixed(0)}
+                      {" · "}{ru ? "габарит" : "footprint"} <strong>{lFootprint.x.toFixed(0)}×{lFootprint.y.toFixed(0)} {ru ? "мм" : "mm"}</strong>
+                      {" · "}{riserCount} {ru ? "подъёмов" : "risers"}
+                    </>
+                  )}
                 </p>
                 {(riserMm < 120 || riserMm > 220) && <div className="error" role="alert">{ru
                   ? "Измените число ступеней: высота ступени должна быть 120–220 мм."
                   : "Change the step count: rise must be 120–220 mm."}</div>}
+                {lProblem && riserMm >= 120 && riserMm <= 220 && <div className="error" role="alert">{lProblem}</div>}
+                {lTurn && <span className="muted">{ru
+                  ? "Площадка квадратная (ширина марша) и считается одним подъёмом. Забежные, U-образные и винтовые лестницы пока не поддерживаются."
+                  : "The square landing equals the flight width and counts as one riser. Winder, U and spiral stairs are not supported yet."}</span>}
               </>
             ) : null}
           </fieldset>
@@ -175,7 +254,7 @@ export function HouseBoxWizard({
         {error && <div className="error" role="alert">{error}</div>}
         <div className="house-box-actions">
           <button type="button" className="btn" onClick={onBack} disabled={busy}>{ru ? "← Назад" : "← Back"}</button>
-          <button type="submit" className="btn primary" disabled={busy || (stairEnabled && (riserMm < 120 || riserMm > 220))}>{busy ? (ru ? "Строим…" : "Building…") : (ru ? "Создать коробку" : "Create box")}</button>
+          <button type="submit" className="btn primary" disabled={busy || stairInvalid}>{busy ? (ru ? "Строим…" : "Building…") : (ru ? "Создать коробку" : "Create box")}</button>
         </div>
       </form>
     </div>

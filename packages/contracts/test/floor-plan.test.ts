@@ -26,6 +26,7 @@ import {
   redo,
   roomArea,
   sampleHouse,
+  stairPlanLines,
   undo,
   wallLength,
 } from "../src/floor-plan.ts";
@@ -175,6 +176,81 @@ test("a stair footprint is validated and follows plan translation", () => {
     rooms: [{ name: "Floor", outline: [[0, 0], [1, 0], [0, 1]] }],
     stairs: [{ ...plan.stairs?.[0], material_id: "" }],
   }), null);
+});
+
+test("an L-turn stair keeps flights and landing through parsing, drawing and translation", () => {
+  const lTurn = {
+    id: "stair_1_2_up",
+    role: "up",
+    from_floor: 0,
+    to_floor: 1,
+    kind: "l_turn",
+    turn: "left",
+    outline: [[4380, 2380], [7620, 2380], [7620, 5620], [6620, 5620], [6620, 3380], [4380, 3380]],
+    flights: [
+      { outline: [[4380, 2380], [6620, 2380], [6620, 3380], [4380, 3380]], step_count: 8, direction: "+x" },
+      { outline: [[6620, 3380], [7620, 3380], [7620, 5620], [6620, 5620]], step_count: 8, direction: "+y" },
+    ],
+    landing: [[6620, 2380], [7620, 2380], [7620, 3380], [6620, 3380]],
+    width_mm: 1000,
+    run_mm: 4480,
+    step_count: 17,
+    tread_depth_mm: 280,
+    riser_height_mm: 3000 / 17,
+    railing: true,
+  };
+  const rooms = [{ name: "Floor", outline: [[0, 0], [12000, 0], [12000, 8000], [0, 8000]] }];
+  const plan = parseFloorPlan({ rooms, stairs: [lTurn] });
+  assert.ok(plan);
+  const stair = plan.stairs![0]!;
+  assert.equal(stair.kind, "l_turn");
+  assert.equal(stair.flights?.length, 2);
+  const lines = stairPlanLines(stair);
+  assert.ok(lines);
+  assert.equal(lines.treads.length, 9 + 9);
+  assert.deepEqual(lines.walkline, [[4380, 2880], [7120, 2880], [7120, 5620]]);
+  const down = stairPlanLines({ ...stair, role: "down" });
+  assert.deepEqual(down?.walkline.at(-1), [4380, 2880]);
+  const moved = translatePlan(plan, 100, -200).stairs![0]!;
+  assert.deepEqual(moved.flights?.[1]?.outline[0], [6720, 3180]);
+  assert.deepEqual(moved.landing?.[0], [6720, 2180]);
+
+  for (const broken of [
+    { ...lTurn, outline: lTurn.outline.slice(0, 4) },
+    { ...lTurn, step_count: 18 },
+    { ...lTurn, turn: "up" },
+    { ...lTurn, landing: null },
+    { ...lTurn, flights: [lTurn.flights[0]] },
+    { ...lTurn, flights: [lTurn.flights[0], { ...lTurn.flights[1], direction: "-x" }] },
+    { ...lTurn, kind: "spiral" },
+  ]) {
+    assert.equal(parseFloorPlan({ rooms, stairs: [broken] }), null);
+  }
+});
+
+test("straight stair drawing is unchanged by the L-turn helper", () => {
+  const plan = parseFloorPlan({
+    rooms: [{ name: "Floor", outline: [[0, 0], [12000, 0], [12000, 8000], [0, 8000]] }],
+    stairs: [{
+      id: "stair_1_2_down",
+      role: "down",
+      from_floor: 0,
+      to_floor: 1,
+      outline: [[3600, 3500], [8360, 3500], [8360, 4500], [3600, 4500]],
+      width_mm: 1000,
+      run_mm: 4760,
+      step_count: 17,
+      tread_depth_mm: 280,
+      riser_height_mm: 3000 / 17,
+      railing: false,
+    }],
+  });
+  const stair = plan!.stairs![0]!;
+  assert.equal(stair.kind, "straight");
+  const lines = stairPlanLines(stair)!;
+  assert.equal(lines.treads.length, 18);
+  assert.deepEqual(lines.treads[0], [[3600, 3500], [3600, 4500]]);
+  assert.deepEqual(lines.walkline, [[8360, 4000], [3600, 4000]]);
 });
 
 test("hit-testing finds the topmost annotation near a plan point", () => {

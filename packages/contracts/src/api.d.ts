@@ -7008,7 +7008,8 @@ export interface components {
              * @enum {string}
              */
             shape: "rectangle" | "l_shape" | "t_shape";
-            stair?: components["schemas"]["StraightStairBody"] | null;
+            /** Stair */
+            stair?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"]) | null;
         };
         /** HouseTextApplyBody */
         HouseTextApplyBody: {
@@ -7326,6 +7327,58 @@ export interface components {
              * @default 45
              */
             angle_deg: number;
+        };
+        /**
+         * LTurnStairBody
+         * @description Two flights and one square quarter-turn landing; the landing counts as one riser.
+         *
+         *     Unknown fields are rejected so a straight-stair ``step_count`` cannot be silently ignored.
+         */
+        LTurnStairBody: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "l_turn";
+            /**
+             * Width Mm
+             * @default 1000
+             */
+            width_mm: number;
+            /**
+             * Tread Depth Mm
+             * @default 280
+             */
+            tread_depth_mm: number;
+            /**
+             * Lower Step Count
+             * @default 8
+             */
+            lower_step_count: number;
+            /**
+             * Upper Step Count
+             * @default 8
+             */
+            upper_step_count: number;
+            /**
+             * Turn
+             * @default left
+             * @enum {string}
+             */
+            turn: "left" | "right";
+            /**
+             * Placement
+             * @default center
+             * @enum {string}
+             */
+            placement: "left" | "center" | "right";
+            /**
+             * Railing
+             * @default true
+             */
+            railing: boolean;
+            /** Material Id */
+            material_id?: string | null;
         };
         /**
          * LassoRegion
@@ -8733,6 +8786,39 @@ export interface components {
             railing: boolean;
             /** Material Id */
             material_id?: string | null;
+            /**
+             * Kind
+             * @default straight
+             * @enum {string}
+             */
+            kind: "straight" | "l_turn";
+            /** Turn */
+            turn?: ("left" | "right") | null;
+            /** Flights */
+            flights?: components["schemas"]["PlanStairFlight"][];
+            /** Landing */
+            landing?: [
+                number,
+                number
+            ][] | null;
+        };
+        /**
+         * PlanStairFlight
+         * @description One straight flight of an L-turn stair, climbing in ``direction``.
+         */
+        PlanStairFlight: {
+            /** Outline */
+            outline: [
+                number,
+                number
+            ][];
+            /** Step Count */
+            step_count: number;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "+x" | "+y" | "-y";
         };
         /** PlanWall */
         PlanWall: {
@@ -10951,6 +11037,12 @@ export interface components {
         };
         /** StraightStairBody */
         StraightStairBody: {
+            /**
+             * Kind
+             * @default straight
+             * @constant
+             */
+            kind: "straight";
             /**
              * Width Mm
              * @default 1000

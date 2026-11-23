@@ -47,19 +47,33 @@ export interface PlanRoom {
   requested_area_m2?: [number, number] | null;
 }
 
+/** One straight flight of an L-turn stair; `direction` is the climbing direction in plan. */
+export interface PlanStairFlight {
+  outline: Point[];
+  step_count: number;
+  direction: "+x" | "+y" | "-y";
+}
+
 export interface PlanStair {
   id: string;
   role: "up" | "down";
   from_floor: number;
   to_floor: number;
+  /** 4 corners for a straight stair, 6 for an L-turn stair (flights + landing). */
   outline: Point[];
   width_mm: number;
   run_mm: number;
+  /** Total risers between the floors; an L-turn landing counts as one. */
   step_count: number;
   tread_depth_mm: number;
   riser_height_mm: number;
   railing: boolean;
   material_id?: string | null;
+  /** Historical plans without a kind are parsed as straight. */
+  kind: "straight" | "l_turn";
+  turn?: "left" | "right" | null;
+  flights?: PlanStairFlight[];
+  landing?: Point[] | null;
 }
 
 export interface FloorPlan {
@@ -224,6 +238,61 @@ export function planBounds(plan: FloorPlan): Bounds | null {
   return pointsBounds(points);
 }
 
+/** Plan drawing primitives for one stair: tread lines and a walking line ending at the arrow. */
+export interface StairPlanLines {
+  treads: [Point, Point][];
+  walkline: Point[];
+}
+
+function flightLines(
+  outline: readonly Point[],
+  steps: number,
+  direction: "+x" | "-x" | "+y" | "-y",
+): { treads: [Point, Point][]; start: Point; end: Point } {
+  const bounds = pointsBounds(outline)!;
+  const alongX = direction === "+x" || direction === "-x";
+  const forward = direction === "+x" || direction === "+y";
+  const treads: [Point, Point][] = [];
+  for (let index = 0; index <= steps; index += 1) {
+    const t = index / steps;
+    if (alongX) {
+      const x = bounds.minX + (bounds.maxX - bounds.minX) * t;
+      treads.push([[x, bounds.minY], [x, bounds.maxY]]);
+    } else {
+      const y = bounds.minY + (bounds.maxY - bounds.minY) * t;
+      treads.push([[bounds.minX, y], [bounds.maxX, y]]);
+    }
+  }
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cy = (bounds.minY + bounds.maxY) / 2;
+  const low: Point = alongX ? [bounds.minX, cy] : [cx, bounds.minY];
+  const high: Point = alongX ? [bounds.maxX, cy] : [cx, bounds.maxY];
+  return { treads, start: forward ? low : high, end: forward ? high : low };
+}
+
+/**
+ * Derive tread lines and the walking line of a straight or L-turn stair. The walking line
+ * runs bottom→top for `up` and top→bottom for `down`, so its last point carries the arrow.
+ */
+export function stairPlanLines(stair: PlanStair): StairPlanLines | null {
+  if (stair.kind === "l_turn" && stair.flights?.length === 2 && stair.landing) {
+    const [lower, upper] = stair.flights as [PlanStairFlight, PlanStairFlight];
+    const first = flightLines(lower.outline, lower.step_count, lower.direction);
+    const second = flightLines(upper.outline, upper.step_count, upper.direction);
+    const landing = pointsBounds(stair.landing);
+    if (!landing) return null;
+    const pivot: Point = [(landing.minX + landing.maxX) / 2, (landing.minY + landing.maxY) / 2];
+    const walkline: Point[] = [first.start, pivot, second.end];
+    return {
+      treads: [...first.treads, ...second.treads],
+      walkline: stair.role === "up" ? walkline : walkline.reverse(),
+    };
+  }
+  if (stair.outline.length !== 4 || !pointsBounds(stair.outline)) return null;
+  const flight = flightLines(stair.outline, stair.step_count, stair.role === "up" ? "+x" : "-x");
+  return { treads: flight.treads, walkline: [flight.start, flight.end] };
+}
+
 export function pointsBounds(points: readonly Point[]): Bounds | null {
   if (points.length === 0) return null;
   let minX = Infinity;
@@ -380,8 +449,9 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
       || stair.to_floor < 1
       || stair.to_floor > 2
       || stair.from_floor >= stair.to_floor
+      || (stair.kind != null && stair.kind !== "straight" && stair.kind !== "l_turn")
       || !Array.isArray(stair.outline)
-      || stair.outline.length !== 4
+      || stair.outline.length !== (stair.kind === "l_turn" ? 6 : 4)
       || !stair.outline.every(isPoint)
       || typeof stair.width_mm !== "number"
       || !Number.isFinite(stair.width_mm)
@@ -410,6 +480,40 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
         || stair.material_id.length > 120
       ))
     ) return null;
+    let lTurn: Pick<PlanStair, "kind" | "turn" | "flights" | "landing"> | null = null;
+    if (stair.kind === "l_turn") {
+      const flights = Array.isArray(stair.flights) ? stair.flights as Record<string, unknown>[] : [];
+      if (
+        (stair.turn !== "left" && stair.turn !== "right")
+        || !Array.isArray(stair.landing)
+        || stair.landing.length !== 4
+        || !stair.landing.every(isPoint)
+        || flights.length !== 2
+        || !flights.every((flight) => (
+          flight !== null
+          && typeof flight === "object"
+          && Array.isArray(flight.outline)
+          && flight.outline.length === 4
+          && flight.outline.every(isPoint)
+          && typeof flight.step_count === "number"
+          && Number.isInteger(flight.step_count)
+          && flight.step_count >= 3
+          && flight.step_count <= 26
+          && (flight.direction === "+x" || flight.direction === "+y" || flight.direction === "-y")
+        ))
+        || (flights[0]!.step_count as number) + (flights[1]!.step_count as number) + 1 !== stair.step_count
+      ) return null;
+      lTurn = {
+        kind: "l_turn",
+        turn: stair.turn,
+        flights: flights.map((flight) => ({
+          outline: flight.outline as Point[],
+          step_count: flight.step_count as number,
+          direction: flight.direction as PlanStairFlight["direction"],
+        })),
+        landing: stair.landing as Point[],
+      };
+    }
     stairs.push({
       id: stair.id,
       role: stair.role,
@@ -423,6 +527,7 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
       riser_height_mm: stair.riser_height_mm,
       railing: stair.railing,
       material_id: stair.material_id as string | null | undefined,
+      ...(lTurn ?? { kind: "straight" }),
     });
   }
   if (cleanWalls.length === 0 && rooms.length === 0) return null;
@@ -832,6 +937,10 @@ export function translatePlan(plan: FloorPlan, dx: number, dy: number): FloorPla
     stairs: (plan.stairs ?? []).map((stair) => ({
       ...stair,
       outline: stair.outline.map(move),
+      ...(stair.flights
+        ? { flights: stair.flights.map((flight) => ({ ...flight, outline: flight.outline.map(move) })) }
+        : {}),
+      ...(stair.landing ? { landing: stair.landing.map(move) } : {}),
     })),
   };
 }

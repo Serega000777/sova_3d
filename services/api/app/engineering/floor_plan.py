@@ -13,7 +13,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.engineering.house_box import HouseBoxRequest, _stair_origin
+from app.engineering.house_box import (
+    HouseBoxRequest,
+    LTurnStairRequest,
+    _stair_origin,
+    l_stair_layout,
+)
 from app.engineering.house_walls import HouseWallsRequest, ordered_wall_outline
 
 Point = tuple[float, float]
@@ -71,12 +76,20 @@ class PlanRoom(BaseModel):
     requested_area_m2: tuple[float, float] | None = None
 
 
+class PlanStairFlight(BaseModel):
+    """One straight flight of an L-turn stair, climbing in ``direction``."""
+
+    outline: list[Point] = Field(min_length=4, max_length=4)
+    step_count: int = Field(ge=3, le=26)
+    direction: Literal["+x", "+y", "-y"]
+
+
 class PlanStair(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     role: Literal["up", "down"]
     from_floor: int = Field(ge=0, le=2)
     to_floor: int = Field(ge=1, le=2)
-    outline: list[Point] = Field(min_length=4, max_length=4)
+    outline: list[Point] = Field(min_length=4, max_length=6)
     width_mm: float = Field(ge=700, le=2_000)
     run_mm: float = Field(gt=0, le=12_000)
     step_count: int = Field(ge=10, le=30)
@@ -84,6 +97,27 @@ class PlanStair(BaseModel):
     riser_height_mm: float = Field(ge=120, le=220)
     railing: bool
     material_id: str | None = Field(default=None, min_length=1, max_length=120)
+    kind: Literal["straight", "l_turn"] = "straight"
+    turn: Literal["left", "right"] | None = None
+    flights: list[PlanStairFlight] = Field(default_factory=list, max_length=2)
+    landing: list[Point] | None = Field(default=None, min_length=4, max_length=4)
+
+    @model_validator(mode="after")
+    def _kind_matches_geometry(self) -> PlanStair:
+        if self.kind == "straight":
+            if len(self.outline) != 4 or self.flights or self.landing is not None or self.turn:
+                raise ValueError("a straight stair has a 4-point outline and no flights/landing")
+            return self
+        if (
+            len(self.outline) != 6
+            or len(self.flights) != 2
+            or self.landing is None
+            or self.turn is None
+        ):
+            raise ValueError("an L-turn stair needs a 6-point outline, two flights and a landing")
+        if sum(flight.step_count for flight in self.flights) + 1 != self.step_count:
+            raise ValueError("L-turn flight steps plus the landing must equal the riser count")
+        return self
 
 
 class FloorPlan(BaseModel):
@@ -155,56 +189,84 @@ def floor_plans_from_house_box(
 ) -> BuildingFloorPlans:
     """Derive one aligned plan per floor, including the trusted stair/shaft footprint."""
     levels: list[BuildingFloorLevel] = []
-    stair_outline: list[Point] | None = None
-    if request.stair is not None:
+    stair = request.stair
+    stair_fields: dict[str, object] | None = None
+    if isinstance(stair, LTurnStairRequest):
+        layout = l_stair_layout(request)
+
+        def corners(rect: tuple[float, float, float, float]) -> list[Point]:
+            min_x, min_y, max_x, max_y = rect
+            return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
+
+        stair_fields = {
+            "kind": "l_turn",
+            "turn": stair.turn,
+            "outline": layout.outline,
+            "run_mm": stair.tread_depth_mm * (stair.lower_step_count + stair.upper_step_count),
+            "flights": [
+                PlanStairFlight(
+                    outline=corners(layout.lower),
+                    step_count=stair.lower_step_count,
+                    direction="+x",
+                ),
+                PlanStairFlight(
+                    outline=corners(layout.upper),
+                    step_count=stair.upper_step_count,
+                    direction="+y" if stair.turn == "left" else "-y",
+                ),
+            ],
+            "landing": corners(layout.landing),
+        }
+    elif stair is not None:
         x, y = _stair_origin(request)
-        run = float(request.stair.tread_depth_mm) * request.stair.step_count
-        stair_outline = [
-            (x, y),
-            (x + run, y),
-            (x + run, y + float(request.stair.width_mm)),
-            (x, y + float(request.stair.width_mm)),
-        ]
+        run = float(stair.tread_depth_mm) * stair.step_count
+        stair_fields = {
+            "outline": [
+                (x, y),
+                (x + run, y),
+                (x + run, y + float(stair.width_mm)),
+                (x, y + float(stair.width_mm)),
+            ],
+            "run_mm": run,
+        }
     for floor_index in range(request.floors):
         plan = floor_plan_from_house_box(
             request,
             plan_id=f"project-{project_id}-floor-{floor_index + 1}",
             name=f"{name} · Floor {floor_index + 1}",
         )
-        if request.stair is not None and stair_outline is not None:
-            rise = float(request.floor_height_mm) / request.stair.step_count
+        if stair is not None and stair_fields is not None:
+            common = {
+                **stair_fields,
+                "width_mm": stair.width_mm,
+                "step_count": stair.step_count,
+                "tread_depth_mm": stair.tread_depth_mm,
+                "riser_height_mm": float(request.floor_height_mm) / stair.step_count,
+                "railing": stair.railing,
+                "material_id": stair.material_id,
+            }
             if floor_index > 0:
                 plan.stairs.append(
-                    PlanStair(
-                        id=f"stair_{floor_index}_{floor_index + 1}_down",
-                        role="down",
-                        from_floor=floor_index - 1,
-                        to_floor=floor_index,
-                        outline=stair_outline,
-                        width_mm=request.stair.width_mm,
-                        run_mm=request.stair.tread_depth_mm * request.stair.step_count,
-                        step_count=request.stair.step_count,
-                        tread_depth_mm=request.stair.tread_depth_mm,
-                        riser_height_mm=rise,
-                        railing=request.stair.railing,
-                        material_id=request.stair.material_id,
+                    PlanStair.model_validate(
+                        {
+                            **common,
+                            "id": f"stair_{floor_index}_{floor_index + 1}_down",
+                            "role": "down",
+                            "from_floor": floor_index - 1,
+                            "to_floor": floor_index,
+                        }
                     )
                 )
             if floor_index < request.floors - 1:
                 plan.stairs.append(
-                    PlanStair(
-                        id=f"stair_{floor_index + 1}_{floor_index + 2}_up",
-                        role="up",
-                        from_floor=floor_index,
-                        to_floor=floor_index + 1,
-                        outline=stair_outline,
-                        width_mm=request.stair.width_mm,
-                        run_mm=request.stair.tread_depth_mm * request.stair.step_count,
-                        step_count=request.stair.step_count,
-                        tread_depth_mm=request.stair.tread_depth_mm,
-                        riser_height_mm=rise,
-                        railing=request.stair.railing,
-                        material_id=request.stair.material_id,
+                    PlanStair.model_validate(
+                        {
+                            **common,
+                            "id": f"stair_{floor_index + 1}_{floor_index + 2}_up",
+                            "role": "up",
+                            "from_floor": floor_index,
+                            "to_floor": floor_index + 1,
+                        }
                     )
                 )
         levels.append(
@@ -715,7 +777,8 @@ def _auto_layout_stair_rectangle(
 ) -> AutoLayoutResult:
     """Lay rooms beside a full-width circulation band containing the stair opening.
 
-    House-box stairs run along X.  Keeping their Y band free gives every generated room a
+    House-box stairs start along X; an L-turn stair's second flight widens the band to its
+    whole bounding box.  Keeping that Y band free gives every generated room a
     deterministic door to the same circulation zone and, unlike a polygon-with-a-hole,
     remains representable by the current FloorPlan schema.
     """

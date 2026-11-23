@@ -1,16 +1,22 @@
 """Quick-start house massing wizard API."""
 
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.api.schemas import JobAccepted
-from app.engineering.house_box import HouseBoxRequest, StraightStairRequest
+from app.engineering.house_box import (
+    HouseBoxRequest,
+    LTurnStairRequest,
+    StairRequest,
+    StraightStairRequest,
+    stair_kind,
+)
 from app.engineering.house_text import HouseTextError, ParsedHouseText, parse_house_text
 from app.interior_materials import material_by_id
 from app.models.core import WorkspaceRole
@@ -21,12 +27,44 @@ router = APIRouter(tags=["house-design"])
 
 
 class StraightStairBody(BaseModel):
+    kind: Literal["straight"] = "straight"
     width_mm: float = Field(default=1_000, ge=700, le=2_000)
     tread_depth_mm: float = Field(default=280, ge=200, le=400)
     step_count: int = Field(default=17, ge=10, le=30)
     placement: Literal["left", "center", "right"] = "center"
     railing: bool = True
     material_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class LTurnStairBody(BaseModel):
+    """Two flights and one square quarter-turn landing; the landing counts as one riser.
+
+    Unknown fields are rejected so a straight-stair ``step_count`` cannot be silently ignored.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["l_turn"]
+    width_mm: float = Field(default=1_000, ge=700, le=2_000)
+    tread_depth_mm: float = Field(default=280, ge=200, le=400)
+    lower_step_count: int = Field(default=8, ge=3, le=26)
+    upper_step_count: int = Field(default=8, ge=3, le=26)
+    turn: Literal["left", "right"] = "left"
+    placement: Literal["left", "center", "right"] = "center"
+    railing: bool = True
+    material_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+StairBody = Annotated[
+    Annotated[StraightStairBody, Tag("straight")] | Annotated[LTurnStairBody, Tag("l_turn")],
+    Discriminator(stair_kind),
+]
+
+
+def _stair_request(body: StairBody) -> StairRequest:
+    if isinstance(body, LTurnStairBody):
+        return LTurnStairRequest(**body.model_dump())
+    return StraightStairRequest(**body.model_dump())
 
 
 class HouseBoxBody(BaseModel):
@@ -38,7 +76,7 @@ class HouseBoxBody(BaseModel):
     floor_height_mm: float = Field(ge=2_200, le=6_000)
     floors: int = Field(ge=1, le=3)
     shape: Literal["rectangle", "l_shape", "t_shape"] = "rectangle"
-    stair: StraightStairBody | None = None
+    stair: StairBody | None = None
 
 
 class HouseBoxAccepted(BaseModel):
@@ -64,9 +102,7 @@ def build_house_box(
             floor_height_mm=body.floor_height_mm,
             floors=body.floors,
             shape=body.shape,
-            stair=(
-                StraightStairRequest(**body.stair.model_dump()) if body.stair is not None else None
-            ),
+            stair=_stair_request(body.stair) if body.stair is not None else None,
         )
     except ValueError as exc:
         raise ValidationFailedError(str(exc)) from exc

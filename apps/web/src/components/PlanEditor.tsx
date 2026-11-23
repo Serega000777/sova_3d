@@ -23,6 +23,7 @@ import {
   planBounds,
   pointsBounds,
   roomArea,
+  stairPlanLines,
 } from "@physical-ai/contracts";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -153,12 +154,17 @@ function PlanContent({
         );
       })}
       {(plan.stairs ?? []).map((stair) => {
-        const bounds = pointsBounds(stair.outline);
-        if (!bounds) return null;
-        const direction = stair.role === "up" ? 1 : -1;
-        const startX = direction > 0 ? bounds.minX : bounds.maxX;
-        const endX = direction > 0 ? bounds.maxX : bounds.minX;
-        const centreY = (bounds.minY + bounds.maxY) / 2;
+        const lines = stairPlanLines(stair);
+        if (!lines || lines.walkline.length < 2) return null;
+        const [tipX, tipY] = lines.walkline[lines.walkline.length - 1]!;
+        const [tailX, tailY] = lines.walkline[lines.walkline.length - 2]!;
+        const length = Math.hypot(tipX - tailX, tipY - tailY) || 1;
+        const ux = (tipX - tailX) / length;
+        const uy = (tipY - tailY) / length;
+        // Straight stairs keep the label at mid-run; an L stair labels its landing.
+        const [labelX, labelY] = lines.walkline.length === 2
+          ? [(lines.walkline[0]![0] + tipX) / 2, (lines.walkline[0]![1] + tipY) / 2]
+          : lines.walkline[1]!;
         return (
           <g key={stair.id} style={{ pointerEvents: "none" }}>
             <polygon
@@ -168,19 +174,18 @@ function PlanContent({
               strokeWidth={2 * px}
               strokeDasharray={stair.role === "down" ? `${7 * px} ${4 * px}` : undefined}
             />
-            {Array.from({ length: stair.step_count + 1 }, (_, index) => {
-              const x = bounds.minX + (bounds.maxX - bounds.minX) * index / stair.step_count;
-              return <line key={index} x1={x} y1={bounds.minY} x2={x} y2={bounds.maxY} stroke={ink} strokeWidth={px} opacity={0.55} />;
-            })}
-            <line x1={startX} y1={centreY} x2={endX} y2={centreY} stroke={ink} strokeWidth={2 * px} />
+            {lines.treads.map(([a, b], index) => (
+              <line key={index} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={ink} strokeWidth={px} opacity={0.55} />
+            ))}
+            <polyline points={lines.walkline.map((point) => point.join(",")).join(" ")} fill="none" stroke={ink} strokeWidth={2 * px} />
             <path
-              d={`M ${endX - direction * 80 * px} ${centreY - 45 * px} L ${endX} ${centreY} L ${endX - direction * 80 * px} ${centreY + 45 * px}`}
+              d={`M ${tipX - ux * 80 * px - uy * 45 * px} ${tipY - uy * 80 * px + ux * 45 * px} L ${tipX} ${tipY} L ${tipX - ux * 80 * px + uy * 45 * px} ${tipY - uy * 80 * px - ux * 45 * px}`}
               fill="none"
               stroke={ink}
               strokeWidth={2 * px}
             />
-            <text x={(startX + endX) / 2} y={centreY - 70 * px} fill={ink} fontSize={11 * px} textAnchor="middle">
-              {stair.role === "up" ? "UP" : "DOWN"} · {stair.step_count}
+            <text x={labelX} y={labelY - 70 * px} fill={ink} fontSize={11 * px} textAnchor="middle">
+              {stair.role === "up" ? "UP" : "DOWN"} · {stair.step_count}{stair.kind === "l_turn" ? " · L" : ""}
             </text>
           </g>
         );
