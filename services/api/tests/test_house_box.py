@@ -16,19 +16,19 @@ from app.engineering.house_box import (
 from app.geometry.operations import CreateBox
 
 
-def test_rectangle_builds_one_box_with_total_floor_height() -> None:
+def test_single_floor_rectangle_keeps_one_legacy_box() -> None:
     plan = HouseBoxRequest(
         length_mm=12_000,
         width_mm=8_000,
         floor_height_mm=3_000,
-        floors=2,
+        floors=1,
         shape="rectangle",
     ).build()
 
     assert plan.expected_outputs == ["house"]
     assert [op.type for op in plan.operations] == ["create_box"]
     box = plan.operations[0]
-    assert (box.width_mm, box.depth_mm, box.height_mm) == (12_000, 8_000, 6_000)
+    assert (box.width_mm, box.depth_mm, box.height_mm) == (12_000, 8_000, 3_000)
 
 
 @pytest.mark.parametrize(("shape", "boxes", "unions"), [("l_shape", 2, 1), ("t_shape", 3, 2)])
@@ -44,6 +44,41 @@ def test_compound_shapes_fuse_multiple_boxes(shape: str, boxes: int, unions: int
     booleans = [op for op in plan.operations if op.type == "boolean"]
     assert len(booleans) == unions
     assert all(op.op == "fuse" and op.target == "house" for op in booleans)
+
+
+@pytest.mark.parametrize(
+    ("shape", "parts_per_level", "wall_count"),
+    [("rectangle", 1, 4), ("l_shape", 2, 6), ("t_shape", 3, 8)],
+)
+def test_multifloor_shapes_build_separate_exact_shells_and_aligned_plans(
+    shape: str, parts_per_level: int, wall_count: int
+) -> None:
+    request = HouseBoxRequest(
+        length_mm=12_000,
+        width_mm=9_000,
+        floor_height_mm=3_000,
+        floors=3,
+        shape=shape,  # type: ignore[arg-type]
+    )
+    plan = request.build()
+
+    assert plan.expected_outputs == ["floor_1", "floor_2", "floor_3", "roof"]
+    assert sum(operation.type == "shell" for operation in plan.operations) == 3
+    assert sum(operation.type == "create_box" for operation in plan.operations) == (
+        4 * parts_per_level
+    )
+    assert not any(
+        operation.type == "boolean" and operation.op == "cut" for operation in plan.operations
+    )
+    floors = floor_plans_from_house_box(
+        request, project_id="project", version_id="version", name="House"
+    )
+    assert [level.elevation_mm for level in floors.levels] == [0, 3_000, 6_000]
+    assert [len(level.plan.walls) for level in floors.levels] == [wall_count] * 3
+    assert all(
+        level.plan.rooms[0].outline == floors.levels[0].plan.rooms[0].outline
+        for level in floors.levels
+    )
 
 
 @pytest.mark.parametrize(

@@ -57,11 +57,17 @@ def test_house_box_creates_a_project_job_and_version(
     floor_plan = api_client.get(f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers)
     assert floor_plan.status_code == 200, floor_plan.text
     assert floor_plan.json() == result["floor_plan"]
-    legacy_floor_set = api_client.get(
-        f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers
-    )
-    assert legacy_floor_set.status_code == 200, legacy_floor_set.text
-    assert len(legacy_floor_set.json()["levels"]) == 1
+    floor_set = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert floor_set.status_code == 200, floor_set.text
+    assert [level["elevation_mm"] for level in floor_set.json()["levels"]] == [0, 3_000]
+    assert all(len(level["plan"]["walls"]) == 6 for level in floor_set.json()["levels"])
+    scene = api_client.get(f"/api/v1/models/{result['version_id']}/scene", headers=actor.headers)
+    assert scene.status_code == 200, scene.text
+    nodes = {node["id"]: node for node in scene.json()["nodes"]}
+    assert nodes["floor_1"]["parent_id"] == "floor_1_group"
+    assert nodes["floor_2"]["parent_id"] == "floor_2_group"
+    assert nodes["roof"]["parent_id"] == "roof_group"
+    assert not any(node_id.startswith("stair_") for node_id in nodes)
     takeoff_response = api_client.get(
         f"/api/v1/projects/{project_id}/construction-takeoff", headers=actor.headers
     )
@@ -87,7 +93,19 @@ def test_house_box_creates_a_project_job_and_version(
         .order_by(Operation.sequence_no)
         .all()
     )
-    assert [op.operation_type for op in logged] == ["create_box", "create_box", "boolean"]
+    assert [op.operation_type for op in logged] == [
+        "create_box",
+        "create_box",
+        "boolean",
+        "shell",
+        "create_box",
+        "create_box",
+        "boolean",
+        "shell",
+        "create_box",
+        "create_box",
+        "boolean",
+    ]
 
 
 def test_house_box_api_reports_dimension_errors(api_client: TestClient, actor: Actor) -> None:

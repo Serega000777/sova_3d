@@ -1,4 +1,4 @@
-# Item 26 — bounded multi-floor house and straight stair
+# Item 26 — bounded multi-floor house and stairs
 
 ## Acceptance boundary
 
@@ -17,6 +17,18 @@ It must produce, from the same immutable request:
 - one aligned 2D plan per floor with an `up` and/or `down` stair footprint.
 
 The existing one-floor and shape-only rectangle/L/T house paths remain backward compatible.
+
+## Repeated L/T multi-floor shells
+
+A two- or three-floor house without a stair now stores every rectangle, L or T level as a
+separate exact open-top shell at its measured elevation, plus a separate flat roof with the same
+validated footprint. The immutable scene contains one group and one shell object per level, so
+the existing visibility/cutaway controls work for non-rectangular houses too. The server stores
+one aligned 2D plan per level instead of collapsing the request to a legacy single plan.
+
+This path repeats the same footprint and floor height on every level. It does not infer stairs,
+shafts, openings, setbacks or different upper-storey contours. One-floor requests keep their
+historical single-body OperationPlan unchanged.
 
 ## Trusted contract
 
@@ -108,7 +120,7 @@ This is not a general staircase or building-information model. It does not claim
 
 - U-, winder or spiral stairs, or L stairs with unequal landing size or winder treads;
 - independently configured flights per transition;
-- arbitrary, L- or T-shaped multi-floor footprints;
+- stairs inside L- or T-shaped footprints, different upper-storey contours or setbacks;
 - pitched roofs in this multi-floor scene path;
 - floor-elevation-aware room auto-layout or furniture placement;
 - facade rebuilding of the multi-body scene (the existing facade endpoint rejects this lineage

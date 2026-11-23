@@ -432,16 +432,83 @@ def _opening_rects(request: HouseBoxRequest) -> list[Rect]:
     return [(x, y, x + run, y + float(stair.width_mm))]
 
 
-def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, object]], list[str]]:
-    """Build separate floor shells and exact stair flights for scene-level visibility."""
-    assert request.stair is not None
+def _shape_body_operations(
+    request: HouseBoxRequest,
+    *,
+    body_id: str,
+    height_mm: float,
+    z_mm: float,
+) -> list[dict[str, object]]:
+    """Build one exact footprint body at a measured elevation, preserving the canonical shape."""
     length = float(request.length_mm)
     width = float(request.width_mm)
+    if request.shape == "rectangle":
+        return [
+            _box(
+                body_id,
+                width_mm=length,
+                depth_mm=width,
+                height_mm=height_mm,
+                origin_mm=(0.0, 0.0, z_mm),
+            )
+        ]
+    if request.shape == "l_shape":
+        wing = f"{body_id}_side_wing"
+        return [
+            _box(
+                body_id,
+                width_mm=length,
+                depth_mm=width / 2,
+                height_mm=height_mm,
+                origin_mm=(0.0, 0.0, z_mm),
+            ),
+            _box(
+                wing,
+                width_mm=length / 2,
+                depth_mm=width,
+                height_mm=height_mm,
+                origin_mm=(0.0, 0.0, z_mm),
+            ),
+            _fuse(f"join_{wing}", target=body_id, tool=wing),
+        ]
+    third = length / 3
+    overlap = min(10.0, third / 100)
+    left = f"{body_id}_left_wing"
+    right = f"{body_id}_right_wing"
+    return [
+        _box(
+            body_id,
+            width_mm=third,
+            depth_mm=width,
+            height_mm=height_mm,
+            origin_mm=(third, 0.0, z_mm),
+        ),
+        _box(
+            left,
+            width_mm=third + overlap,
+            depth_mm=width / 3,
+            height_mm=height_mm,
+            origin_mm=(0.0, width * 2 / 3, z_mm),
+        ),
+        _box(
+            right,
+            width_mm=third + overlap,
+            depth_mm=width / 3,
+            height_mm=height_mm,
+            origin_mm=(length - third - overlap, width * 2 / 3, z_mm),
+        ),
+        _fuse(f"join_{left}", target=body_id, tool=left),
+        _fuse(f"join_{right}", target=body_id, tool=right),
+    ]
+
+
+def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, object]], list[str]]:
+    """Build separate footprint shells and optional exact stairs for scene-level visibility."""
     floor_height = float(request.floor_height_mm)
     stair = request.stair
     wall = WALL_MM
     opening_margin = OPENING_MARGIN_MM
-    openings = _opening_rects(request)
+    openings = _opening_rects(request) if stair is not None else []
     operations: list[dict[str, object]] = []
     outputs: list[str] = []
 
@@ -449,23 +516,22 @@ def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, obj
         floor_id = f"floor_{floor_index + 1}"
         z = floor_index * floor_height
         operations.extend(
-            [
-                _box(
-                    floor_id,
-                    width_mm=length,
-                    depth_mm=width,
-                    height_mm=floor_height,
-                    origin_mm=(0.0, 0.0, z),
-                ),
-                {
-                    "id": f"hollow_{floor_id}",
-                    "type": "shell",
-                    "schema_version": 1,
-                    "target": floor_id,
-                    "thickness_mm": wall,
-                    "open_face": {"kind": "face_by_normal", "axis": "z", "sign": "+"},
-                },
-            ]
+            _shape_body_operations(
+                request,
+                body_id=floor_id,
+                height_mm=floor_height,
+                z_mm=z,
+            )
+        )
+        operations.append(
+            {
+                "id": f"hollow_{floor_id}",
+                "type": "shell",
+                "schema_version": 1,
+                "target": floor_id,
+                "thickness_mm": wall,
+                "open_face": {"kind": "face_by_normal", "axis": "z", "sign": "+"},
+            }
         )
         if floor_index > 0:
             for opening_index, (min_x, min_y, max_x, max_y) in enumerate(openings):
@@ -487,17 +553,18 @@ def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, obj
                 )
         outputs.append(floor_id)
 
-    operations.append(
-        _box(
-            "roof",
-            width_mm=length,
-            depth_mm=width,
+    operations.extend(
+        _shape_body_operations(
+            request,
+            body_id="roof",
             height_mm=wall,
-            origin_mm=(0.0, 0.0, request.floors * floor_height),
+            z_mm=request.floors * floor_height,
         )
     )
     outputs.append("roof")
 
+    if stair is None:
+        return operations, outputs
     if isinstance(stair, LTurnStairRequest):
         layout = l_stair_layout(request)
         for floor_index in range(request.floors - 1):
@@ -614,6 +681,27 @@ def build(request: HouseBoxRequest) -> OperationPlan:
                     "Confirm every floor shell is a valid solid.",
                     "Confirm every upper floor has one opening aligned to the stair flight.",
                     "Confirm the top step reaches the exact floor-to-floor height.",
+                ],
+                "expected_outputs": outputs,
+            }
+        )
+
+    if request.floors > 1:
+        operations, outputs = _multifloor_operations(request)
+        return OperationPlan.model_validate(
+            {
+                "schema_version": 1,
+                "goal": f"{request.floors}-floor {request.shape} house with explicit floor shells",
+                "assumptions": [
+                    "All dimensions are millimetres.",
+                    "Every level repeats the same validated footprint and measured floor height.",
+                    "No stair, opening or inter-floor circulation is inferred.",
+                ],
+                "operations": operations,
+                "validation_steps": [
+                    "Confirm every floor shell is a valid solid at its exact elevation.",
+                    "Confirm the roof repeats the validated footprint.",
+                    "Confirm no stair or opening was inferred.",
                 ],
                 "expected_outputs": outputs,
             }

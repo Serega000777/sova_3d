@@ -65,7 +65,7 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
         plan_id=f"project-{project_id}-floor-1",
         name=str(ctx.job.input.get("label") or "House plan")[:200],
     ).model_dump(mode="json")
-    if request.stair is not None:
+    if request.stair is not None or request.floors > 1:
         missing = set(plan.expected_outputs) - set(executed.parts)
         if missing:
             raise JobFailureError(
@@ -88,11 +88,9 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                     metadata={**tag, "body": body_name, "kind": "brep"},
                 ),
             )
-        appearance = (
-            snapshot_for(material_by_id(request.stair.material_id))
-            if request.stair.material_id is not None
-            else None
-        )
+        appearance = None
+        if request.stair is not None and request.stair.material_id is not None:
+            appearance = snapshot_for(material_by_id(request.stair.material_id))
         nodes: list[dict[str, Any]] = []
         for floor_index in range(request.floors):
             group_id = f"floor_{floor_index + 1}_group"
@@ -125,7 +123,7 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                     },
                 ]
             )
-            if floor_index >= request.floors - 1:
+            if request.stair is None or floor_index >= request.floors - 1:
                 continue
             flight_prefix = f"stair_{floor_index + 1}_{floor_index + 2}"
             flight_body = f"{flight_prefix}_step_1"
