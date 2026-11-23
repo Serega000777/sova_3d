@@ -786,8 +786,7 @@ def _auto_layout_stair_rectangle(
     stair_points = [point for stair in plan.stairs for point in stair.outline]
     stair_min_x, stair_min_y, stair_max_x, stair_max_y = _bounds(stair_points)
     if not (
-        min_x <= stair_min_x < stair_max_x <= max_x
-        and min_y <= stair_min_y < stair_max_y <= max_y
+        min_x <= stair_min_x < stair_max_x <= max_x and min_y <= stair_min_y < stair_max_y <= max_y
     ):
         raise ValueError("the stair opening must stay inside the rectangular floor")
 
@@ -815,17 +814,14 @@ def _auto_layout_stair_rectangle(
     else:
         candidates: list[tuple[float, int, list[RoomRequirement], list[RoomRequirement]]] = []
         zone_areas = [
-            (bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) / 1_000_000
-            for bounds in zones
+            (bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) / 1_000_000 for bounds in zones
         ]
         for mask in range(1, (1 << room_count) - 1):
             first_requirements = [
                 item for index, item in enumerate(room_requirements) if mask & (1 << index)
             ]
             second_requirements = [
-                item
-                for index, item in enumerate(room_requirements)
-                if not mask & (1 << index)
+                item for index, item in enumerate(room_requirements) if not mask & (1 << index)
             ]
             groups = (first_requirements, second_requirements)
             if any(
@@ -917,11 +913,7 @@ def _auto_layout_stair_rectangle(
                 "rooms": rooms,
             }
         ),
-        kind=(
-            "typed_stair_corridor_v1"
-            if room_requirements is not None
-            else "stair_corridor_v1"
-        ),
+        kind=("typed_stair_corridor_v1" if room_requirements is not None else "stair_corridor_v1"),
         zone_room_counts=(zone_counts[0], zone_counts[1]) if len(zone_counts) == 2 else None,
     )
 

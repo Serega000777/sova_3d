@@ -263,9 +263,7 @@ def _proposal(body: HouseTextProposalBody, parsed: ParsedHouseText) -> HouseText
             for name, (label_ru, label_en, unit) in _TEXT_LABELS.items()
         ],
         total_height_mm=total,
-        footprint_area_m2=round(
-            request.length_mm * request.width_mm * area_ratio / 1_000_000, 3
-        ),
+        footprint_area_m2=round(request.length_mm * request.width_mm * area_ratio / 1_000_000, 3),
         summary_ru=ru,
         summary_en=en,
     )
