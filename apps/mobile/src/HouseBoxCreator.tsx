@@ -106,6 +106,16 @@ export function HouseBoxCreator({
     if (stairKind === "l_turn" && (2 * rise + dimensions.tread < 550 || 2 * rise + dimensions.tread > 700)) {
       return "Для Г-лестницы 2 × подъём + проступь должно быть 550–700 мм.";
     }
+    const footprintLength = stairKind === "straight"
+      ? dimensions.tread * dimensions.straightSteps
+      : dimensions.tread * dimensions.lowerSteps + dimensions.stairWidth;
+    const footprintWidth = stairKind === "straight"
+      ? dimensions.stairWidth
+      : dimensions.stairWidth + dimensions.tread * dimensions.upperSteps;
+    if (
+      footprintLength > dimensions.length - 700
+      || footprintWidth > dimensions.width - 700
+    ) return "Лестница и проёмы не помещаются с отступом 350 мм от стен.";
     return null;
   }, [addStair, stairAllowed, stairKind, dimensions]);
 
@@ -117,9 +127,9 @@ export function HouseBoxCreator({
     const stairDimensions = [
       dimensions.stairWidth,
       dimensions.tread,
-      dimensions.straightSteps,
-      dimensions.lowerSteps,
-      dimensions.upperSteps,
+      ...(stairKind === "straight"
+        ? [dimensions.straightSteps]
+        : [dimensions.lowerSteps, dimensions.upperSteps]),
     ];
     if (
       !label.trim()

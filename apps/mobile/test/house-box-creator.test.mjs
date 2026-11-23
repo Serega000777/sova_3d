@@ -20,6 +20,9 @@ test("mobile sends discriminated straight or L-turn stair parameters", () => {
   assert.match(creator, /upper_step_count: dimensions\.upperSteps/);
   assert.match(creator, /turn,[\s\S]+placement: "center"/);
   assert.match(creator, /2 \* rise \+ dimensions\.tread < 550/);
+  assert.match(creator, /footprintLength > dimensions\.length - 700/);
+  assert.match(creator, /footprintWidth > dimensions\.width - 700/);
+  assert.match(creator, /stairKind === "straight"[\s\S]+\[dimensions\.straightSteps\][\s\S]+\[dimensions\.lowerSteps, dimensions\.upperSteps\]/);
   assert.match(creator, /Лестницы пока доступны только для прямоугольного дома/);
 });
 
