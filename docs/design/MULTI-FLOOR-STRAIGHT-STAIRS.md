@@ -30,6 +30,14 @@ This path repeats the same footprint and floor height on every level. It does no
 shafts, openings, setbacks or different upper-storey contours. One-floor requests keep their
 historical single-body OperationPlan unchanged.
 
+Web auto-layout can apply one room program (typed when composition mode is enabled) to every
+stored floor. It calls the existing exact-floor endpoint sequentially, always using the immutable
+version returned by the previous layout or furniture job as the next base. Each floor is still laid out and validated independently,
+so its stair footprint and measured elevation remain authoritative. A later failure does not roll
+back earlier immutable versions; the UI reports the completed-floor count and keeps the latest
+successful version active. This is coordinated repetition, not a cross-floor structural optimizer:
+it does not align partitions, wet stacks or load paths between levels.
+
 ## Trusted contract
 
 `HouseBoxRequest.stair` is optional and accepts only:
@@ -122,7 +130,8 @@ This is not a general staircase or building-information model. It does not claim
 - independently configured flights per transition;
 - stairs inside L- or T-shaped footprints, different upper-storey contours or setbacks;
 - pitched roofs in this multi-floor scene path;
-- floor-elevation-aware room auto-layout or furniture placement;
+- one atomic all-floor transaction (web coordinates separate immutable per-floor steps);
+- structural cross-floor alignment of partitions, wet stacks or load paths;
 - facade rebuilding of the multi-body scene (the existing facade endpoint rejects this lineage
   fail closed instead of silently replacing it with its historical single shell);
 - structural-code compliance (the 550–700 mm stride is a comfort rule, not a code check), stringers, headroom proof or baluster detailing;

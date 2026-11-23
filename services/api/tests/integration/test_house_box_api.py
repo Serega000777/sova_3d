@@ -209,10 +209,26 @@ def test_multifloor_stair_creates_aligned_plans_and_floor_scene_groups(
     assert revised["levels"][0]["plan"] == floors["levels"][0]["plan"]
     assert revised["levels"][1]["plan"] == laid_out["floor_plan"]
 
+    lower_layout = api_client.post(
+        f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
+        json={"base_version_id": laid_out["version_id"], "floor_index": 0, "room_count": 3},
+        headers=actor.headers,
+    )
+    assert lower_layout.status_code == 201, lower_layout.text
+    all_floors_version_id = lower_layout.json()["version_id"]
+    all_floors = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert all_floors.status_code == 200, all_floors.text
+    assert all_floors.json()["version_id"] == all_floors_version_id
+    assert [len(level["plan"]["rooms"]) for level in all_floors.json()["levels"]] == [3, 3]
+    assert [level["plan"]["stairs"][0]["role"] for level in all_floors.json()["levels"]] == [
+        "up",
+        "down",
+    ]
+
     missing_floor = api_client.post(
         f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
         json={
-            "base_version_id": laid_out["version_id"],
+            "base_version_id": all_floors_version_id,
             "floor_index": 2,
             "room_count": 2,
         },
@@ -224,7 +240,7 @@ def test_multifloor_stair_creates_aligned_plans_and_floor_scene_groups(
     elevated_furniture = api_client.post(
         f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
         json={
-            "base_version_id": laid_out["version_id"],
+            "base_version_id": all_floors_version_id,
             "floor_index": 1,
             "room_count": 2,
             "auto_furnish": True,

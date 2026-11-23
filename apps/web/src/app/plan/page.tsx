@@ -171,6 +171,7 @@ export default function PlanPage() {
   const [layoutRooms, setLayoutRooms] = useState(3);
   const [typedLayout, setTypedLayout] = useState(true);
   const [autoFurnish, setAutoFurnish] = useState(true);
+  const [layoutAllFloors, setLayoutAllFloors] = useState(false);
   const [roomComposition, setRoomComposition] = useState<RoomCompositionDraft[]>([
     { kind: "bedroom", minAreaM2: 10, maxAreaM2: 40 },
     { kind: "kitchen_living", minAreaM2: 18, maxAreaM2: 50 },
@@ -632,6 +633,8 @@ export default function PlanPage() {
     if (!client || !projectId || !baseVersionId || layoutBusy) return;
     setLayoutBusy(true);
     setMessage(null);
+    let completedFloors = 0;
+    let currentVersionId = baseVersionId;
     try {
       if (
         typedLayout
@@ -660,47 +663,73 @@ export default function PlanPage() {
           })
         : null;
       const requestedRoomCount = requirements?.length ?? layoutRooms;
-      const result = await client.autoLayoutFloorPlan(projectId, {
-        base_version_id: baseVersionId,
-        floor_index: activeFloor?.index ?? 0,
-        room_count: requestedRoomCount,
-        partition_thickness_mm: 120,
-        door_width_mm: 900,
-        room_requirements: requirements,
-        auto_furnish: typedLayout && autoFurnish,
-      });
-      const parsed = parseFloorPlan(result.floor_plan);
-      if (!parsed) throw new Error("invalid floor plan");
-      choosePlan(parsed);
-      setFloorLevels((levels) => levels.map((level) => (
-        level.index === (activeFloor?.index ?? 0) ? { ...level, plan: parsed } : level
-      )));
-      setBaseVersionId(result.version_id);
-      let currentVersionId = result.version_id;
+      const activeFloorIndex = activeFloor?.index ?? 0;
+      const targetFloorIndexes = layoutAllFloors && floorLevels.length > 1
+        ? floorLevels.map((level) => level.index).sort((left, right) => left - right)
+        : [activeFloorIndex];
       let placed = 0;
-      if (result.furniture_job_id) {
-        setMessage(ru ? "Расставляем мебель по типам комнат…" : "Placing furniture by room type…");
-        const job = await client.waitForJob(result.furniture_job_id, { intervalMs: 500 });
-        if (job.status !== "succeeded") {
-          const error = job.error as { message?: string } | null;
-          throw new Error(error?.message ?? (ru ? "Не удалось расставить мебель." : "Could not place furniture."));
+      for (const floorIndex of targetFloorIndexes) {
+        if (targetFloorIndexes.length > 1) {
+          setMessage(
+            ru
+              ? `Планируем этаж ${floorIndex + 1} из ${targetFloorIndexes.length}…`
+              : `Planning floor ${floorIndex + 1} of ${targetFloorIndexes.length}…`,
+          );
         }
-        const jobResult = job.result as { version_id?: unknown; placed?: unknown } | null;
-        if (typeof jobResult?.version_id !== "string") {
-          throw new Error(ru ? "Сервер не вернул версию с мебелью." : "The server did not return the furnished version.");
+        const result = await client.autoLayoutFloorPlan(projectId, {
+          base_version_id: currentVersionId,
+          floor_index: floorIndex,
+          room_count: requestedRoomCount,
+          partition_thickness_mm: 120,
+          door_width_mm: 900,
+          room_requirements: requirements,
+          auto_furnish: typedLayout && autoFurnish,
+        });
+        const parsed = parseFloorPlan(result.floor_plan);
+        if (!parsed) throw new Error(ru ? "Сервер вернул некорректный план." : "The server returned an invalid floor plan.");
+        currentVersionId = result.version_id;
+        completedFloors += 1;
+        setBaseVersionId(currentVersionId);
+        setFloorLevels((levels) => levels.map((level) => (
+          level.index === floorIndex ? { ...level, plan: parsed } : level
+        )));
+        if (floorIndex === activeFloorIndex) choosePlan(parsed);
+        if (result.furniture_job_id) {
+          setMessage(
+            ru
+              ? `Расставляем мебель на этаже ${floorIndex + 1}…`
+              : `Placing furniture on floor ${floorIndex + 1}…`,
+          );
+          const job = await client.waitForJob(result.furniture_job_id, { intervalMs: 500 });
+          if (job.status !== "succeeded") {
+            const error = job.error as { message?: string } | null;
+            throw new Error(error?.message ?? (ru ? "Не удалось расставить мебель." : "Could not place furniture."));
+          }
+          const jobResult = job.result as { version_id?: unknown; placed?: unknown } | null;
+          if (typeof jobResult?.version_id !== "string") {
+            throw new Error(ru ? "Сервер не вернул версию с мебелью." : "The server did not return the furnished version.");
+          }
+          currentVersionId = jobResult.version_id;
+          setBaseVersionId(currentVersionId);
+          placed += typeof jobResult.placed === "number" ? jobResult.placed : 0;
         }
-        currentVersionId = jobResult.version_id;
-        placed = typeof jobResult.placed === "number" ? jobResult.placed : 0;
       }
       setBaseVersionId(currentVersionId);
       setFitRevision((value) => value + 1);
       setMessage(
         ru
-          ? `Создана версия v${result.sequence_no}: ${requestedRoomCount} комнат${placed ? `, мебели: ${placed}` : ""}.`
-          : `Created v${result.sequence_no}: ${requestedRoomCount} rooms${placed ? `, furniture: ${placed}` : ""}.`,
+          ? `Создано: ${requestedRoomCount} комнат × ${completedFloors} эт.${placed ? `, мебели: ${placed}` : ""}.`
+          : `Created: ${requestedRoomCount} rooms × ${completedFloors} floor(s)${placed ? `, furniture: ${placed}` : ""}.`,
       );
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : String(reason));
+      const detail = reason instanceof Error ? reason.message : String(reason);
+      setMessage(
+        completedFloors > 0 && layoutAllFloors
+          ? ru
+            ? `Сохранено этажей: ${completedFloors}. Следующий этаж не изменён: ${detail}`
+            : `Saved floors: ${completedFloors}. The next floor was not changed: ${detail}`
+          : detail,
+      );
     } finally {
       setLayoutBusy(false);
     }
@@ -935,6 +964,16 @@ export default function PlanPage() {
                   {ru ? "комн." : "rooms"}
                 </label>
               )}
+              {multiFloor && (
+                <label className="plan-field" title={ru ? "Одна программа комнат применяется последовательно к каждому этажу; каждый шаг создаёт immutable-версию" : "One room program is applied sequentially to every floor; each step creates an immutable version"}>
+                  <input
+                    type="checkbox"
+                    checked={layoutAllFloors}
+                    onChange={(event) => setLayoutAllFloors(event.target.checked)}
+                  />
+                  {ru ? "Одинаковый состав на всех этажах" : "Same program on every floor"}
+                </label>
+              )}
               <button type="button" className="btn primary" disabled={layoutBusy} onClick={() => void autoLayout()}>
                 {layoutBusy ? (ru ? "Планируем…" : "Planning…") : ru ? "Создать комнаты" : "Create rooms"}
               </button>
@@ -953,9 +992,13 @@ export default function PlanPage() {
                   </div>
                   {multiFloor && (
                     <span className="muted">
-                      {ru
-                        ? `Комнаты и автомеблировка относятся только к выбранному этажу (${activeFloor?.elevation_mm.toFixed(0) ?? 0} мм); лестница и остальные этажи сохранятся.`
-                        : `Rooms and auto-furnishing affect only the selected floor (${activeFloor?.elevation_mm.toFixed(0) ?? 0} mm); the stair and other floors stay unchanged.`}
+                      {layoutAllFloors
+                        ? ru
+                          ? "Одна типизированная программа применяется отдельно к каждому этажу; лестницы сохраняются, мебель проверяется на своём Z. При ошибке уже созданные immutable-версии остаются сохранены."
+                          : "The same typed program is applied separately to every floor; stairs stay intact and furniture is checked at its own Z. If a step fails, completed immutable versions remain saved."
+                        : ru
+                          ? `Комнаты и автомеблировка относятся только к выбранному этажу (${activeFloor?.elevation_mm.toFixed(0) ?? 0} мм); лестница и остальные этажи сохранятся.`
+                          : `Rooms and auto-furnishing affect only the selected floor (${activeFloor?.elevation_mm.toFixed(0) ?? 0} mm); the stair and other floors stay unchanged.`}
                     </span>
                   )}
                   {roomComposition.map((room, index) => (

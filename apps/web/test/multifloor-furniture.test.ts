@@ -11,6 +11,18 @@ test("web places and auto-furnishes on the selected measured floor", () => {
   assert.doesNotMatch(planPage, /furnitureDropDisabled=.*multiFloor/);
 });
 
+test("one room program can be applied sequentially to every immutable floor", () => {
+  assert.match(planPage, /const \[layoutAllFloors, setLayoutAllFloors\] = useState\(false\)/);
+  assert.match(planPage, /floorLevels\.map\(\(level\) => level\.index\)\.sort/);
+  assert.match(planPage, /for \(const floorIndex of targetFloorIndexes\)/);
+  assert.match(planPage, /base_version_id: currentVersionId/);
+  assert.match(planPage, /currentVersionId = result\.version_id/);
+  assert.match(planPage, /currentVersionId = jobResult\.version_id/);
+  assert.match(planPage, /level\.index === floorIndex \? \{ \.\.\.level, plan: parsed \} : level/);
+  assert.match(planPage, /completedFloors > 0 && layoutAllFloors/);
+  assert.match(planPage, /уже созданные immutable-версии остаются сохранены/);
+});
+
 test("web plan overlay shows only furniture from the active floor elevation", () => {
   assert.match(
     planPage,
