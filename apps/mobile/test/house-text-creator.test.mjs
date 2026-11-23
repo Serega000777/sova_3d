@@ -22,7 +22,7 @@ test("reference 98 previews the exact proposed massing without inventing a facad
   assert.match(source, /proposal\.request\.width_mm/);
   assert.match(source, /Точное пятно server proposal/);
   assert.match(source, /Это схема массы, не фотореалистичный фасад/);
-  assert.match(source, /прямоугольная, Г- и Т-образная массы/);
+  assert.match(source, /прямоугольный, Г- и Т-образный контуры/);
 });
 
 test("editing the prompt invalidates the exact server proposal", () => {
@@ -36,6 +36,8 @@ test("editing the prompt invalidates the exact server proposal", () => {
 test("house-design scenario exposes the mobile creator and routes to the immutable project", () => {
   assert.match(projects, /goal\.id === "house_design"/);
   assert.match(projects, /<HouseTextCreator/);
+  assert.match(projects, /<HouseBoxCreator/);
+  assert.match(projects, /houseMode === "params"/);
   assert.match(projects, /houseMode === "text"/);
   assert.match(projects, /houseMode === "blank"/);
   assert.match(projects, /router\.push\(`\/project\/\$\{projectId\}\?goal=house_design`\)/);

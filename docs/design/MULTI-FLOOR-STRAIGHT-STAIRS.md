@@ -38,6 +38,12 @@ back earlier immutable versions; the UI reports the completed-floor count and ke
 successful version active. This is coordinated repetition, not a cross-floor structural optimizer:
 it does not align partitions, wet stacks or load paths between levels.
 
+Mobile's house scenario now offers the same direct typed creator in addition to the existing
+read-only text proposal flow. It submits bounded rectangle/L/T dimensions, one to three floors,
+and optional straight or L-turn stairs only for a rectangular multi-floor house. The client checks
+dimension, riser and L-stride bounds for immediate feedback; the API and worker still revalidate
+the exact request before the immutable job is accepted and executed.
+
 ## Trusted contract
 
 `HouseBoxRequest.stair` is optional and accepts only:
@@ -135,7 +141,6 @@ This is not a general staircase or building-information model. It does not claim
 - facade rebuilding of the multi-body scene (the existing facade endpoint rejects this lineage
   fail closed instead of silently replacing it with its historical single shell);
 - structural-code compliance (the 550–700 mm stride is a comfort rule, not a code check), stringers, headroom proof or baluster detailing;
-- a mobile creator;
 - physical browser/device visual acceptance.
 
 These limits are surfaced in the creator and plan UI rather than being inferred from missing

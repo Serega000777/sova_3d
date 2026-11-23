@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useCreateFlow } from "@/src/CreateFlow";
 import { AnalyticsIcon, ArrowLeftIcon, ArrowRightIcon, CharacterIcon, CubeIcon, DrawingIcon, GameIcon, HousePlanIcon, LayersIcon, MechanicalIcon, PhoneStandIcon, PlusIcon, ScanIcon } from "@/src/AppIcons";
 import { HouseTextCreator } from "@/src/HouseTextCreator";
+import { HouseBoxCreator } from "@/src/HouseBoxCreator";
 import { useIsTablet } from "@/src/layout";
 import { ProjectLibrarySkeleton } from "@/src/LoadingSkeleton";
 import { MotionPressable } from "@/src/MotionPressable";
@@ -91,7 +92,7 @@ function ProjectsHome() {
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const [houseMode, setHouseMode] = useState<"text" | "blank">("text");
+  const [houseMode, setHouseMode] = useState<"params" | "text" | "blank">("params");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const goal = getProjectGoal(goalId);
@@ -110,7 +111,7 @@ function ProjectsHome() {
     }
     setGoalId(id);
     setName(chosen.defaultName.ru);
-    setHouseMode("text");
+    setHouseMode("params");
     setError(null);
   }
 
@@ -284,6 +285,19 @@ function ProjectsHome() {
               <Pressable
                 style={[
                   styles.chip,
+                  houseMode === "params" && {
+                    borderColor: colors.accent,
+                    backgroundColor: colors.accentWash,
+                  },
+                ]}
+                disabled={creating}
+                onPress={() => setHouseMode("params")}
+              >
+                <Text style={styles.chipText}>По параметрам</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.chip,
                   houseMode === "text" && {
                     borderColor: colors.accent,
                     backgroundColor: colors.accentWash,
@@ -308,6 +322,17 @@ function ProjectsHome() {
                 <Text style={styles.chipText}>Пустой проект</Text>
               </Pressable>
             </View>
+          ) : null}
+          {goal.id === "house_design" && houseMode === "params" && client ? (
+            <HouseBoxCreator
+              client={client}
+              workspaceId={session.workspaceId}
+              onCreated={(projectId) => router.push(`/project/${projectId}?goal=house_design`)}
+              onBack={() => {
+                setGoalId(null);
+                setName("");
+              }}
+            />
           ) : null}
           {goal.id === "house_design" && houseMode === "text" && client ? (
             <HouseTextCreator
