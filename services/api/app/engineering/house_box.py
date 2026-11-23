@@ -15,6 +15,7 @@ HouseShape = Literal["rectangle", "l_shape", "t_shape"]
 HouseLength = Annotated[float, Field(ge=2_000, le=50_000)]
 FloorHeight = Annotated[float, Field(ge=2_200, le=6_000)]
 FloorCount = Annotated[int, Field(ge=1, le=3)]
+UpperFloorSetback = Annotated[float, Field(ge=0, le=10_000)]
 StairWidth = Annotated[float, Field(ge=700, le=2_000)]
 StairTread = Annotated[float, Field(ge=200, le=400)]
 StairSteps = Annotated[int, Field(ge=10, le=30)]
@@ -119,8 +120,22 @@ class HouseBoxRequest:
     floors: FloorCount
     shape: HouseShape = "rectangle"
     stair: StairRequest | None = None
+    upper_floor_setback_mm: UpperFloorSetback = 0
 
     def __post_init__(self) -> None:
+        setback = float(self.upper_floor_setback_mm)
+        if setback:
+            if self.floors < 2:
+                raise ValueError("an upper-floor setback requires at least two floors")
+            if self.shape != "rectangle":
+                raise ValueError("the bounded upper-floor setback requires a rectangular house")
+            if (
+                float(self.length_mm) - 2 * setback < 2_000
+                or float(self.width_mm) - 2 * setback < 2_000
+            ):
+                raise ValueError(
+                    "the setback must leave every upper floor at least 2000 mm wide and long"
+                )
         if self.stair is None:
             return
         if self.floors < 2:
@@ -144,11 +159,13 @@ class HouseBoxRequest:
                 l_stair_layout(self)
             else:
                 u_stair_layout(self)
+            _validate_stair_against_upper_floor(self)
             return
         rise = float(self.floor_height_mm) / self.stair.step_count
         if not 120 <= rise <= 220:
             raise ValueError("floor height divided by step count must produce a 120-220 mm rise")
         _stair_origin(self)
+        _validate_stair_against_upper_floor(self)
 
     def build(self) -> OperationPlan:
         return build(self)
@@ -209,6 +226,32 @@ def _stair_origin(request: HouseBoxRequest) -> tuple[float, float]:
 
 
 Rect = tuple[float, float, float, float]  # min_x, min_y, max_x, max_y
+
+
+def floor_rect(request: HouseBoxRequest, floor_index: int) -> Rect:
+    """Return the trusted aligned rectangle for one floor (or the roof at ``floors``)."""
+    inset = float(request.upper_floor_setback_mm) if floor_index > 0 else 0.0
+    return (
+        inset,
+        inset,
+        float(request.length_mm) - inset,
+        float(request.width_mm) - inset,
+    )
+
+
+def _validate_stair_against_upper_floor(request: HouseBoxRequest) -> None:
+    """Fail closed when a stair/shaft leaves the reduced upper-floor footprint."""
+    if not request.upper_floor_setback_mm or request.stair is None:
+        return
+    min_floor_x, min_floor_y, max_floor_x, max_floor_y = floor_rect(request, 1)
+    for min_x, min_y, max_x, max_y in _opening_rects(request):
+        if (
+            min_x < min_floor_x + STAIR_CLEARANCE_MM
+            or min_y < min_floor_y + STAIR_CLEARANCE_MM
+            or max_x > max_floor_x - STAIR_CLEARANCE_MM
+            or max_y > max_floor_y - STAIR_CLEARANCE_MM
+        ):
+            raise ValueError("the stair opening does not fit inside the setback upper floor")
 
 
 @plain_dataclass(frozen=True, slots=True)
@@ -675,10 +718,12 @@ def _shape_body_operations(
     body_id: str,
     height_mm: float,
     z_mm: float,
+    footprint_index: int = 0,
 ) -> list[dict[str, object]]:
     """Build one exact footprint body at a measured elevation, preserving the canonical shape."""
-    length = float(request.length_mm)
-    width = float(request.width_mm)
+    min_x, min_y, max_x, max_y = floor_rect(request, footprint_index)
+    length = max_x - min_x
+    width = max_y - min_y
     if request.shape == "rectangle":
         return [
             _box(
@@ -686,7 +731,7 @@ def _shape_body_operations(
                 width_mm=length,
                 depth_mm=width,
                 height_mm=height_mm,
-                origin_mm=(0.0, 0.0, z_mm),
+                origin_mm=(min_x, min_y, z_mm),
             )
         ]
     if request.shape == "l_shape":
@@ -758,6 +803,7 @@ def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, obj
                 body_id=floor_id,
                 height_mm=floor_height,
                 z_mm=z,
+                footprint_index=floor_index,
             )
         )
         operations.append(
@@ -796,6 +842,7 @@ def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, obj
             body_id="roof",
             height_mm=wall,
             z_mm=request.floors * floor_height,
+            footprint_index=request.floors,
         )
     )
     outputs.append("roof")
@@ -946,7 +993,14 @@ def build(request: HouseBoxRequest) -> OperationPlan:
                 "goal": f"{request.floors}-floor {request.shape} house with explicit floor shells",
                 "assumptions": [
                     "All dimensions are millimetres.",
-                    "Every level repeats the same validated footprint and measured floor height.",
+                    (
+                        "Upper levels and the roof use the validated symmetric setback."
+                        if request.upper_floor_setback_mm
+                        else (
+                            "Every level repeats the same validated footprint and measured "
+                            "floor height."
+                        )
+                    ),
                     "No stair, opening or inter-floor circulation is inferred.",
                 ],
                 "operations": operations,

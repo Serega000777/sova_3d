@@ -495,3 +495,65 @@ def test_invalid_u_turn_stairs_fail_before_kernel(
 ) -> None:
     with pytest.raises(ValidationError, match=message):
         _u_request(house=house, **stair)
+
+
+def test_upper_floor_setback_offsets_shell_roof_and_floor_plans() -> None:
+    request = HouseBoxRequest(
+        length_mm=12_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=3,
+        upper_floor_setback_mm=500,
+    )
+    plan = request.build()
+    boxes = {op.id: op for op in plan.operations if isinstance(op, CreateBox)}
+    assert boxes["floor_1"].origin_mm == (0.0, 0.0, 0.0)
+    assert boxes["floor_2"].origin_mm == (500.0, 500.0, 3_000.0)
+    assert (boxes["floor_2"].width_mm, boxes["floor_2"].depth_mm) == (11_000.0, 7_000.0)
+    assert boxes["floor_3"].origin_mm == (500.0, 500.0, 6_000.0)
+    assert boxes["roof"].origin_mm == (500.0, 500.0, 9_000.0)
+
+    floors = floor_plans_from_house_box(
+        request, project_id="project", version_id="version", name="House"
+    )
+    assert floors.levels[0].plan.rooms[0].outline[0] == (0.0, 0.0)
+    assert floors.levels[1].plan.rooms[0].outline == [
+        (500.0, 500.0),
+        (11_500.0, 500.0),
+        (11_500.0, 7_500.0),
+        (500.0, 7_500.0),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"floors": 1, "upper_floor_setback_mm": 200}, "at least two floors"),
+        ({"shape": "l_shape", "upper_floor_setback_mm": 200}, "rectangular house"),
+        ({"length_mm": 4_000, "upper_floor_setback_mm": 1_001}, "at least 2000 mm"),
+    ],
+)
+def test_invalid_upper_floor_setback_fails_before_kernel(
+    values: dict[str, object], message: str
+) -> None:
+    request = {
+        "length_mm": 12_000,
+        "width_mm": 8_000,
+        "floor_height_mm": 3_000,
+        "floors": 2,
+        **values,
+    }
+    with pytest.raises(ValidationError, match=message):
+        HouseBoxRequest(**request)  # type: ignore[arg-type]
+
+
+def test_stair_must_fit_inside_setback_upper_floor() -> None:
+    with pytest.raises(ValidationError, match="does not fit inside the setback upper floor"):
+        HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=2,
+            upper_floor_setback_mm=1_500,
+            stair=StraightStairRequest(placement="left"),
+        )

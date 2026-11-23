@@ -19,7 +19,9 @@ test("the house-box wizard submits discriminated straight, L-turn or U-turn stai
   assert.match(wizard, /lowerSteps \+ upperSteps \+ 1/);
   assert.match(wizard, /2 \* uFlightSteps \+ 1/);
   assert.match(wizard, /strideMm < 550 \|\| strideMm > 700/);
-  assert.match(wizard, /disabled=\{busy \|\| stairInvalid\}/);
+  assert.match(wizard, /disabled=\{busy \|\| stairInvalid \|\| setbackInvalid\}/);
+  assert.match(wizard, /upper_floor_setback_mm: setbackEnabled \? upperFloorSetbackMm : 0/);
+  assert.match(wizard, /lengthMm - 2 \* upperFloorSetbackMm < 2_000/);
 });
 
 test("the shared plan helper draws a U-turn through both parallel flights", () => {

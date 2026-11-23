@@ -25240,6 +25240,13 @@
               }
             ],
             "title": "Stair"
+          },
+          "upper_floor_setback_mm": {
+            "type": "number",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Upper Floor Setback Mm",
+            "default": 0
           }
         },
         "type": "object",

@@ -74,6 +74,7 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
         "floors": request.floors,
         "shape": request.shape,
         "stair": asdict(request.stair) if request.stair is not None else None,
+        "upper_floor_setback_mm": request.upper_floor_setback_mm,
     }
     floor_plan = floor_plan_from_house_box(
         request,

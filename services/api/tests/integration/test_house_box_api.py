@@ -108,6 +108,45 @@ def test_house_box_creates_a_project_job_and_version(
     ]
 
 
+def test_upper_floor_setback_persists_aligned_exact_plans(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    response = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 3,
+            "shape": "rectangle",
+            "upper_floor_setback_mm": 500,
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    project_id = response.json()["project_id"]
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    assert result["house_box"]["request"]["upper_floor_setback_mm"] == 500
+
+    floor_set = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert floor_set.status_code == 200, floor_set.text
+    levels = floor_set.json()["levels"]
+    assert levels[0]["plan"]["rooms"][0]["outline"][0] == [0, 0]
+    assert levels[1]["plan"]["rooms"][0]["outline"] == [
+        [500, 500],
+        [11_500, 500],
+        [11_500, 7_500],
+        [500, 7_500],
+    ]
+    assert levels[2]["plan"]["rooms"][0]["outline"] == levels[1]["plan"]["rooms"][0]["outline"]
+
+
 def test_house_box_api_reports_dimension_errors(api_client: TestClient, actor: Actor) -> None:
     response = api_client.post(
         "/api/v1/house-boxes",
@@ -433,6 +472,16 @@ def test_l_turn_stair_fails_closed_before_enqueue(api_client: TestClient, actor:
         ({**base, "width_mm": 2_600, "stair": u_stair}, "do not fit"),
         ({**base, "stair": {**u_stair, "flight_step_count": 4}}, "flight_step_count"),
         ({**base, "stair": {**u_stair, "step_count": 17}}, "step_count"),
+        ({**base, "floors": 1, "upper_floor_setback_mm": 200}, "at least two floors"),
+        ({**base, "shape": "l_shape", "upper_floor_setback_mm": 200}, "rectangular house"),
+        (
+            {
+                **base,
+                "upper_floor_setback_mm": 1_500,
+                "stair": {"kind": "straight", "placement": "left"},
+            },
+            "does not fit inside the setback upper floor",
+        ),
     ]
     for payload, message in cases:
         rejected = api_client.post("/api/v1/house-boxes", json=payload, headers=actor.headers)

@@ -18,6 +18,7 @@ from app.engineering.house_box import (
     LTurnStairRequest,
     UTurnStairRequest,
     _stair_origin,
+    floor_rect,
     l_stair_layout,
     u_stair_layout,
 )
@@ -162,12 +163,20 @@ def _walls_from_outline(outline: list[Point], thickness_mm: float) -> list[PlanW
     ]
 
 
-def floor_plan_from_house_box(request: HouseBoxRequest, *, plan_id: str, name: str) -> FloorPlan:
+def floor_plan_from_house_box(
+    request: HouseBoxRequest, *, plan_id: str, name: str, floor_index: int = 0
+) -> FloorPlan:
     """Project the deterministic massing shape onto the ground plane."""
     length = float(request.length_mm)
     width = float(request.width_mm)
     if request.shape == "rectangle":
-        outline: list[Point] = [(0.0, 0.0), (length, 0.0), (length, width), (0.0, width)]
+        min_x, min_y, max_x, max_y = floor_rect(request, floor_index)
+        outline: list[Point] = [
+            (min_x, min_y),
+            (max_x, min_y),
+            (max_x, max_y),
+            (min_x, max_y),
+        ]
     elif request.shape == "l_shape":
         outline = [
             (0.0, 0.0),
@@ -273,6 +282,7 @@ def floor_plans_from_house_box(
             request,
             plan_id=f"project-{project_id}-floor-{floor_index + 1}",
             name=f"{name} · Floor {floor_index + 1}",
+            floor_index=floor_index,
         )
         if stair is not None and stair_fields is not None:
             common = {

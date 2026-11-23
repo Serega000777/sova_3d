@@ -128,16 +128,31 @@ Real OCCT 7.8.1 (`physical-ai-geometry:multifloor-shell`, no kernel source chang
 the 153-operation maximum plan and a two-floor right-turn plan: every floor, roof, flight and rail
 body was a valid single solid, and each flight with its landing fused into one solid.
 
+## Symmetric upper-floor setback follow-up
+
+Rectangle houses with two or three floors may declare one `upper_floor_setback_mm` from 0 to
+10,000 mm. Zero preserves the historical plan byte-for-byte. A positive value symmetrically
+insets every level above the ground floor and the flat roof on X and Y. The remaining upper
+rectangle must be at least 2,000 × 2,000 mm; L/T shapes and one-floor houses fail closed instead
+of silently ignoring the field.
+
+Exact shells are created at the inset world-space origin, and each stored 2D floor plan uses the
+same measured outline, so floor tabs no longer pretend that a setback level repeats the ground
+footprint. If a stair is present, its trusted opening must retain the 350 mm clearance inside the
+smaller upper rectangle before the job is accepted and again when the worker restores the request.
+This is geometric vertical alignment, not a claim that partitions, columns, wet stacks or load
+paths have been structurally engineered.
+
 ## Explicit limits
 
 This is not a general staircase or building-information model. It does not claim:
 
 - U-, winder or spiral stairs, or L stairs with unequal landing size or winder treads;
 - independently configured flights per transition;
-- stairs inside L- or T-shaped footprints, different upper-storey contours or setbacks;
+- stairs inside L- or T-shaped footprints, asymmetric/per-level setbacks or shape changes;
 - pitched roofs in this multi-floor scene path;
 - one atomic all-floor transaction (web coordinates separate immutable per-floor steps);
-- structural cross-floor alignment of partitions, wet stacks or load paths;
+- structural cross-floor alignment of partitions, columns, wet stacks or load paths;
 - facade rebuilding of the multi-body scene (the existing facade endpoint rejects this lineage
   fail closed instead of silently replacing it with its historical single shell);
 - structural-code compliance (the 550–700 mm stride is a comfort rule, not a code check), stringers, headroom proof or baluster detailing;

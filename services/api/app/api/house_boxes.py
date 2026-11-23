@@ -97,6 +97,7 @@ class HouseBoxBody(BaseModel):
     floors: int = Field(ge=1, le=3)
     shape: Literal["rectangle", "l_shape", "t_shape"] = "rectangle"
     stair: StairBody | None = None
+    upper_floor_setback_mm: float = Field(default=0, ge=0, le=10_000)
 
 
 class HouseBoxAccepted(BaseModel):
@@ -123,6 +124,7 @@ def build_house_box(
             floors=body.floors,
             shape=body.shape,
             stair=_stair_request(body.stair) if body.stair is not None else None,
+            upper_floor_setback_mm=body.upper_floor_setback_mm,
         )
     except ValueError as exc:
         raise ValidationFailedError(str(exc)) from exc

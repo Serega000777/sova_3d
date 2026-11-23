@@ -7010,6 +7010,11 @@ export interface components {
             shape: "rectangle" | "l_shape" | "t_shape";
             /** Stair */
             stair?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"] | components["schemas"]["UTurnStairBody"]) | null;
+            /**
+             * Upper Floor Setback Mm
+             * @default 0
+             */
+            upper_floor_setback_mm: number;
         };
         /** HouseTextApplyBody */
         HouseTextApplyBody: {

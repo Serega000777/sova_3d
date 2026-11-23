@@ -63,6 +63,7 @@ export function HouseBoxCreator({
   const [floorHeightM, setFloorHeightM] = useState("3");
   const [floors, setFloors] = useState<1 | 2 | 3>(2);
   const [shape, setShape] = useState<Shape>("rectangle");
+  const [upperFloorSetbackMm, setUpperFloorSetbackMm] = useState("0");
   const [addStair, setAddStair] = useState(false);
   const [stairKind, setStairKind] = useState<StairKind>("straight");
   const [stairWidthMm, setStairWidthMm] = useState("1000");
@@ -86,7 +87,8 @@ export function HouseBoxCreator({
     lowerSteps: numberValue(lowerSteps),
     upperSteps: numberValue(upperSteps),
     uFlightSteps: numberValue(uFlightSteps),
-  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps, uFlightSteps]);
+    upperFloorSetback: numberValue(upperFloorSetbackMm),
+  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps, uFlightSteps, upperFloorSetbackMm]);
 
   const stairProblem = useMemo(() => {
     if (!addStair || !stairAllowed) return null;
@@ -127,8 +129,8 @@ export function HouseBoxCreator({
         ? dimensions.stairWidth + dimensions.tread * dimensions.upperSteps
         : 2 * dimensions.stairWidth;
     if (
-      footprintLength > dimensions.length - 700
-      || footprintWidth > dimensions.width - 700
+      footprintLength > dimensions.length - 2 * dimensions.upperFloorSetback - 700
+      || footprintWidth > dimensions.width - 2 * dimensions.upperFloorSetback - 700
     ) return "Лестница и проёмы не помещаются с отступом 350 мм от стен.";
     return null;
   }, [addStair, stairAllowed, stairKind, dimensions]);
@@ -156,6 +158,13 @@ export function HouseBoxCreator({
       || dimensions.width > 50_000
       || dimensions.floorHeight < 2_200
       || dimensions.floorHeight > 6_000
+      || !Number.isFinite(dimensions.upperFloorSetback)
+      || dimensions.upperFloorSetback < 0
+      || dimensions.upperFloorSetback > 10_000
+      || (floors > 1 && shape === "rectangle" && dimensions.upperFloorSetback > 0 && (
+        dimensions.length - 2 * dimensions.upperFloorSetback < 2_000
+        || dimensions.width - 2 * dimensions.upperFloorSetback < 2_000
+      ))
       || (stairEnabled && (
         stairDimensions.some((value) => !Number.isFinite(value))
         || dimensions.stairWidth < 700
@@ -214,6 +223,7 @@ export function HouseBoxCreator({
           floors,
           shape,
           stair,
+          upper_floor_setback_mm: floors > 1 && shape === "rectangle" ? dimensions.upperFloorSetback : 0,
         },
         `mobile-house-box-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       );
@@ -240,6 +250,9 @@ export function HouseBoxCreator({
         <Choice value="l_shape" selected={shape} label="Г-форма" disabled={busy} onChange={(value) => { setShape(value); setAddStair(false); }} />
         <Choice value="t_shape" selected={shape} label="Т-форма" disabled={busy} onChange={(value) => { setShape(value); setAddStair(false); }} />
       </View>
+      {floors > 1 && shape === "rectangle" ? (
+        <TextInput style={styles.input} value={upperFloorSetbackMm} editable={!busy} onChangeText={setUpperFloorSetbackMm} keyboardType="number-pad" placeholder="Отступ верхних этажей, мм" placeholderTextColor={colors.muted} accessibilityLabel="Симметричный отступ верхних этажей в миллиметрах" />
+      ) : null}
       <View style={styles.row}>
         <TextInput style={[styles.input, { flex: 1 }]} value={lengthM} editable={!busy} onChangeText={setLengthM} keyboardType="decimal-pad" placeholder="Длина, м" placeholderTextColor={colors.muted} accessibilityLabel="Длина дома в метрах" />
         <TextInput style={[styles.input, { flex: 1 }]} value={widthM} editable={!busy} onChangeText={setWidthM} keyboardType="decimal-pad" placeholder="Ширина, м" placeholderTextColor={colors.muted} accessibilityLabel="Ширина дома в метрах" />

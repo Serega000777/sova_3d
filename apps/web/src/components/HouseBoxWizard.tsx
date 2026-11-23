@@ -31,6 +31,7 @@ export function HouseBoxWizard({
   const [floorHeightMm, setFloorHeightMm] = useState(3_000);
   const [floors, setFloors] = useState(1);
   const [shape, setShape] = useState<Shape>("rectangle");
+  const [upperFloorSetbackMm, setUpperFloorSetbackMm] = useState(0);
   const [addStair, setAddStair] = useState(true);
   const [stairWidthMm, setStairWidthMm] = useState(1_000);
   const [treadDepthMm, setTreadDepthMm] = useState(280);
@@ -50,6 +51,8 @@ export function HouseBoxWizard({
   const lTurn = stairKind === "l_turn";
   const uTurn = stairKind === "u_turn";
   const turning = lTurn || uTurn;
+  const setbackEnabled = floors > 1 && shape === "rectangle";
+  const effectiveUpperInset = setbackEnabled ? upperFloorSetbackMm : 0;
   // A turning landing counts as one riser, mirroring the server's derivation.
   const riserCount = lTurn ? lowerSteps + upperSteps + 1 : uTurn ? 2 * uFlightSteps + 1 : stepCount;
   const riserMm = floorHeightMm / riserCount;
@@ -60,16 +63,23 @@ export function HouseBoxWizard({
     : uTurn
       ? { x: treadDepthMm * uFlightSteps + stairWidthMm, y: 2 * stairWidthMm }
     : null;
+  const stairFootprint = turningFootprint ?? { x: treadDepthMm * stepCount, y: stairWidthMm };
+  const stairFitProblem = stairFootprint.x > lengthMm - 2 * effectiveUpperInset - 700
+    || stairFootprint.y > widthMm - 2 * effectiveUpperInset - 700
+    ? (ru ? "Лестница с проёмом не помещается в верхний контур с отступом 350 мм от стен." : "The stair and opening do not fit the upper footprint with 350 mm wall clearance.")
+    : null;
   const turningProblem = !turning
     ? null
     : riserCount < 10 || riserCount > 30
       ? (ru ? "Нужно 10–30 подъёмов вместе с площадкой." : "Use 10–30 risers including the landing.")
       : strideMm < 550 || strideMm > 700
         ? (ru ? "2 × подъём + проступь должно быть 550–700 мм." : "2 × rise + tread must be 550–700 mm.")
-        : turningFootprint && (turningFootprint.x > lengthMm - 700 || turningFootprint.y > widthMm - 700)
-          ? (ru ? `${uTurn ? "П" : "Г"}-образная лестница с проёмом не помещается в дом (отступ 350 мм от стен).` : `The ${uTurn ? "U" : "L"} stair and its opening do not fit inside the house (350 mm wall clearance).`)
-          : null;
-  const stairInvalid = stairEnabled && (riserMm < 120 || riserMm > 220 || turningProblem !== null);
+        : null;
+  const stairInvalid = stairEnabled && (riserMm < 120 || riserMm > 220 || turningProblem !== null || stairFitProblem !== null);
+  const setbackInvalid = setbackEnabled && upperFloorSetbackMm > 0 && (
+    lengthMm - 2 * upperFloorSetbackMm < 2_000
+    || widthMm - 2 * upperFloorSetbackMm < 2_000
+  );
 
   useEffect(() => {
     void client.listInteriorMaterials()
@@ -91,6 +101,7 @@ export function HouseBoxWizard({
           floor_height_mm: floorHeightMm,
           floors,
           shape,
+          upper_floor_setback_mm: setbackEnabled ? upperFloorSetbackMm : 0,
           stair: !stairEnabled
             ? null
             : lTurn
@@ -166,6 +177,7 @@ export function HouseBoxWizard({
           <NumberField label={ru ? "Ширина, мм" : "Width, mm"} value={widthMm} min={2_000} max={50_000} step={100} onChange={setWidthMm} />
           <NumberField label={ru ? "Высота этажа, мм" : "Floor height, mm"} value={floorHeightMm} min={2_200} max={6_000} step={100} onChange={setFloorHeightMm} />
           <NumberField label={ru ? "Этажей" : "Floors"} value={floors} min={1} max={3} step={1} onChange={setFloors} />
+          <NumberField label={ru ? "Отступ верхних этажей, мм" : "Upper-floor setback, mm"} value={setbackEnabled ? upperFloorSetbackMm : 0} min={0} max={10_000} step={100} onChange={setUpperFloorSetbackMm} disabled={!setbackEnabled} />
         </div>
         <p className="house-total">
           {ru ? "Общая высота" : "Total height"}: <strong>{(floorHeightMm * floors).toLocaleString(language)} {ru ? "мм" : "mm"}</strong>
@@ -272,6 +284,7 @@ export function HouseBoxWizard({
                   ? "Измените число ступеней: высота ступени должна быть 120–220 мм."
                   : "Change the step count: rise must be 120–220 mm."}</div>}
                 {turningProblem && riserMm >= 120 && riserMm <= 220 && <div className="error" role="alert">{turningProblem}</div>}
+                {stairFitProblem && !turningProblem && riserMm >= 120 && riserMm <= 220 && <div className="error" role="alert">{stairFitProblem}</div>}
                 {turning && <span className="muted">{ru
                   ? `Площадка ${uTurn ? "соединяет два равных параллельных марша" : "квадратная (ширина марша)"} и считается одним подъёмом. Забежные и винтовые лестницы пока не поддерживаются.`
                   : `The landing ${uTurn ? "joins two equal parallel flights" : "is square (one flight width)"} and counts as one riser. Winder and spiral stairs are not supported yet.`}</span>}
@@ -279,21 +292,24 @@ export function HouseBoxWizard({
             ) : null}
           </fieldset>
         )}
+        {setbackInvalid && <div className="error" role="alert">{ru
+          ? "Отступ должен оставлять верхний этаж не меньше 2 000 × 2 000 мм."
+          : "The setback must leave an upper floor of at least 2,000 × 2,000 mm."}</div>}
         {error && <div className="error" role="alert">{error}</div>}
         <div className="house-box-actions">
           <button type="button" className="btn" onClick={onBack} disabled={busy}>{ru ? "← Назад" : "← Back"}</button>
-          <button type="submit" className="btn primary" disabled={busy || stairInvalid}>{busy ? (ru ? "Строим…" : "Building…") : (ru ? "Создать коробку" : "Create box")}</button>
+          <button type="submit" className="btn primary" disabled={busy || stairInvalid || setbackInvalid}>{busy ? (ru ? "Строим…" : "Building…") : (ru ? "Создать коробку" : "Create box")}</button>
         </div>
       </form>
     </div>
   );
 }
 
-function NumberField({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void }) {
+function NumberField({ label, value, min, max, step, disabled = false, onChange }: { label: string; value: number; min: number; max: number; step: number; disabled?: boolean; onChange: (value: number) => void }) {
   return (
     <label>
       <span>{label}</span>
-      <input className="input" type="number" value={value} min={min} max={max} step={step} required onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />
+      <input className="input" type="number" value={value} min={min} max={max} step={step} disabled={disabled} required onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />
       <small>{min.toLocaleString()}–{max.toLocaleString()}</small>
     </label>
   );

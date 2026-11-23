@@ -21,10 +21,12 @@ test("mobile sends discriminated straight, L-turn or U-turn stair parameters", (
   assert.match(creator, /kind: "u_turn"[\s\S]+flight_step_count: dimensions\.uFlightSteps/);
   assert.match(creator, /turn,[\s\S]+placement: "center"/);
   assert.match(creator, /2 \* rise \+ dimensions\.tread < 550/);
-  assert.match(creator, /footprintLength > dimensions\.length - 700/);
-  assert.match(creator, /footprintWidth > dimensions\.width - 700/);
+  assert.match(creator, /footprintLength > dimensions\.length - 2 \* dimensions\.upperFloorSetback - 700/);
+  assert.match(creator, /footprintWidth > dimensions\.width - 2 \* dimensions\.upperFloorSetback - 700/);
   assert.match(creator, /stairKind === "straight"[\s\S]+\[dimensions\.straightSteps\][\s\S]+\[dimensions\.lowerSteps, dimensions\.upperSteps\][\s\S]+\[dimensions\.uFlightSteps\]/);
   assert.match(creator, /Лестницы пока доступны только для прямоугольного дома/);
+  assert.match(creator, /upper_floor_setback_mm: floors > 1 && shape === "rectangle" \? dimensions\.upperFloorSetback : 0/);
+  assert.match(creator, /Отступ верхних этажей, мм/);
 });
 
 test("description mode states the current multi-floor shell boundary", () => {
