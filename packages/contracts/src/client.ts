@@ -118,6 +118,7 @@ export type FloorPlanLayoutBody = Schemas["FloorPlanLayoutBody"];
 export type FloorPlanLayoutResult = Schemas["FloorPlanLayoutResult"];
 export type RoomWallEditBody = Schemas["RoomWallEditBody"];
 export type BuildingFloorPlans = Schemas["BuildingFloorPlans"];
+export type CrossFloorAlignmentReport = Schemas["CrossFloorAlignmentReport"];
 export type Listing = Schemas["ListingOut"];
 export type ListingBody = Schemas["ListingBody"];
 export type ListingPatch = Schemas["ListingPatch"];
@@ -754,6 +755,14 @@ export class PhysicalAiClient {
   /** Every aligned floor plan for the current immutable building version. */
   getProjectFloorPlans(projectId: string) {
     return this.request<BuildingFloorPlans>("GET", `/api/v1/projects/${projectId}/floor-plans`);
+  }
+
+  /** Compare adjacent saved plans geometrically; this is not structural/plumbing engineering. */
+  getCrossFloorAlignment(projectId: string) {
+    return this.request<CrossFloorAlignmentReport>(
+      "GET",
+      `/api/v1/projects/${projectId}/floor-plans/cross-floor-alignment`,
+    );
   }
 
   /** Make a new immutable plan version with deterministic rooms and connecting doors. */

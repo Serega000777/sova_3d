@@ -156,6 +156,44 @@ class BuildingFloorPlans(BaseModel):
     levels: list[BuildingFloorLevel] = Field(min_length=1, max_length=3)
 
 
+class PartitionAlignmentCheck(BaseModel):
+    lower_count: int = Field(ge=0)
+    upper_count: int = Field(ge=0)
+    aligned_lower_count: int = Field(ge=0)
+    aligned_upper_count: int = Field(ge=0)
+    overlap_length_mm: float = Field(ge=0)
+
+
+class WetZoneAlignmentCheck(BaseModel):
+    status: Literal["checked", "not_typed"]
+    lower_count: int = Field(ge=0)
+    upper_count: int = Field(ge=0)
+    overlapping_lower_count: int = Field(ge=0)
+    overlapping_upper_count: int = Field(ge=0)
+    overlap_area_m2: float = Field(ge=0)
+
+
+class FloorAlignmentPair(BaseModel):
+    lower_floor_index: int = Field(ge=0, le=2)
+    upper_floor_index: int = Field(ge=1, le=2)
+    partitions: PartitionAlignmentCheck
+    wet_zones: WetZoneAlignmentCheck
+
+
+class CrossFloorAlignmentReport(BaseModel):
+    """Geometric layout aid; deliberately not a structural or plumbing calculation."""
+
+    kind: Literal["geometric_cross_floor_review_v1"] = "geometric_cross_floor_review_v1"
+    version_id: str = Field(min_length=1, max_length=64)
+    partition_tolerance_mm: float = Field(gt=0)
+    minimum_partition_overlap_mm: float = Field(gt=0)
+    minimum_wet_zone_overlap_m2: float = Field(gt=0)
+    pairs: list[FloorAlignmentPair] = Field(max_length=2)
+    structural_engineering: Literal[False] = False
+    plumbing_stack_engineering: Literal[False] = False
+    disclaimer: str = Field(min_length=1, max_length=500)
+
+
 def _walls_from_outline(outline: list[Point], thickness_mm: float) -> list[PlanWall]:
     return [
         PlanWall(a=point, b=outline[(index + 1) % len(outline)], thickness_mm=thickness_mm)
@@ -1395,4 +1433,183 @@ def auto_layout_plan(
         kind=("typed_ranges_lt_v1" if room_requirements is not None else "lt_decomposition_v1"),
         zone_room_counts=(room_count_a, room_count_b),
         seam=decomposition.seam,
+    )
+
+
+def _alignment_outline(plan: FloorPlan) -> list[Point]:
+    if plan.stairs:
+        return _stair_rectangular_outline(plan)
+    return _outline_from_rooms(plan)
+
+
+def _interior_partitions(plan: FloorPlan) -> list[PlanWall]:
+    outline = _alignment_outline(plan)
+
+    def exterior(wall: PlanWall) -> bool:
+        return any(
+            _point_on_segment(wall.a, start, end) and _point_on_segment(wall.b, start, end)
+            for index, start in enumerate(outline)
+            for end in [outline[(index + 1) % len(outline)]]
+        )
+
+    return [wall for wall in plan.walls if not exterior(wall)]
+
+
+def _segment_overlap_mm(lower: PlanWall, upper: PlanWall, *, tolerance_mm: float) -> float:
+    lower_vertical = math.isclose(lower.a[0], lower.b[0], abs_tol=_EPSILON)
+    upper_vertical = math.isclose(upper.a[0], upper.b[0], abs_tol=_EPSILON)
+    lower_horizontal = math.isclose(lower.a[1], lower.b[1], abs_tol=_EPSILON)
+    upper_horizontal = math.isclose(upper.a[1], upper.b[1], abs_tol=_EPSILON)
+    if lower_vertical and upper_vertical:
+        if abs(lower.a[0] - upper.a[0]) > tolerance_mm:
+            return 0.0
+        lower_interval = sorted((lower.a[1], lower.b[1]))
+        upper_interval = sorted((upper.a[1], upper.b[1]))
+    elif lower_horizontal and upper_horizontal:
+        if abs(lower.a[1] - upper.a[1]) > tolerance_mm:
+            return 0.0
+        lower_interval = sorted((lower.a[0], lower.b[0]))
+        upper_interval = sorted((upper.a[0], upper.b[0]))
+    else:
+        return 0.0
+    return max(
+        0.0, min(lower_interval[1], upper_interval[1]) - max(lower_interval[0], upper_interval[0])
+    )
+
+
+def _maximum_cardinality_overlap(
+    candidates: list[tuple[float, int, int]], *, lower_count: int
+) -> tuple[int, int, float]:
+    adjacency: dict[int, list[tuple[int, float]]] = {index: [] for index in range(lower_count)}
+    weights: dict[tuple[int, int], float] = {}
+    for overlap, lower_index, upper_index in candidates:
+        adjacency[lower_index].append((upper_index, overlap))
+        weights[(lower_index, upper_index)] = overlap
+    for values in adjacency.values():
+        values.sort(key=lambda item: (-item[1], item[0]))
+
+    upper_to_lower: dict[int, int] = {}
+
+    def assign(lower_index: int, seen_upper: set[int]) -> bool:
+        for upper_index, _ in adjacency[lower_index]:
+            if upper_index in seen_upper:
+                continue
+            seen_upper.add(upper_index)
+            previous_lower = upper_to_lower.get(upper_index)
+            if previous_lower is None or assign(previous_lower, seen_upper):
+                upper_to_lower[upper_index] = lower_index
+                return True
+        return False
+
+    for lower_index in range(lower_count):
+        assign(lower_index, set())
+    overlap = sum(
+        weights[(lower_index, upper_index)] for upper_index, lower_index in upper_to_lower.items()
+    )
+    return len(set(upper_to_lower.values())), len(upper_to_lower), overlap
+
+
+def _matched_partition_overlap(
+    lower: list[PlanWall],
+    upper: list[PlanWall],
+    *,
+    tolerance_mm: float,
+    minimum_overlap_mm: float,
+) -> tuple[int, int, float]:
+    candidates = [
+        (overlap, lower_index, upper_index)
+        for lower_index, lower_wall in enumerate(lower)
+        for upper_index, upper_wall in enumerate(upper)
+        if (overlap := _segment_overlap_mm(lower_wall, upper_wall, tolerance_mm=tolerance_mm))
+        >= minimum_overlap_mm
+    ]
+    return _maximum_cardinality_overlap(candidates, lower_count=len(lower))
+
+
+def _room_overlap_m2(lower: PlanRoom, upper: PlanRoom) -> float:
+    try:
+        lower_bounds = _rectangle_bounds(lower.outline)
+        upper_bounds = _rectangle_bounds(upper.outline)
+    except ValueError:
+        return 0.0
+    width = max(0.0, min(lower_bounds[2], upper_bounds[2]) - max(lower_bounds[0], upper_bounds[0]))
+    depth = max(0.0, min(lower_bounds[3], upper_bounds[3]) - max(lower_bounds[1], upper_bounds[1]))
+    return width * depth / 1_000_000
+
+
+def _wet_zone_check(
+    lower: FloorPlan, upper: FloorPlan, *, minimum_overlap_m2: float
+) -> WetZoneAlignmentCheck:
+    typed = bool(lower.rooms and upper.rooms) and all(
+        room.kind is not None for room in [*lower.rooms, *upper.rooms]
+    )
+    wet_kinds = {"bathroom", "kitchen_living"}
+    lower_wet = [room for room in lower.rooms if room.kind in wet_kinds]
+    upper_wet = [room for room in upper.rooms if room.kind in wet_kinds]
+    candidates = [
+        (area, lower_index, upper_index)
+        for lower_index, lower_room in enumerate(lower_wet)
+        for upper_index, upper_room in enumerate(upper_wet)
+        if (area := _room_overlap_m2(lower_room, upper_room)) >= minimum_overlap_m2
+    ]
+    matched_lower, matched_upper, overlap_area = _maximum_cardinality_overlap(
+        candidates, lower_count=len(lower_wet)
+    )
+    return WetZoneAlignmentCheck(
+        status="checked" if typed else "not_typed",
+        lower_count=len(lower_wet),
+        upper_count=len(upper_wet),
+        overlapping_lower_count=matched_lower,
+        overlapping_upper_count=matched_upper,
+        overlap_area_m2=overlap_area,
+    )
+
+
+def cross_floor_alignment_report(
+    building: BuildingFloorPlans,
+    *,
+    partition_tolerance_mm: float = 50.0,
+    minimum_partition_overlap_mm: float = 1_000.0,
+    minimum_wet_zone_overlap_m2: float = 1.0,
+) -> CrossFloorAlignmentReport:
+    """Compare adjacent 2D levels without claiming structural/plumbing engineering."""
+    levels = sorted(building.levels, key=lambda level: level.index)
+    pairs: list[FloorAlignmentPair] = []
+    for lower, upper in zip(levels, levels[1:], strict=False):
+        lower_partitions = _interior_partitions(lower.plan)
+        upper_partitions = _interior_partitions(upper.plan)
+        aligned_lower, aligned_upper, overlap_length = _matched_partition_overlap(
+            lower_partitions,
+            upper_partitions,
+            tolerance_mm=partition_tolerance_mm,
+            minimum_overlap_mm=minimum_partition_overlap_mm,
+        )
+        pairs.append(
+            FloorAlignmentPair(
+                lower_floor_index=lower.index,
+                upper_floor_index=upper.index,
+                partitions=PartitionAlignmentCheck(
+                    lower_count=len(lower_partitions),
+                    upper_count=len(upper_partitions),
+                    aligned_lower_count=aligned_lower,
+                    aligned_upper_count=aligned_upper,
+                    overlap_length_mm=overlap_length,
+                ),
+                wet_zones=_wet_zone_check(
+                    lower.plan,
+                    upper.plan,
+                    minimum_overlap_m2=minimum_wet_zone_overlap_m2,
+                ),
+            )
+        )
+    return CrossFloorAlignmentReport(
+        version_id=building.version_id,
+        partition_tolerance_mm=partition_tolerance_mm,
+        minimum_partition_overlap_mm=minimum_partition_overlap_mm,
+        minimum_wet_zone_overlap_m2=minimum_wet_zone_overlap_m2,
+        pairs=pairs,
+        disclaimer=(
+            "This report compares saved 2D geometry only. It does not calculate load paths, "
+            "beams, bearing capacity, plumbing stacks, pipe routes or code compliance."
+        ),
     )

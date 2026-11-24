@@ -21,6 +21,15 @@ test("one room program can be applied sequentially to every immutable floor", ()
   assert.match(planPage, /level\.index === floorIndex \? \{ \.\.\.level, plan: parsed \} : level/);
   assert.match(planPage, /completedFloors > 0 && layoutAllFloors/);
   assert.match(planPage, /уже созданные immutable-версии остаются сохранены/);
+  assert.match(planPage, /getCrossFloorAlignment\(projectId\)/);
+});
+
+test("cross-floor report stays geometric and labels untyped wet zones honestly", () => {
+  assert.match(planPage, /Межэтажная геометрия/);
+  assert.match(planPage, /Мокрые зоны не проверены: нужны типизированные комнаты/);
+  assert.match(planPage, /не расчёт несущих стен, балок, нагрузок, стояков или трасс труб/);
+  assert.match(planPage, /pair\.partitions\.aligned_lower_count/);
+  assert.match(planPage, /pair\.wet_zones\.overlapping_upper_count/);
 });
 
 test("web plan overlay shows only furniture from the active floor elevation", () => {

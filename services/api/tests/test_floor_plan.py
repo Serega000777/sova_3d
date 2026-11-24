@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.engineering.floor_plan import (
+    BuildingFloorPlans,
     FloorPlan,
     PlanRoom,
     PlanWall,
@@ -11,6 +12,7 @@ from app.engineering.floor_plan import (
     _classify_outline,
     auto_layout_plan,
     auto_layout_rectangular_plan,
+    cross_floor_alignment_report,
     floor_plan_from_house_box,
     floor_plan_from_house_walls,
     floor_plans_from_house_box,
@@ -258,6 +260,81 @@ def test_auto_layout_refuses_irregular_or_impossibly_small_footprints() -> None:
         auto_layout_rectangular_plan(irregular, room_count=3)
     with pytest.raises(ValueError, match="too small"):
         auto_layout_rectangular_plan(small, room_count=3)
+
+
+def test_cross_floor_alignment_reports_partitions_and_typed_wet_zone_overlap() -> None:
+    building = floor_plans_from_house_box(
+        HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=2,
+            shape="rectangle",
+        ),
+        project_id="project-1",
+        version_id="version-1",
+        name="House",
+    )
+    requirements = [
+        RoomRequirement(kind="bedroom", name="Bedroom", min_area_m2=20, max_area_m2=40),
+        RoomRequirement(kind="kitchen_living", name="Kitchen", min_area_m2=30, max_area_m2=50),
+        RoomRequirement(kind="bathroom", name="Bathroom", min_area_m2=10, max_area_m2=30),
+    ]
+    levels = [
+        level.model_copy(
+            update={
+                "plan": auto_layout_plan(
+                    level.plan, room_count=3, room_requirements=requirements
+                ).plan
+            }
+        )
+        for level in building.levels
+    ]
+
+    report = cross_floor_alignment_report(building.model_copy(update={"levels": levels}))
+
+    assert report.structural_engineering is False
+    assert report.plumbing_stack_engineering is False
+    assert len(report.pairs) == 1
+    pair = report.pairs[0]
+    assert pair.partitions.lower_count == 2
+    assert pair.partitions.upper_count == 2
+    assert pair.partitions.aligned_lower_count == 2
+    assert pair.partitions.aligned_upper_count == 2
+    assert pair.partitions.overlap_length_mm == 16_000
+    assert pair.wet_zones.status == "checked"
+    assert pair.wet_zones.lower_count == 2
+    assert pair.wet_zones.upper_count == 2
+    assert pair.wet_zones.overlapping_lower_count == 2
+    assert pair.wet_zones.overlapping_upper_count == 2
+    assert pair.wet_zones.overlap_area_m2 > 0
+
+
+def test_cross_floor_alignment_does_not_infer_wet_zones_from_untyped_rooms() -> None:
+    building = floor_plans_from_house_box(
+        HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=2,
+            shape="rectangle",
+        ),
+        project_id="project-2",
+        version_id="version-2",
+        name="House",
+    )
+    levels = [
+        level.model_copy(update={"plan": auto_layout_plan(level.plan, room_count=3).plan})
+        for level in building.levels
+    ]
+
+    report = cross_floor_alignment_report(
+        BuildingFloorPlans.model_validate(building.model_copy(update={"levels": levels}))
+    )
+
+    assert report.pairs[0].wet_zones.status == "not_typed"
+    assert report.pairs[0].wet_zones.lower_count == 0
+    assert report.pairs[0].wet_zones.upper_count == 0
 
 
 def test_reflex_classification_and_exact_decomposition_are_rotation_independent() -> None:

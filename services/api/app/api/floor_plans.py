@@ -10,7 +10,13 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
-from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan, RoomRequirement
+from app.engineering.floor_plan import (
+    BuildingFloorPlans,
+    CrossFloorAlignmentReport,
+    FloorPlan,
+    RoomRequirement,
+    cross_floor_alignment_report,
+)
 from app.models.core import Project
 from app.services import furniture as furniture_service
 from app.services import jobs
@@ -33,6 +39,17 @@ def get_project_floor_plans(
     project_id: uuid.UUID, db: DbDep, principal: PrincipalDep
 ) -> BuildingFloorPlans:
     return load_project_floor_plans(db, user_id=principal.user_id, project_id=project_id)
+
+
+@router.get(
+    "/projects/{project_id}/floor-plans/cross-floor-alignment",
+    response_model=CrossFloorAlignmentReport,
+)
+def get_cross_floor_alignment(
+    project_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> CrossFloorAlignmentReport:
+    building = load_project_floor_plans(db, user_id=principal.user_id, project_id=project_id)
+    return cross_floor_alignment_report(building)
 
 
 class FloorPlanLayoutBody(BaseModel):

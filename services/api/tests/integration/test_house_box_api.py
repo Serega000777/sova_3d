@@ -264,6 +264,22 @@ def test_multifloor_stair_creates_aligned_plans_and_floor_scene_groups(
         "down",
     ]
 
+    alignment = api_client.get(
+        f"/api/v1/projects/{project_id}/floor-plans/cross-floor-alignment",
+        headers=actor.headers,
+    )
+    assert alignment.status_code == 200, alignment.text
+    report = alignment.json()
+    assert report["version_id"] == all_floors_version_id
+    assert report["structural_engineering"] is False
+    assert report["plumbing_stack_engineering"] is False
+    assert len(report["pairs"]) == 1
+    assert report["pairs"][0]["partitions"]["lower_count"] == 3
+    assert report["pairs"][0]["partitions"]["upper_count"] == 3
+    assert report["pairs"][0]["partitions"]["aligned_lower_count"] == 3
+    assert report["pairs"][0]["wet_zones"]["status"] == "not_typed"
+    assert "does not calculate load paths" in report["disclaimer"]
+
     missing_floor = api_client.post(
         f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
         json={

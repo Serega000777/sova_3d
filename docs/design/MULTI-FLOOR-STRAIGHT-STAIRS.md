@@ -143,6 +143,26 @@ smaller upper rectangle before the job is accepted and again when the worker res
 This is geometric vertical alignment, not a claim that partitions, columns, wet stacks or load
 paths have been structurally engineered.
 
+## Geometric cross-floor review follow-up
+
+The authenticated read-only
+`GET /projects/{project_id}/floor-plans/cross-floor-alignment` endpoint compares adjacent saved
+levels of the current immutable head. It does not mutate or regenerate either plan.
+
+For internal partition centre-lines it reports one-to-one collinear overlap using a fixed 50 mm
+coordinate tolerance and a minimum 1,000 mm shared segment. Exterior walls are removed from this
+comparison by the saved footprint boundary. The result exposes counts for both levels and the
+total matched length instead of turning a partial match into a binary structural pass.
+
+For typed plans it treats only `bathroom` and `kitchen_living` room outlines as wet zones and
+reports one-to-one rectangular overlap of at least 1 m². A plan containing untyped rooms returns
+`not_typed`; names are never parsed to guess a bathroom or kitchen. This is footprint overlap only:
+fixtures, pipe points, risers and routes do not exist in the current plan contract.
+
+The web plan screen refreshes this report after a coordinated all-floor layout and shows every
+adjacent floor pair. It explicitly labels the result as saved 2D geometry, not engineering of
+bearing walls, beams, loads, plumbing stacks, pipe routes or code compliance.
+
 ## Explicit limits
 
 This is not a general staircase or building-information model. It does not claim:
@@ -152,7 +172,8 @@ This is not a general staircase or building-information model. It does not claim
 - stairs inside L- or T-shaped footprints, asymmetric/per-level setbacks or shape changes;
 - pitched roofs in this multi-floor scene path;
 - one atomic all-floor transaction (web coordinates separate immutable per-floor steps);
-- structural cross-floor alignment of partitions, columns, wet stacks or load paths;
+- automatic structural optimization of partitions, columns, wet stacks or load paths; the
+  geometric report is advisory evidence only;
 - facade rebuilding of the multi-body scene (the existing facade endpoint rejects this lineage
   fail closed instead of silently replacing it with its historical single shell);
 - structural-code compliance (the 550–700 mm stride is a comfort rule, not a code check), stringers, headroom proof or baluster detailing;

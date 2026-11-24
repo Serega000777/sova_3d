@@ -5230,6 +5230,65 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/floor-plans/cross-floor-alignment": {
+      "get": {
+        "tags": [
+          "floor-plans"
+        ],
+        "summary": "Get Cross Floor Alignment",
+        "operationId": "get_cross_floor_alignment_api_v1_projects__project_id__floor_plans_cross_floor_alignment_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossFloorAlignmentReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/floor-plan/auto-layout": {
       "post": {
         "tags": [
@@ -21192,6 +21251,74 @@
         ],
         "title": "CreditPackOut"
       },
+      "CrossFloorAlignmentReport": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "geometric_cross_floor_review_v1",
+            "title": "Kind",
+            "default": "geometric_cross_floor_review_v1"
+          },
+          "version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Version Id"
+          },
+          "partition_tolerance_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Partition Tolerance Mm"
+          },
+          "minimum_partition_overlap_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Minimum Partition Overlap Mm"
+          },
+          "minimum_wet_zone_overlap_m2": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Minimum Wet Zone Overlap M2"
+          },
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/FloorAlignmentPair"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Pairs"
+          },
+          "structural_engineering": {
+            "type": "boolean",
+            "const": false,
+            "title": "Structural Engineering",
+            "default": false
+          },
+          "plumbing_stack_engineering": {
+            "type": "boolean",
+            "const": false,
+            "title": "Plumbing Stack Engineering",
+            "default": false
+          },
+          "disclaimer": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Disclaimer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "partition_tolerance_mm",
+          "minimum_partition_overlap_mm",
+          "minimum_wet_zone_overlap_m2",
+          "pairs",
+          "disclaimer"
+        ],
+        "title": "CrossFloorAlignmentReport",
+        "description": "Geometric layout aid; deliberately not a structural or plumbing calculation."
+      },
       "CutPlaneBody": {
         "properties": {
           "axis": {
@@ -23599,6 +23726,36 @@
           "created_at"
         ],
         "title": "FitTestOut"
+      },
+      "FloorAlignmentPair": {
+        "properties": {
+          "lower_floor_index": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Lower Floor Index"
+          },
+          "upper_floor_index": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 1.0,
+            "title": "Upper Floor Index"
+          },
+          "partitions": {
+            "$ref": "#/components/schemas/PartitionAlignmentCheck"
+          },
+          "wet_zones": {
+            "$ref": "#/components/schemas/WetZoneAlignmentCheck"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lower_floor_index",
+          "upper_floor_index",
+          "partitions",
+          "wet_zones"
+        ],
+        "title": "FloorAlignmentPair"
       },
       "FloorPlan": {
         "properties": {
@@ -29657,6 +29814,44 @@
           "unit"
         ],
         "title": "ParameterOut"
+      },
+      "PartitionAlignmentCheck": {
+        "properties": {
+          "lower_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Lower Count"
+          },
+          "upper_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Upper Count"
+          },
+          "aligned_lower_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Aligned Lower Count"
+          },
+          "aligned_upper_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Aligned Upper Count"
+          },
+          "overlap_length_mm": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Overlap Length Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lower_count",
+          "upper_count",
+          "aligned_lower_count",
+          "aligned_upper_count",
+          "overlap_length_mm"
+        ],
+        "title": "PartitionAlignmentCheck"
       },
       "PhotoReport": {
         "properties": {
@@ -38408,6 +38603,53 @@
           "finalized"
         ],
         "title": "VersionState"
+      },
+      "WetZoneAlignmentCheck": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "checked",
+              "not_typed"
+            ],
+            "title": "Status"
+          },
+          "lower_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Lower Count"
+          },
+          "upper_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Upper Count"
+          },
+          "overlapping_lower_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Overlapping Lower Count"
+          },
+          "overlapping_upper_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Overlapping Upper Count"
+          },
+          "overlap_area_m2": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Overlap Area M2"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "lower_count",
+          "upper_count",
+          "overlapping_lower_count",
+          "overlapping_upper_count",
+          "overlap_area_m2"
+        ],
+        "title": "WetZoneAlignmentCheck"
       },
       "WorkspaceBrief": {
         "properties": {

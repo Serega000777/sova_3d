@@ -13,6 +13,7 @@ import {
   type AnnotationKind,
   type AnnotationStatus,
   type BuildingFloorPlans,
+  type CrossFloorAlignmentReport,
   type FloorPlan,
   type FurnitureItem,
   type PlanAnnotationsOut,
@@ -143,6 +144,7 @@ export default function PlanPage() {
 
   const [plan, setPlan] = useState<FloorPlan>(() => rectangularRoom(4000, 5000, "Комната"));
   const [floorLevels, setFloorLevels] = useState<BuildingFloorPlans["levels"]>([]);
+  const [crossFloorAlignment, setCrossFloorAlignment] = useState<CrossFloorAlignmentReport | null>(null);
   const [markup, dispatch] = useReducer(reducer, { planId: null, history: newHistory([] as Annotation[]) });
   const { history } = markup;
   const annotations = history.present;
@@ -228,6 +230,7 @@ export default function PlanPage() {
     syncedAnnotations.current = [];
     loadedServerKey.current = null;
     setFloorLevels([]);
+    setCrossFloorAlignment(null);
     try {
       if (id) window.localStorage.setItem(PROJECT_KEY, id);
       else window.localStorage.removeItem(PROJECT_KEY);
@@ -415,8 +418,9 @@ export default function PlanPage() {
     void Promise.all([
       client.getProjectFloorPlans(requestedProjectId),
       client.getProject(requestedProjectId),
+      client.getCrossFloorAlignment(requestedProjectId),
     ])
-      .then(([loaded, project]) => {
+      .then(([loaded, project, alignment]) => {
         if (!active) return;
         const levels = loaded.levels.map((level) => {
           const parsed = parseFloorPlan(level.plan);
@@ -425,6 +429,7 @@ export default function PlanPage() {
         });
         if (!levels.length) throw new Error("empty floor plan set");
         setFloorLevels(levels);
+        setCrossFloorAlignment(alignment);
         choosePlan(levels[0]!.plan);
         setBaseVersionId(project.head_version?.id ?? null);
         setFitRevision((value) => value + 1);
@@ -715,6 +720,9 @@ export default function PlanPage() {
         }
       }
       setBaseVersionId(currentVersionId);
+      if (targetFloorIndexes.length > 1) {
+        setCrossFloorAlignment(await client.getCrossFloorAlignment(projectId));
+      }
       setFitRevision((value) => value + 1);
       setMessage(
         ru
@@ -1069,6 +1077,31 @@ export default function PlanPage() {
                     {ru
                       ? "Диапазоны — строгие: если общая площадь или мебель не помещаются, план не создаётся."
                       : "Ranges are strict: if the total area or furniture does not fit, no plan is created."}
+                  </span>
+                </div>
+              )}
+              {multiFloor && crossFloorAlignment && (
+                <div className="card stack" style={{ flexBasis: "100%", gap: 6 }}>
+                  <strong>{ru ? "Межэтажная геометрия" : "Cross-floor geometry"}</strong>
+                  {crossFloorAlignment.pairs.map((pair) => (
+                    <span key={`${pair.lower_floor_index}-${pair.upper_floor_index}`}>
+                      {ru
+                        ? `${pair.lower_floor_index + 1}→${pair.upper_floor_index + 1} этаж: перегородки ${pair.partitions.aligned_lower_count}/${pair.partitions.lower_count} снизу и ${pair.partitions.aligned_upper_count}/${pair.partitions.upper_count} сверху перекрываются минимум на ${(crossFloorAlignment.minimum_partition_overlap_mm / 1000).toFixed(1)} м.`
+                        : `Floor ${pair.lower_floor_index + 1}→${pair.upper_floor_index + 1}: ${pair.partitions.aligned_lower_count}/${pair.partitions.lower_count} lower and ${pair.partitions.aligned_upper_count}/${pair.partitions.upper_count} upper partitions overlap by at least ${(crossFloorAlignment.minimum_partition_overlap_mm / 1000).toFixed(1)} m.`}
+                      {" "}
+                      {pair.wet_zones.status === "checked"
+                        ? ru
+                          ? `Мокрые зоны: ${pair.wet_zones.overlapping_lower_count}/${pair.wet_zones.lower_count} снизу и ${pair.wet_zones.overlapping_upper_count}/${pair.wet_zones.upper_count} сверху имеют геометрическое перекрытие.`
+                          : `Wet zones: ${pair.wet_zones.overlapping_lower_count}/${pair.wet_zones.lower_count} lower and ${pair.wet_zones.overlapping_upper_count}/${pair.wet_zones.upper_count} upper zones overlap geometrically.`
+                        : ru
+                          ? "Мокрые зоны не проверены: нужны типизированные комнаты на обоих этажах."
+                          : "Wet zones were not checked: both floors need typed rooms."}
+                    </span>
+                  ))}
+                  <span className="muted">
+                    {ru
+                      ? "Это проверка сохранённых 2D-контуров, а не расчёт несущих стен, балок, нагрузок, стояков или трасс труб."
+                      : "This compares saved 2D outlines; it does not calculate bearing walls, beams, loads, plumbing stacks or pipe routes."}
                   </span>
                 </div>
               )}

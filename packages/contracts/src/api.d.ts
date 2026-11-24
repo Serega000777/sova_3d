@@ -1179,6 +1179,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/floor-plans/cross-floor-alignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cross Floor Alignment */
+        get: operations["get_cross_floor_alignment_api_v1_projects__project_id__floor_plans_cross_floor_alignment_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/floor-plan/auto-layout": {
         parameters: {
             query?: never;
@@ -5380,6 +5397,42 @@ export interface components {
             credits: number;
         };
         /**
+         * CrossFloorAlignmentReport
+         * @description Geometric layout aid; deliberately not a structural or plumbing calculation.
+         */
+        CrossFloorAlignmentReport: {
+            /**
+             * Kind
+             * @default geometric_cross_floor_review_v1
+             * @constant
+             */
+            kind: "geometric_cross_floor_review_v1";
+            /** Version Id */
+            version_id: string;
+            /** Partition Tolerance Mm */
+            partition_tolerance_mm: number;
+            /** Minimum Partition Overlap Mm */
+            minimum_partition_overlap_mm: number;
+            /** Minimum Wet Zone Overlap M2 */
+            minimum_wet_zone_overlap_m2: number;
+            /** Pairs */
+            pairs: components["schemas"]["FloorAlignmentPair"][];
+            /**
+             * Structural Engineering
+             * @default false
+             * @constant
+             */
+            structural_engineering: false;
+            /**
+             * Plumbing Stack Engineering
+             * @default false
+             * @constant
+             */
+            plumbing_stack_engineering: false;
+            /** Disclaimer */
+            disclaimer: string;
+        };
+        /**
          * CutPlaneBody
          * @description On an axis at a coordinate or a fraction of the extent, or anywhere by point + normal.
          */
@@ -6336,6 +6389,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** FloorAlignmentPair */
+        FloorAlignmentPair: {
+            /** Lower Floor Index */
+            lower_floor_index: number;
+            /** Upper Floor Index */
+            upper_floor_index: number;
+            partitions: components["schemas"]["PartitionAlignmentCheck"];
+            wet_zones: components["schemas"]["WetZoneAlignmentCheck"];
         };
         /** FloorPlan */
         FloorPlan: {
@@ -8570,6 +8632,19 @@ export interface components {
             max: number;
             /** Unit */
             unit: string;
+        };
+        /** PartitionAlignmentCheck */
+        PartitionAlignmentCheck: {
+            /** Lower Count */
+            lower_count: number;
+            /** Upper Count */
+            upper_count: number;
+            /** Aligned Lower Count */
+            aligned_lower_count: number;
+            /** Aligned Upper Count */
+            aligned_upper_count: number;
+            /** Overlap Length Mm */
+            overlap_length_mm: number;
         };
         /**
          * PhotoReport
@@ -11820,6 +11895,24 @@ export interface components {
          * @enum {string}
          */
         VersionState: "draft" | "finalized";
+        /** WetZoneAlignmentCheck */
+        WetZoneAlignmentCheck: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "checked" | "not_typed";
+            /** Lower Count */
+            lower_count: number;
+            /** Upper Count */
+            upper_count: number;
+            /** Overlapping Lower Count */
+            overlapping_lower_count: number;
+            /** Overlapping Upper Count */
+            overlapping_upper_count: number;
+            /** Overlap Area M2 */
+            overlap_area_m2: number;
+        };
         /** WorkspaceBrief */
         WorkspaceBrief: {
             /**
@@ -14782,6 +14875,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BuildingFloorPlans"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cross_floor_alignment_api_v1_projects__project_id__floor_plans_cross_floor_alignment_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CrossFloorAlignmentReport"];
                 };
             };
             /** @description Validation Error */
