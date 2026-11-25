@@ -222,9 +222,11 @@ attached assets с новым storage-prefix, operation/mesh-modifier stacks, ve
 фото-референс и разметку плана с фотографиями; только после полной копии исходный проект soft-delete. Recipient
 реально открывает и редактирует новый проект, sender/stranger получают 404. Draft, active job,
 active listing, неизвестный/self recipient и сломанная asset-ссылка отклоняются fail-closed.
-Граница: нет view-only/edit project ACL, отправки приглашения, передачи по ссылке, выбора
-отдельных GLB/PDF/PNG, mobile UI и переноса raw scan/AI job history; это расширения granular
-sharing, а не заявленная часть полного owner handoff.
+Mobile parity добавлен инкрементом `a0da17a`: owner-only карточка использует workspace открытого
+проекта, проверяет email и точное имя до запроса, требует второе destructive-подтверждение,
+защищена от двойной отправки и после успеха возвращает в библиотеку. Граница: нет view-only/edit
+project ACL, отправки приглашения, передачи по ссылке, выбора отдельных GLB/PDF/PNG и переноса
+raw scan/AI job history; это расширения granular sharing, а не заявленная часть полного owner handoff.
 
 Adaptive mobile workspace и Plan ↔ Model MVP завершены и записаны в
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
