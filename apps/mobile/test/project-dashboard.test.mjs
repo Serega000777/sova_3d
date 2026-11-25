@@ -35,7 +35,7 @@ test("mobile project route wires the dashboard to real project actions", () => {
   assert.match(source, /versionCount=\{versionHistory\.length\}/);
   assert.match(source, /updatedAt=\{project\?\.updated_at \?\? null\}/);
   assert.match(source, /participantCount=\{workspaceParticipantCount\}/);
-  assert.match(source, /listWorkspaceMembers\(session\.workspaceId\)/);
+  assert.match(source, /listWorkspaceMembers\(projectWorkspaceId\)/);
   assert.match(source, /onCheck=\{\(\) => setWorkspaceTab\("check"\)\}/);
   assert.match(source, /onVersions=\{\(\) => router\.push\(`\/project-history\/\$\{id\}`\)\}/);
   assert.match(source, /onExport=\{\(\) => setWorkspaceTab\("export"\)\}/);

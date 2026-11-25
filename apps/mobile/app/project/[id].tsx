@@ -201,6 +201,7 @@ import { RoofEditorSheet } from "@/src/RoofEditorSheet";
 import { RoomWallEditor, type RoomWallEdit } from "@/src/RoomWallEditor";
 import { ProjectDashboardCard } from "@/src/ProjectDashboardCard";
 import { ProjectShareLinksCard } from "@/src/ProjectShareLinksCard";
+import { ProjectTransferCard } from "@/src/ProjectTransferCard";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
 import { ScannedFacadeSheet } from "@/src/ScannedFacadeSheet";
 import {
@@ -368,6 +369,7 @@ export default function ProjectScreen() {
   const ru = language === "ru";
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
+  const projectWorkspaceId = project?.workspace_id ?? null;
   const [experienceMode, setExperienceMode] = useState<"beginner" | "professional">("beginner");
   const [versions, setVersions] = useState<Version[]>([]);
   const [versionHistory, setVersionHistory] = useState<VersionHistoryItem[]>([]);
@@ -701,7 +703,7 @@ export default function ProjectScreen() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!client || !session) {
+    if (!client || !session || !projectWorkspaceId) {
       setWorkspaceParticipantCount(null);
       setWorkspaceMembers([]);
       setCanManageShareLinks(false);
@@ -710,11 +712,14 @@ export default function ProjectScreen() {
     }
     let cancelled = false;
     setWorkspaceParticipantCount(null);
+    setWorkspaceMembers([]);
+    setCanManageShareLinks(false);
+    setCanEditWorkspace(false);
     void client.me()
       .then(async (me) => {
         if (cancelled) return null;
         setExperienceMode(me.user.experience_mode);
-        const current = me.workspaces.find((item) => item.id === session.workspaceId);
+        const current = me.workspaces.find((item) => item.id === projectWorkspaceId);
         setCanManageShareLinks(current?.role === "owner");
         setCanEditWorkspace(Boolean(current && current.role !== "viewer"));
         if (!current) return null;
@@ -722,7 +727,7 @@ export default function ProjectScreen() {
           if (!cancelled) setWorkspaceMembers([]);
           return 1;
         }
-        const members = await client.listWorkspaceMembers(session.workspaceId);
+        const members = await client.listWorkspaceMembers(projectWorkspaceId);
         if (!cancelled) setWorkspaceMembers(members);
         return members.length;
       })
@@ -740,7 +745,7 @@ export default function ProjectScreen() {
     return () => {
       cancelled = true;
     };
-  }, [client, session]);
+  }, [client, projectWorkspaceId, session]);
 
   // The project inspector reads the slicer's shared workspace profiles and catalogue. A choice
   // is sent to analysis directly and is never copied into a second mobile-only preset store.
@@ -5055,12 +5060,21 @@ export default function ProjectScreen() {
         onExport={() => setWorkspaceTab("export")}
       />
       {client && session && project && canManageShareLinks ? (
-        <ProjectShareLinksCard
-          client={client}
-          projectId={project.id}
-          apiBaseUrl={session.baseUrl}
-          hasVersion={Boolean(project.head_version_id)}
-        />
+        <>
+          <ProjectShareLinksCard
+            client={client}
+            projectId={project.id}
+            apiBaseUrl={session.baseUrl}
+            hasVersion={Boolean(project.head_version_id)}
+          />
+          <ProjectTransferCard
+            key={project.id}
+            client={client}
+            projectId={project.id}
+            projectName={project.name}
+            onTransferred={() => router.replace("/projects")}
+          />
+        </>
       ) : null}
       {activeFloorPlan
         && planSelection?.kind === "wall"
