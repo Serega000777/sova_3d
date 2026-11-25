@@ -20,6 +20,11 @@ from app.models.execution import Job, JobStatus, Operation
 from app.models.scanning import ScanMode, ScanSession, ScanStatus
 from app.models.versioning import AssetRole, VersionAsset
 from app.services import projects
+from app.services.facade_scan_lineage import (
+    FacadeScanLineageError,
+    continuity_input,
+    validate_lineage,
+)
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401
@@ -68,6 +73,53 @@ def window(index: int) -> dict[str, Any]:
 
 def facade_jobs(db: Session) -> list[Job]:
     return db.query(Job).filter(Job.type == "edit_facade").all()
+
+
+def accepted_exterior_scan(
+    api_client: TestClient,
+    actor: Actor,
+    db: Session,
+    *,
+    asset_role: AssetRole = AssetRole.model,
+    status: ScanStatus = ScanStatus.accepted,
+) -> tuple[uuid.UUID, ProjectVersion, ScanSession, uuid.UUID]:
+    project_id = uuid.UUID(
+        api_client.post(
+            "/api/v1/projects",
+            json={"workspace_id": str(actor.workspace.id), "name": "Scanned exterior"},
+            headers=actor.headers,
+        ).json()["id"]
+    )
+    scan_asset_id = uuid.UUID(
+        upload(
+            api_client,
+            actor,
+            stl(trimesh.creation.box(extents=(10_000, 8_000, 6_000))),
+            "exterior-scan.stl",
+            "model/stl",
+        )
+    )
+    accepted_version = projects.create_version_internal(
+        db,
+        project_id=project_id,
+        label="Accepted exterior scan",
+        provenance={"operation": "scan"},
+        assets={asset_role: scan_asset_id},
+        created_by=actor.user.id,
+    )
+    scan = ScanSession(
+        workspace_id=actor.workspace.id,
+        project_id=project_id,
+        created_by=actor.user.id,
+        status=status,
+        mode=ScanMode.rgb,
+        capabilities={"subject": "exterior", "capture_source": "four_sides"},
+        mesh_asset_id=scan_asset_id,
+        result_version_id=accepted_version.id,
+    )
+    db.add(scan)
+    db.flush()
+    return project_id, accepted_version, scan, scan_asset_id
 
 
 def refusal(response: Any) -> dict[str, Any]:
@@ -169,42 +221,9 @@ def test_exterior_scan_becomes_an_exact_editable_facade_and_keeps_source_scan(
     storage: S3Storage,
     kernel_or_fake: None,  # noqa: F811
 ) -> None:
-    project_id = uuid.UUID(
-        api_client.post(
-            "/api/v1/projects",
-            json={"workspace_id": str(actor.workspace.id), "name": "Scanned exterior"},
-            headers=actor.headers,
-        ).json()["id"]
+    project_id, accepted_version, scan, scan_asset_id = accepted_exterior_scan(
+        api_client, actor, db_session
     )
-    scan_asset_id = uuid.UUID(
-        upload(
-            api_client,
-            actor,
-            stl(trimesh.creation.box(extents=(10_000, 8_000, 6_000))),
-            "exterior-scan.stl",
-            "model/stl",
-        )
-    )
-    accepted_version = projects.create_version_internal(
-        db_session,
-        project_id=project_id,
-        label="Accepted exterior scan",
-        provenance={"operation": "scan"},
-        assets={AssetRole.model: scan_asset_id},
-        created_by=actor.user.id,
-    )
-    scan = ScanSession(
-        workspace_id=actor.workspace.id,
-        project_id=project_id,
-        created_by=actor.user.id,
-        status=ScanStatus.accepted,
-        mode=ScanMode.rgb,
-        capabilities={"subject": "exterior", "capture_source": "four_sides"},
-        mesh_asset_id=scan_asset_id,
-        result_version_id=accepted_version.id,
-    )
-    db_session.add(scan)
-    db_session.flush()
 
     promoted = api_client.post(
         f"/api/v1/models/{accepted_version.id}/facade-from-scan",
@@ -266,13 +285,263 @@ def test_exterior_scan_becomes_an_exact_editable_facade_and_keeps_source_scan(
 
     edited_again = api_client.post(
         f"/api/v1/models/{made.id}/facade",
-        json={"roof": "flat", "openings": []},
+        json={"roof": "flat", "openings": [], "variant_name": "Scan flat"},
         headers=actor.headers,
     )
     assert edited_again.status_code == 202, edited_again.text
+    (edit_job,) = run_all(db_session, storage)
+    assert edit_job.status is JobStatus.succeeded, edit_job.error
+    edited = db_session.get(ProjectVersion, uuid.UUID(str((edit_job.result or {})["version_id"])))
+    assert edited is not None and edited.parent_version_id == made.id
+    edited_roles = {
+        link.role: link.asset_id
+        for link in db_session.query(VersionAsset).filter_by(version_id=edited.id)
+    }
+    assert edited_roles[AssetRole.scan] == scan_asset_id
+    assert (
+        edited.provenance["facade_scan_reconstruction"]
+        == made.provenance["facade_scan_reconstruction"]
+    )
+
+    variant = api_client.post(
+        f"/api/v1/models/{edited.id}/facade-variant",
+        json={"variant_version_id": str(edited.id)},
+        headers=actor.headers,
+    )
+    assert variant.status_code == 202, variant.text
+    (variant_job,) = run_all(db_session, storage)
+    assert variant_job.status is JobStatus.succeeded, variant_job.error
+    applied = db_session.get(
+        ProjectVersion, uuid.UUID(str((variant_job.result or {})["version_id"]))
+    )
+    assert applied is not None and applied.parent_version_id == edited.id
+    applied_roles = {
+        link.role: link.asset_id
+        for link in db_session.query(VersionAsset).filter_by(version_id=applied.id)
+    }
+    assert applied_roles[AssetRole.scan] == scan_asset_id
+    assert (
+        applied.provenance["facade_scan_reconstruction"]
+        == made.provenance["facade_scan_reconstruction"]
+    )
 
     project = db_session.get(Project, project_id)
-    assert project is not None and project.head_version_id == made.id
+    assert project is not None and project.head_version_id == applied.id
+
+
+@pytest.mark.parametrize(
+    ("scan_status", "asset_role"),
+    [
+        (ScanStatus.failed, AssetRole.model),
+        (ScanStatus.accepted, AssetRole.source),
+    ],
+)
+def test_facade_scan_promotion_fails_closed_for_status_and_frozen_asset_role(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    scan_status: ScanStatus,
+    asset_role: AssetRole,
+) -> None:
+    _, accepted, _, _ = accepted_exterior_scan(
+        api_client,
+        actor,
+        db_session,
+        status=scan_status,
+        asset_role=asset_role,
+    )
+    rejected = api_client.post(
+        f"/api/v1/models/{accepted.id}/facade-from-scan",
+        json={
+            "length_mm": 10_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+        },
+        headers=actor.headers,
+    )
+    error = refusal(rejected)
+    assert error["details"]["reason"] == "broken_scan_lineage"
+    assert facade_jobs(db_session) == []
+
+
+def test_facade_worker_revalidates_forged_scan_lineage_before_kernel(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, accepted, _, _ = accepted_exterior_scan(api_client, actor, db_session)
+    queued = api_client.post(
+        f"/api/v1/models/{accepted.id}/facade-from-scan",
+        json={
+            "length_mm": 10_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+        },
+        headers=actor.headers,
+    )
+    assert queued.status_code == 202, queued.text
+    job = facade_jobs(db_session)[-1]
+    job.input = {
+        **job.input,
+        "promoted_from_scan": {
+            **dict(job.input["promoted_from_scan"]),
+            "scan_session_id": str(uuid.uuid4()),
+        },
+    }
+    db_session.flush()
+
+    def unexpected_kernel(*_: object, **__: object) -> None:
+        raise AssertionError("the kernel must not run for forged scan lineage")
+
+    monkeypatch.setattr("app.jobs.facade.run_plan", unexpected_kernel)
+
+    (finished,) = run_all(db_session, storage)
+    assert finished.id == job.id
+    assert finished.status is JobStatus.failed
+    assert (finished.error or {})["code"] == "invalid_scan_lineage"
+    project = db_session.get(Project, accepted.project_id)
+    assert project is not None and project.head_version_id == accepted.id
+
+
+def test_facade_scan_continuity_ignores_metadata_and_fails_closed_for_job_links(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+) -> None:
+    project_id, accepted, scan, scan_asset_id = accepted_exterior_scan(
+        api_client, actor, db_session
+    )
+    promoted = {
+        "scan_session_id": str(scan.id),
+        "accepted_version_id": str(accepted.id),
+        "source_version_id": str(accepted.id),
+        "method": "manual_metric_facade_trace",
+    }
+
+    forged_metadata = projects.create_version_internal(
+        db_session,
+        project_id=project_id,
+        parent_version_id=accepted.id,
+        label="Forged metadata only",
+        provenance={"facade_scan_reconstruction": promoted},
+        created_by=actor.user.id,
+    )
+    assert (
+        continuity_input(db_session, version=forged_metadata, workspace_id=actor.workspace.id) == {}
+    )
+    db_session.add(
+        Job(
+            workspace_id=actor.workspace.id,
+            project_id=project_id,
+            project_version_id=accepted.id,
+            created_by=actor.user.id,
+            type="edit_facade",
+            status=JobStatus.failed,
+            input={
+                "version_id": str(accepted.id),
+                "promoted_from_scan": promoted,
+                "preserve_scan_asset_id": str(scan_asset_id),
+            },
+            result={"version_id": str(forged_metadata.id)},
+            error={"code": "failed"},
+        )
+    )
+    db_session.flush()
+    assert (
+        continuity_input(db_session, version=forged_metadata, workspace_id=actor.workspace.id) == {}
+    )
+
+    broken_parent = projects.create_version_internal(
+        db_session,
+        project_id=project_id,
+        parent_version_id=accepted.id,
+        label="Broken job parent",
+        assets={AssetRole.scan: scan_asset_id},
+        created_by=actor.user.id,
+    )
+    db_session.add(
+        Job(
+            workspace_id=actor.workspace.id,
+            project_id=project_id,
+            project_version_id=accepted.id,
+            created_by=actor.user.id,
+            type="edit_facade",
+            status=JobStatus.succeeded,
+            input={
+                "version_id": str(uuid.uuid4()),
+                "promoted_from_scan": promoted,
+                "preserve_scan_asset_id": str(scan_asset_id),
+            },
+            result={"version_id": str(broken_parent.id)},
+        )
+    )
+    db_session.flush()
+    with pytest.raises(FacadeScanLineageError, match="broken immutable parent"):
+        continuity_input(db_session, version=broken_parent, workspace_id=actor.workspace.id)
+
+    wrong_role = projects.create_version_internal(
+        db_session,
+        project_id=project_id,
+        parent_version_id=accepted.id,
+        label="Missing frozen scan role",
+        created_by=actor.user.id,
+    )
+    db_session.add(
+        Job(
+            workspace_id=actor.workspace.id,
+            project_id=project_id,
+            project_version_id=accepted.id,
+            created_by=actor.user.id,
+            type="edit_facade",
+            status=JobStatus.succeeded,
+            input={
+                "version_id": str(accepted.id),
+                "promoted_from_scan": promoted,
+                "preserve_scan_asset_id": str(scan_asset_id),
+            },
+            result={"version_id": str(wrong_role.id)},
+        )
+    )
+    db_session.flush()
+    with pytest.raises(FacadeScanLineageError, match="produced version"):
+        continuity_input(db_session, version=wrong_role, workspace_id=actor.workspace.id)
+
+
+def test_facade_scan_lineage_rejects_cross_workspace_asset(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+) -> None:
+    project_id, accepted, scan, _ = accepted_exterior_scan(api_client, actor, db_session)
+    foreign = make_actor(db_session)
+    foreign_asset_id = uuid.UUID(
+        upload(
+            api_client,
+            foreign,
+            stl(trimesh.creation.box(extents=(1_000, 1_000, 1_000))),
+            "foreign-scan.stl",
+            "model/stl",
+        )
+    )
+    scan.mesh_asset_id = foreign_asset_id
+    db_session.flush()
+    with pytest.raises(FacadeScanLineageError, match="accepted version"):
+        validate_lineage(
+            db_session,
+            source=accepted,
+            workspace_id=actor.workspace.id,
+            project_id=project_id,
+            promoted={
+                "scan_session_id": str(scan.id),
+                "accepted_version_id": str(accepted.id),
+                "source_version_id": str(accepted.id),
+                "method": "manual_metric_facade_trace",
+            },
+            preserve_scan_asset_id=foreign_asset_id,
+        )
 
 
 def test_facade_editor_creates_immutable_shed_roof_with_one_material_surface(

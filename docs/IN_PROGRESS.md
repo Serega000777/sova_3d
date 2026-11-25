@@ -325,7 +325,9 @@ picker для несвязанных импортов и ручной drag не 
 angle хранится на version-asset link, а web/mobile история и print-check используют один контракт.
 Exact facade editor получил локальный parent↔current render-crop reveal в `9542dd8`, переиспользуя
 общий versions-компонент. Это честное визуальное сравнение canonical thumbnails, не semantic diff;
-surface cleanup/opening/material workflow для scanned facade остаётся активным пробелом.
+bounded scan→exact-facade opening/material workflow уже существует, а исходная exterior-scan сетка
+теперь сохраняется через последующие facade edits и variants по server-verified lineage. За границей
+остаются автоматическое распознавание/очистка шумной сетки и отдельный UI доступа к source scan.
 Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
 новыми пробелами были признаны furniture catalogue и façade-domain editor. Первый furniture
 increment закрыт `81b0188`; bounded façade-editor MVP закрыт `bdebdd0`. Source/current visual

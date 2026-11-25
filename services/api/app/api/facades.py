@@ -41,6 +41,15 @@ from app.models.scanning import ScanSession
 from app.models.versioning import ProjectVersion
 from app.services import jobs, projects
 from app.services.authz import require_workspace_role
+from app.services.facade_scan_lineage import (
+    FacadeScanLineageError,
+)
+from app.services.facade_scan_lineage import (
+    continuity_input as facade_scan_continuity_input,
+)
+from app.services.facade_scan_lineage import (
+    promotion_input as facade_scan_promotion_input,
+)
 from app.services.house_boxes import HOUSE_BOX_JOB
 
 router = APIRouter(tags=["facades"])
@@ -349,9 +358,7 @@ def _scan_ancestor(db: Session, version: ProjectVersion) -> ScanSession | None:
         if session is not None:
             return session
         current = (
-            db.get(ProjectVersion, current.parent_version_id)
-            if current.parent_version_id
-            else None
+            db.get(ProjectVersion, current.parent_version_id) if current.parent_version_id else None
         )
     return None
 
@@ -807,6 +814,12 @@ def create_facade_from_scan(
         )
     except (TypeError, ValueError, ValidationError) as exc:
         raise ValidationFailedError(str(exc)) from exc
+    try:
+        scan_input = facade_scan_promotion_input(
+            db, source=version, scan=scan, workspace_id=project.workspace_id
+        )
+    except FacadeScanLineageError as exc:
+        raise ValidationFailedError(str(exc), {"reason": "broken_scan_lineage"}) from exc
     job = jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -816,14 +829,8 @@ def create_facade_from_scan(
         input={
             "version_id": str(version.id),
             "request": FACADE_ADAPTER.dump_python(request, mode="json", exclude_none=True),
-            "preserve_scan_asset_id": str(scan.mesh_asset_id),
+            **scan_input,
             "require_head_version": True,
-            "promoted_from_scan": {
-                "scan_session_id": str(scan.id),
-                "accepted_version_id": str(scan.result_version_id),
-                "source_version_id": str(version.id),
-                "method": "manual_metric_facade_trace",
-            },
         },
         created_by=principal.user_id,
         idempotency_key=idempotency_key,
@@ -953,6 +960,12 @@ def edit_facade(
         for assignment in parent_assignments
         if assignment.get("surface_key") not in current_keys
     )
+    try:
+        scan_input = facade_scan_continuity_input(
+            db, version=version, workspace_id=project.workspace_id
+        )
+    except FacadeScanLineageError as exc:
+        raise ValidationFailedError(str(exc), {"reason": "broken_scan_lineage"}) from exc
     job = jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -963,6 +976,7 @@ def edit_facade(
             "version_id": str(version.id),
             "request": FACADE_ADAPTER.dump_python(request, mode="json", exclude_none=True),
             "dropped_surface_assignments": dropped,
+            **scan_input,
             **({"variant_name": body.variant_name} if body.variant_name is not None else {}),
         },
         created_by=principal.user_id,
@@ -1059,6 +1073,12 @@ def apply_facade_variant(
     ]
     request = FacadeRequest(**payload)
     _validate_materials(db, request.surface_assignments)
+    try:
+        scan_input = facade_scan_continuity_input(
+            db, version=target, workspace_id=project.workspace_id
+        )
+    except FacadeScanLineageError as exc:
+        raise ValidationFailedError(str(exc), {"reason": "broken_scan_lineage"}) from exc
     job = jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -1069,6 +1089,7 @@ def apply_facade_variant(
             "version_id": str(target.id),
             "request": FACADE_ADAPTER.dump_python(request, mode="json", exclude_none=True),
             "dropped_surface_assignments": [],
+            **scan_input,
             "applied_variant": {
                 "name": name,
                 "version_id": str(source.id),
