@@ -328,7 +328,8 @@ Exact facade editor получил локальный parent↔current render-cr
 bounded scan→exact-facade opening/material workflow уже существует, а исходная exterior-scan сетка
 теперь сохраняется через последующие facade edits и variants по server-verified lineage. За границей
 остаются автоматическое распознавание/очистка шумной сетки и встроенное синхронное scan↔exact-facade
-3D-сравнение; mobile version library уже открывает сохранённый source scan системным viewer.
+3D-сравнение; mobile version library и web timeline уже открывают сохранённый source scan через
+авторизованный download системным viewer или отдельной browser-вкладкой.
 Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
 новыми пробелами были признаны furniture catalogue и façade-domain editor. Первый furniture
 increment закрыт `81b0188`; bounded façade-editor MVP закрыт `bdebdd0`. Source/current visual

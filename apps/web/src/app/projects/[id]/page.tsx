@@ -187,6 +187,7 @@ import {
   type VerifiedGameLod,
 } from "@/lib/game-ready-lod";
 import { useSession } from "@/lib/session";
+import { singleVersionScanAssetId } from "@/lib/version-scan-source";
 import { DEFAULT_SITE_PLAN, sitePlanFromProvenance } from "@physical-ai/contracts";
 import {
   applyExplodedPreview,
@@ -4001,6 +4002,24 @@ export default function ProjectPage() {
     try {
       const download = await client.download(assetId);
       setDownloads((d) => [{ format: name.includes(".") ? name : `${name}.stl`, url: download.url }, ...d]);
+      window.open(download.url, "_blank", "noopener");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function openVersionScanSource(assetId: string) {
+    if (!client) return;
+    setError(null);
+    try {
+      const download = await client.download(assetId);
+      if (download.asset_id !== assetId) {
+        throw new Error(
+          ru
+            ? "Ссылка скачивания не совпадает с исходным сканом версии."
+            : "The download does not match the version source scan.",
+        );
+      }
       window.open(download.url, "_blank", "noopener");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -8984,6 +9003,7 @@ export default function ProjectPage() {
                   <ul className="list version-history-list">
                     {versions.map((version) => {
                       const details = versionHistory.find((item) => item.id === version.id);
+                      const scanAssetId = singleVersionScanAssetId(version.assets);
                       const author = details?.creator_name
                         ?? (version.created_by === me?.user.id ? (ru ? "Вы" : "You") : version.created_by?.slice(0, 8))
                         ?? (ru ? "Система" : "System");
@@ -9006,6 +9026,19 @@ export default function ProjectPage() {
                               {author} · {new Date(version.created_at).toLocaleString()} · {formatAssetBytes(details?.total_asset_bytes ?? 0, ru)}
                             </span>
                             {details?.comment ? <span className="version-comment">{details.comment}</span> : null}
+                            {scanAssetId ? (
+                              <div onClick={(event) => event.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  className="btn compact"
+                                  disabled={Boolean(busy)}
+                                  aria-label={ru ? "Открыть исходный скан версии" : "Open version source scan"}
+                                  onClick={() => void openVersionScanSource(scanAssetId)}
+                                >
+                                  {ru ? "Открыть исходник" : "Open source"}
+                                </button>
+                              </div>
+                            ) : null}
                             {client && (
                               <div onClick={(event) => event.stopPropagation()}>
                                 <FeedbackButtons client={client} projectId={projectId} target={{ version_id: version.id }} ru={ru} />
