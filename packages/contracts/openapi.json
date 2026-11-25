@@ -25389,6 +25389,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/UTurnStairBody"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WinderTurnStairBody"
                   }
                 ]
               },
@@ -30492,7 +30495,8 @@
             "enum": [
               "straight",
               "l_turn",
-              "u_turn"
+              "u_turn",
+              "winder_turn"
             ],
             "title": "Kind",
             "default": "straight"
@@ -30545,6 +30549,55 @@
               }
             ],
             "title": "Landing"
+          },
+          "winders": {
+            "items": {
+              "items": {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              "type": "array",
+              "maxItems": 6,
+              "minItems": 4
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Winders"
+          },
+          "newel": {
+            "anyOf": [
+              {
+                "items": {
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newel"
           }
         },
         "type": "object",
@@ -38650,6 +38703,95 @@
           "overlap_area_m2"
         ],
         "title": "WetZoneAlignmentCheck"
+      },
+      "WinderTurnStairBody": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "winder_turn",
+            "title": "Kind"
+          },
+          "width_mm": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": 700.0,
+            "title": "Width Mm",
+            "default": 1000
+          },
+          "tread_depth_mm": {
+            "type": "number",
+            "maximum": 400.0,
+            "minimum": 200.0,
+            "title": "Tread Depth Mm",
+            "default": 280
+          },
+          "lower_step_count": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 3.0,
+            "title": "Lower Step Count",
+            "default": 7
+          },
+          "upper_step_count": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 3.0,
+            "title": "Upper Step Count",
+            "default": 7
+          },
+          "newel_mm": {
+            "type": "number",
+            "maximum": 500.0,
+            "minimum": 200.0,
+            "title": "Newel Mm",
+            "default": 250
+          },
+          "turn": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ],
+            "title": "Turn",
+            "default": "left"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ],
+            "title": "Placement",
+            "default": "center"
+          },
+          "railing": {
+            "type": "boolean",
+            "const": false,
+            "title": "Railing",
+            "default": false
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "WinderTurnStairBody",
+        "description": "Two perpendicular flights and exactly three 30° winder treads around an open newel square.\n\nValues are strict (no string/boolean coercion), unknown fields are rejected and ``railing``\naccepts only ``false`` because rails along a winder turn are not modelled."
       },
       "WorkspaceBrief": {
         "properties": {

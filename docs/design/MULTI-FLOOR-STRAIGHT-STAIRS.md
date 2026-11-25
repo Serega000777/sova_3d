@@ -40,7 +40,7 @@ it does not align partitions, wet stacks or load paths between levels.
 
 Mobile's house scenario now offers the same direct typed creator in addition to the existing
 read-only text proposal flow. It submits bounded rectangle/L/T dimensions, one to three floors,
-and optional straight or L-turn stairs only for a rectangular multi-floor house. The client checks
+and optional straight, L-turn, U-turn or winder-turn stairs only for a rectangular multi-floor house. The client checks
 dimension, riser and L-stride bounds for immediate feedback; the API and worker still revalidate
 the exact request before the immutable job is accepted and executed.
 
@@ -128,6 +128,52 @@ Real OCCT 7.8.1 (`physical-ai-geometry:multifloor-shell`, no kernel source chang
 the 153-operation maximum plan and a two-floor right-turn plan: every floor, roof, flight and rail
 body was a valid single solid, and each flight with its landing fused into one solid.
 
+## Winder-turn follow-up (quarter turn with three winders)
+
+`kind: "winder_turn"` joins two perpendicular flights with exactly three 30° winder treads around
+an open `newel × newel` square. It accepts only:
+
+- width 700–2000 mm, tread depth 200–400 mm, newel void 200–500 mm (strict finite numbers);
+- lower and upper flight step counts 3–24 each (strict integers);
+- turn left (+Y) or right (−Y), placement left/centre/right, an optional interior-material id;
+- `railing: false` only.
+
+Unknown fields are rejected. Every winder is one riser: `risers = lower + 3 + upper`, with the
+shared 10–30 riser, 120–220 mm rise and 550–700 mm `2 × rise + tread` rules. The same stride rule
+is also applied to the winders' going on one walking line, an arc of radius `newel + 300 mm` about
+the newel's far corner (`going = radius × π/6`). Combined with the 200 mm newel minimum this makes
+11 the smallest riser total that can actually pass. The footprint is
+`(tread × lower + width + newel) × (width + newel + tread × upper)` and keeps the 350 mm wall
+clearance; any setback additionally requires the opening to stay inside the smaller upper floor.
+
+All four riser lines of the turn meet in the newel's far corner at 0°, 30°, 60° and 90°. With
+`s = width + newel` the polygons are a quadrilateral, a six-point corner tread and a second
+quadrilateral; their areas add up to `s² − newel²`, so nothing covers the newel. A right turn is
+the mirrored left turn with the vertex order reversed back to counter-clockwise, so the prism
+orientation never depends on the turn side. Before any plan exists the
+layout must prove minimum edge length, winding, non-self-intersection, exact tiling and one whole
+shared riser edge between every neighbouring pair, both flights included.
+
+Per transition the plan emits one box per flight step, three polygon `extrude` prisms
+(`stair_<a>_<b>_winder_1..3`) and fuses them into the single output `stair_<a>_<b>_step_1`. The
+worker fails the job when the kernel does not report that output as one valid solid. Every upper
+floor is cut by two overlapping rectangles that equal the six-corner swept outline plus the 50 mm
+margin; the floor slab above the newel square and beside the flights is kept.
+
+The derived operation count is `2·floors + 4·(floors − 1) + 1 + (2·risers − 1)·(floors − 1)`. The
+maximum (three floors, 30 risers) is 133 operations, below the shared 256 ceiling; the first
+rejected riser total is 31. The complete OperationPlan is built and validated while the request is
+validated, so an impossible plan is a 422 before a project or job exists, and again in the worker.
+
+`PlanStair` gains `winders` (three polygons, climbing order) and `newel`; `run_mm` stays the flight
+run because winder going varies across a tread. The shared `stairPlanLines` helper draws the two
+inner winder risers and a six-point walking line, and the plan editor outlines the newel. Web and
+mobile use one shared `checkWinderStair` contract helper for immediate feedback.
+
+Not modelled for this shape: railings (a straight or bent rail would misrepresent the winding
+edge, so `railing: true` is rejected), a newel post, stringers, headroom, structure, or any
+building-code check. The walking-line rule is a comfort bound, not code compliance.
+
 ## Symmetric upper-floor setback follow-up
 
 Rectangle houses with two or three floors may declare one `upper_floor_setback_mm` from 0 to
@@ -167,7 +213,8 @@ bearing walls, beams, loads, plumbing stacks, pipe routes or code compliance.
 
 This is not a general staircase or building-information model. It does not claim:
 
-- U-, winder or spiral stairs, or L stairs with unequal landing size or winder treads;
+- spiral stairs, half-turn or other winder counts, winder railings or newel posts, or L stairs with
+  unequal landing size;
 - independently configured flights per transition;
 - stairs inside L- or T-shaped footprints, asymmetric/per-level setbacks or shape changes;
 - pitched roofs in this multi-floor scene path;

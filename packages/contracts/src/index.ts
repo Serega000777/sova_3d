@@ -22,6 +22,7 @@ export * from "./room-photo-capture.js";
 export * from "./repair.js";
 export * from "./photo-measurement.js";
 export * from "./house-text.js";
+export * from "./house-stair.js";
 export * from "./exact-detail.js";
 export * from "./integrity.js";
 export * from "./marketplace-download.js";

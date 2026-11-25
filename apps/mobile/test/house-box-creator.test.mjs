@@ -29,6 +29,19 @@ test("mobile sends discriminated straight, L-turn or U-turn stair parameters", (
   assert.match(creator, /Отступ верхних этажей, мм/);
 });
 
+test("mobile winder stair sends only its own bounded fields and no railing", () => {
+  const body = creator.match(/\{\s+kind: "winder_turn",[\s\S]+?\n\s+\}/)?.[0] ?? "";
+  assert.match(body, /lower_step_count: dimensions\.winderLowerSteps,\s+upper_step_count: dimensions\.winderUpperSteps,\s+newel_mm: dimensions\.newel,\s+turn,\s+placement: "center",\s+railing: false,/);
+  assert.doesNotMatch(body, /straightSteps|uFlightSteps|dimensions\.lowerSteps|dimensions\.upperSteps|railing: true/);
+  assert.equal(creator.match(/newel_mm/g)?.length, 1);
+  assert.match(creator, /value="winder_turn" selected=\{stairKind\} label="Забежная 90°"/);
+  assert.match(creator, /stairKind === "winder_turn" \? \([\s\S]+value=\{winderLowerSteps\}[\s\S]+value=\{winderUpperSteps\}[\s\S]+value=\{newelMm\}/);
+  assert.match(creator, /\[dimensions\.winderLowerSteps, dimensions\.winderUpperSteps, dimensions\.newel\]/);
+  assert.match(creator, /checkWinderStair\(\{[\s\S]+upperFloorSetbackMm: dimensions\.upperFloorSetback,/);
+  assert.match(creator, /WINDER_STAIR_PROBLEM_TEXT\[winder\.problem\]\.ru/);
+  assert.match(creator, /Ограждение, столб, прочность и нормы для этого поворота не моделируются/);
+});
+
 test("description mode states the current multi-floor shell boundary", () => {
   assert.match(textCreator, /2–3 этажа получает отдельные shell каждого уровня и плоскую крышу/);
   assert.doesNotMatch(textCreator, /без лестниц, крыши, окон и комнат/);

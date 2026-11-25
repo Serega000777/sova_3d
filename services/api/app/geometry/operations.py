@@ -21,6 +21,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION: Literal[1] = 1
+MAX_PLAN_OPERATIONS = 256
 
 OperationId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$", examples=["box1", "hole_2"])]
 EntityRef = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
@@ -1003,7 +1004,7 @@ class OperationPlan(Strict):
     goal: Annotated[str, Field(min_length=1, max_length=2000)]
     assumptions: list[str] = Field(default_factory=list)
     required_clarifications: list[str] = Field(default_factory=list)
-    operations: list[Operation] = Field(default_factory=list, max_length=256)
+    operations: list[Operation] = Field(default_factory=list, max_length=MAX_PLAN_OPERATIONS)
     validation_steps: list[str] = Field(default_factory=list)
     expected_outputs: list[str] = Field(default_factory=list)
 

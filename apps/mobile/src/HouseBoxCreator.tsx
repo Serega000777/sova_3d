@@ -1,11 +1,11 @@
-import { type HouseBoxBody, type PhysicalAiClient } from "@physical-ai/contracts";
+import { checkWinderStair, type HouseBoxBody, type PhysicalAiClient, WINDER_STAIR_PROBLEM_TEXT } from "@physical-ai/contracts";
 import { useMemo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { colors, styles } from "./theme";
 
 type Shape = "rectangle" | "l_shape" | "t_shape";
-type StairKind = "straight" | "l_turn" | "u_turn";
+type StairKind = "straight" | "l_turn" | "u_turn" | "winder_turn";
 
 function millimetres(value: string): number {
   return Number(value.replace(",", ".")) * 1_000;
@@ -72,6 +72,9 @@ export function HouseBoxCreator({
   const [lowerSteps, setLowerSteps] = useState("8");
   const [upperSteps, setUpperSteps] = useState("8");
   const [uFlightSteps, setUFlightSteps] = useState("8");
+  const [winderLowerSteps, setWinderLowerSteps] = useState("7");
+  const [winderUpperSteps, setWinderUpperSteps] = useState("7");
+  const [newelMm, setNewelMm] = useState("250");
   const [turn, setTurn] = useState<"left" | "right">("left");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,11 +90,30 @@ export function HouseBoxCreator({
     lowerSteps: numberValue(lowerSteps),
     upperSteps: numberValue(upperSteps),
     uFlightSteps: numberValue(uFlightSteps),
+    winderLowerSteps: numberValue(winderLowerSteps),
+    winderUpperSteps: numberValue(winderUpperSteps),
+    newel: numberValue(newelMm),
     upperFloorSetback: numberValue(upperFloorSetbackMm),
-  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps, uFlightSteps, upperFloorSetbackMm]);
+  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps, uFlightSteps, winderLowerSteps, winderUpperSteps, newelMm, upperFloorSetbackMm]);
+
+  const winder = useMemo(() => checkWinderStair({
+    widthMm: dimensions.stairWidth,
+    treadMm: dimensions.tread,
+    lowerSteps: dimensions.winderLowerSteps,
+    upperSteps: dimensions.winderUpperSteps,
+    newelMm: dimensions.newel,
+    placement: "center",
+    houseLengthMm: dimensions.length,
+    houseWidthMm: dimensions.width,
+    floorHeightMm: dimensions.floorHeight,
+    upperFloorSetbackMm: dimensions.upperFloorSetback,
+  }), [dimensions]);
 
   const stairProblem = useMemo(() => {
     if (!addStair || !stairAllowed) return null;
+    if (stairKind === "winder_turn") {
+      return winder.problem ? WINDER_STAIR_PROBLEM_TEXT[winder.problem].ru : null;
+    }
     const risers = stairKind === "straight"
       ? dimensions.straightSteps
       : stairKind === "l_turn"
@@ -133,7 +155,7 @@ export function HouseBoxCreator({
       || footprintWidth > dimensions.width - 2 * dimensions.upperFloorSetback - 700
     ) return "Лестница и проёмы не помещаются с отступом 350 мм от стен.";
     return null;
-  }, [addStair, stairAllowed, stairKind, dimensions]);
+  }, [addStair, stairAllowed, stairKind, dimensions, winder]);
 
   async function create() {
     if (busy) return;
@@ -147,7 +169,9 @@ export function HouseBoxCreator({
         ? [dimensions.straightSteps]
         : stairKind === "l_turn"
           ? [dimensions.lowerSteps, dimensions.upperSteps]
-          : [dimensions.uFlightSteps]),
+          : stairKind === "winder_turn"
+            ? [dimensions.winderLowerSteps, dimensions.winderUpperSteps, dimensions.newel]
+            : [dimensions.uFlightSteps]),
     ];
     if (
       !label.trim()
@@ -201,7 +225,20 @@ export function HouseBoxCreator({
             railing: true,
             material_id: null,
           }
-          : {
+          : stairKind === "winder_turn"
+            ? {
+                kind: "winder_turn",
+                width_mm: dimensions.stairWidth,
+                tread_depth_mm: dimensions.tread,
+                lower_step_count: dimensions.winderLowerSteps,
+                upper_step_count: dimensions.winderUpperSteps,
+                newel_mm: dimensions.newel,
+                turn,
+                placement: "center",
+                railing: false,
+                material_id: null,
+              }
+            : {
               kind: "u_turn",
               width_mm: dimensions.stairWidth,
               tread_depth_mm: dimensions.tread,
@@ -276,6 +313,7 @@ export function HouseBoxCreator({
                 <Choice value="straight" selected={stairKind} label="Прямая" disabled={busy} onChange={setStairKind} />
                 <Choice value="l_turn" selected={stairKind} label="Г-образная" disabled={busy} onChange={setStairKind} />
                 <Choice value="u_turn" selected={stairKind} label="П-образная" disabled={busy} onChange={setStairKind} />
+                <Choice value="winder_turn" selected={stairKind} label="Забежная 90°" disabled={busy} onChange={setStairKind} />
               </View>
               <View style={styles.row}>
                 <TextInput style={[styles.input, { flex: 1 }]} value={stairWidthMm} editable={!busy} onChangeText={setStairWidthMm} keyboardType="number-pad" placeholder="Марш, мм" placeholderTextColor={colors.muted} />
@@ -293,6 +331,26 @@ export function HouseBoxCreator({
                     <Choice value="left" selected={turn} label="Поворот налево" disabled={busy} onChange={setTurn} />
                     <Choice value="right" selected={turn} label="Поворот направо" disabled={busy} onChange={setTurn} />
                   </View>
+                </>
+              ) : stairKind === "winder_turn" ? (
+                <>
+                  <View style={styles.row}>
+                    <TextInput style={[styles.input, { flex: 1 }]} value={winderLowerSteps} editable={!busy} onChangeText={setWinderLowerSteps} keyboardType="number-pad" placeholder="Нижний марш" placeholderTextColor={colors.muted} accessibilityLabel="Ступеней в нижнем марше" />
+                    <TextInput style={[styles.input, { flex: 1 }]} value={winderUpperSteps} editable={!busy} onChangeText={setWinderUpperSteps} keyboardType="number-pad" placeholder="Верхний марш" placeholderTextColor={colors.muted} accessibilityLabel="Ступеней в верхнем марше" />
+                    <TextInput style={[styles.input, { flex: 1 }]} value={newelMm} editable={!busy} onChangeText={setNewelMm} keyboardType="number-pad" placeholder="Просвет, мм" placeholderTextColor={colors.muted} accessibilityLabel="Внутренний просвет в миллиметрах" />
+                  </View>
+                  <View style={styles.row} accessibilityRole="radiogroup">
+                    <Choice value="left" selected={turn} label="Поворот налево" disabled={busy} onChange={setTurn} />
+                    <Choice value="right" selected={turn} label="Поворот направо" disabled={busy} onChange={setTurn} />
+                  </View>
+                  {winder.problem ? null : (
+                    <Text style={styles.muted}>
+                      {`${winder.riserCount} подъёмов по ${winder.riseMm.toFixed(1)} мм · габарит ${winder.footprint.x.toFixed(0)}×${winder.footprint.y.toFixed(0)} мм · забежная по линии хода ${winder.winderGoingMm.toFixed(0)} мм`}
+                    </Text>
+                  )}
+                  <Text style={styles.muted}>
+                    Ровно три забежные ступени вокруг открытого просвета. Ограждение, столб, прочность и нормы для этого поворота не моделируются.
+                  </Text>
                 </>
               ) : (
                 <>

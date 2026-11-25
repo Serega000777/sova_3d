@@ -13,6 +13,7 @@ from app.engineering.house_box import (
     HouseBoxRequest,
     LTurnStairRequest,
     UTurnStairRequest,
+    WinderTurnStairRequest,
     l_stair_rail_ids,
     u_stair_rail_ids,
 )
@@ -89,6 +90,21 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                 "the geometry engine did not return every floor and stair body",
                 details={"missing_bodies": sorted(missing)},
             )
+        if isinstance(request.stair, WinderTurnStairRequest):
+            # Face-joined winders must really have fused; never store a disconnected flight.
+            measured = {str(body["name"]): body for body in executed.bodies}
+            broken = [
+                name
+                for name in plan.expected_outputs
+                if name.startswith("stair_")
+                and (measured[name]["solids"] != 1 or not measured[name]["valid"])
+            ]
+            if broken:
+                raise JobFailureError(
+                    "kernel_bad_output",
+                    "the winder stair did not fuse into one valid solid",
+                    details={"broken_bodies": broken},
+                )
         part_assets: dict[str, tuple[Any, Any]] = {}
         for body_name in plan.expected_outputs:
             stl, brep = executed.parts[body_name]
@@ -145,6 +161,7 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
             flight_body = f"{flight_prefix}_step_1"
             l_turn = isinstance(request.stair, LTurnStairRequest)
             u_turn = isinstance(request.stair, UTurnStairRequest)
+            winder_turn = isinstance(request.stair, WinderTurnStairRequest)
             nodes.append(
                 {
                     "id": flight_prefix,
@@ -153,6 +170,8 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                         if l_turn
                         else f"П-образная лестница {floor_index + 1} → {floor_index + 2}"
                         if u_turn
+                        else f"Лестница с забежными ступенями {floor_index + 1} → {floor_index + 2}"
+                        if winder_turn
                         else f"Лестница {floor_index + 1} → {floor_index + 2}"
                     ),
                     "kind": "object",

@@ -1,12 +1,20 @@
 """A wizard request becomes a geometry job and a finalized project version."""
 
+import copy
 import uuid
 
+import pytest
+import sqlalchemy as sa
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
-from app.models.execution import JobStatus, Operation
+from app.geometry.operations import OperationPlan
+from app.jobs.kernel_exec import ExecutedPlan, run_plan
+from app.models.core import WorkspaceRole
+from app.models.execution import Job, JobStatus, Operation
+from app.models.versioning import ProjectVersion, VersionState
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401
@@ -573,6 +581,228 @@ def test_u_turn_stair_creates_parallel_plan_scene_and_operation_log(
     )
     assert len(logged) == 51
     assert sum(op.operation_type == "rotate" for op in logged) == 4
+
+
+WINDER_HOUSE = {
+    "label": "Дом с забежной лестницей",
+    "length_mm": 12_000,
+    "width_mm": 9_000,
+    "floor_height_mm": 3_000,
+    "floors": 3,
+    "shape": "rectangle",
+}
+WINDER_STAIR = {
+    "kind": "winder_turn",
+    "width_mm": 1_000,
+    "tread_depth_mm": 280,
+    "lower_step_count": 6,
+    "upper_step_count": 8,
+    "newel_mm": 250,
+    "turn": "right",
+    "placement": "left",
+    "railing": False,
+    "material_id": "interior.wood.oak-natural.v1",
+}
+
+
+def test_winder_stair_creates_aligned_plans_scene_and_immutable_version(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    body = {"workspace_id": str(actor.workspace.id), **WINDER_HOUSE, "stair": WINDER_STAIR}
+    headers = {**actor.headers, "Idempotency-Key": f"winder-{uuid.uuid4()}"}
+    response = api_client.post("/api/v1/house-boxes", json=body, headers=headers)
+    assert response.status_code == 202, response.text
+    project_id = response.json()["project_id"]
+    assert response.json()["height_mm"] == 9_000
+    repeated = api_client.post("/api/v1/house-boxes", json=body, headers=headers)
+    assert repeated.status_code == 202, repeated.text
+    assert repeated.json()["job"]["job_id"] == response.json()["job"]["job_id"]
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    version_id = result["version_id"]
+    assert result["house_box"]["request"]["stair"] == WINDER_STAIR
+    bodies = {item["name"]: item for item in result["bodies"]}
+    for name in ("stair_1_2_step_1", "stair_2_3_step_1"):
+        assert bodies[name]["solids"] == 1 and bodies[name]["valid"]
+
+    floors = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert floors.status_code == 200, floors.text
+    levels = floors.json()["levels"]
+    assert [[stair["role"] for stair in level["plan"]["stairs"]] for level in levels] == [
+        ["up"],
+        ["down", "up"],
+        ["down"],
+    ]
+    up = levels[0]["plan"]["stairs"][0]
+    assert up["kind"] == "winder_turn" and up["turn"] == "right" and up["railing"] is False
+    assert len(up["outline"]) == 6 and up["landing"] is None
+    assert [len(winder) for winder in up["winders"]] == [4, 6, 4] and len(up["newel"]) == 4
+    assert [flight["direction"] for flight in up["flights"]] == ["+x", "-y"]
+    assert [flight["step_count"] for flight in up["flights"]] == [6, 8]
+    assert levels[2]["plan"]["stairs"][0]["outline"] == up["outline"]
+
+    scene = api_client.get(f"/api/v1/models/{version_id}/scene", headers=actor.headers)
+    assert scene.status_code == 200, scene.text
+    nodes = {node["id"]: node for node in scene.json()["nodes"]}
+    stair_nodes = [name for name in nodes if name.startswith(("stair_", "rail_"))]
+    assert stair_nodes == ["stair_1_2", "stair_2_3"]
+    assert nodes["stair_1_2"]["name"] == "Лестница с забежными ступенями 1 → 2"
+    assert nodes["stair_2_3"]["parent_id"] == "floor_2_group"
+    assert nodes["stair_1_2"]["appearance"]["catalog_material_id"] == "interior.wood.oak-natural.v1"
+
+    def operation_log() -> list[tuple[str, dict[str, object]]]:
+        return [
+            (operation.operation_type, operation.params)
+            for operation in db_session.query(Operation)
+            .filter(Operation.project_version_id == uuid.UUID(version_id))
+            .order_by(Operation.sequence_no)
+        ]
+
+    logged = operation_log()
+    # 3 shells, 2 x 2 L openings, roof, 2 x (17 bodies + 16 fuses); no rails.
+    assert len(logged) == 6 + 8 + 1 + 2 * 33
+    assert [params["id"] for kind, params in logged if kind == "extrude"] == [
+        f"stair_{flight}_winder_{index}" for flight in ("1_2", "2_3") for index in (1, 2, 3)
+    ]
+    assert not any(kind == "rotate" for kind, _ in logged)
+
+    # A later layout is a child version: the winder root version itself never changes.
+    root = db_session.get(ProjectVersion, uuid.UUID(version_id))
+    assert root is not None and root.state is VersionState.finalized
+    provenance = copy.deepcopy(root.provenance)
+    layout = api_client.post(
+        f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
+        json={"base_version_id": version_id, "floor_index": 1, "room_count": 2},
+        headers=actor.headers,
+    )
+    assert layout.status_code == 201, layout.text
+    laid_out = layout.json()
+    assert laid_out["version_id"] != version_id
+    assert laid_out["floor_plan"]["stairs"] == levels[1]["plan"]["stairs"]
+    stair_y = [point[1] for point in up["outline"]]
+    assert all(
+        max(point[1] for point in room["outline"]) <= min(stair_y)
+        or min(point[1] for point in room["outline"]) >= max(stair_y)
+        for room in laid_out["floor_plan"]["rooms"]
+    )
+    db_session.expire_all()
+    assert root.provenance == provenance and operation_log() == logged
+    with pytest.raises(DBAPIError, match="immutable|finalized"), db_session.begin_nested():
+        db_session.execute(
+            sa.update(ProjectVersion)
+            .where(ProjectVersion.id == root.id)
+            .values(provenance={"forged": True})
+        )
+
+
+def test_winder_stair_creation_requires_a_workspace_editor(
+    api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    body = {"workspace_id": str(actor.workspace.id), **WINDER_HOUSE, "stair": WINDER_STAIR}
+    viewer = make_actor(db_session, role=WorkspaceRole.viewer, workspace=actor.workspace)
+    stranger = make_actor(db_session)
+    assert api_client.post("/api/v1/house-boxes", json=body).status_code == 401
+    for outsider, statuses in ((viewer, {403}), (stranger, {403, 404})):
+        denied = api_client.post("/api/v1/house-boxes", json=body, headers=outsider.headers)
+        assert denied.status_code in statuses, denied.text
+    assert db_session.query(Job).filter(Job.workspace_id == actor.workspace.id).count() == 0
+
+    accepted = api_client.post("/api/v1/house-boxes", json=body, headers=actor.headers)
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    hidden = api_client.get(
+        f"/api/v1/projects/{accepted.json()['project_id']}/floor-plans", headers=stranger.headers
+    )
+    assert hidden.status_code == 404
+
+
+def test_winder_stair_fails_closed_before_enqueue(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    base = {"workspace_id": str(actor.workspace.id), **WINDER_HOUSE, "floors": 2}
+    cases: list[tuple[dict[str, object], dict[str, object], str]] = [
+        ({"width_mm": 3_500}, {}, "do not fit"),
+        ({"floor_height_mm": 6_000}, {}, "120-220 mm rise"),
+        ({}, {"tread_depth_mm": 400}, "550-700 mm"),
+        ({}, {"newel_mm": 500}, "walking-line"),
+        ({}, {"newel_mm": 199}, "newel_mm"),
+        ({}, {"width_mm": "1000"}, "width_mm"),
+        ({}, {"lower_step_count": 2}, "lower_step_count"),
+        ({}, {"lower_step_count": 14, "upper_step_count": 14}, "10-30 risers"),
+        ({}, {"step_count": 17}, "step_count"),
+        ({}, {"flight_step_count": 8}, "flight_step_count"),
+        ({}, {"railing": True}, "railing"),
+        ({}, {"turn": "up"}, "turn"),
+        ({}, {"material_id": "interior.wood.forged.v1"}, "forged"),
+        ({"floors": 1}, {}, "at least two floors"),
+        ({"shape": "l_shape"}, {}, "rectangular house"),
+        ({"upper_floor_setback_mm": 500}, {}, "setback upper floor"),
+    ]
+    for house, stair, message in cases:
+        payload = {**base, **house, "stair": {**WINDER_STAIR, **stair}}
+        rejected = api_client.post("/api/v1/house-boxes", json=payload, headers=actor.headers)
+        assert rejected.status_code == 422, (payload, rejected.text)
+        assert message in rejected.text, (payload, rejected.text)
+    assert db_session.query(Job).filter(Job.workspace_id == actor.workspace.id).count() == 0
+
+
+def test_winder_worker_revalidates_a_tampered_job_request(
+    api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    accepted = api_client.post(
+        "/api/v1/house-boxes",
+        json={"workspace_id": str(actor.workspace.id), **WINDER_HOUSE, "stair": WINDER_STAIR},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    queued = db_session.get(Job, uuid.UUID(accepted.json()["job"]["job_id"]))
+    assert queued is not None
+    tampered = copy.deepcopy(queued.input)
+    tampered["request"]["stair"]["railing"] = True
+    queued.input = tampered
+    db_session.flush()
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert (job.error or {})["code"] == "invalid_house_box"
+
+
+def test_winder_job_rejects_a_disconnected_kernel_flight(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted = api_client.post(
+        "/api/v1/house-boxes",
+        json={"workspace_id": str(actor.workspace.id), **WINDER_HOUSE, "stair": WINDER_STAIR},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+
+    def split_flight(plan: OperationPlan) -> ExecutedPlan:
+        executed = run_plan(plan)
+        for body in executed.bodies:
+            if body["name"] == "stair_2_3_step_1":
+                body["solids"] = 2
+        return executed
+
+    monkeypatch.setattr("app.jobs.house_box.run_plan", split_flight)
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert (job.error or {})["code"] == "kernel_bad_output"
+    assert (
+        db_session.query(ProjectVersion)
+        .filter(ProjectVersion.project_id == uuid.UUID(accepted.json()["project_id"]))
+        .count()
+        == 0
+    )
 
 
 def test_rectangular_house_auto_layout_creates_an_immutable_plan_version(

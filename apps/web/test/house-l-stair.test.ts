@@ -9,6 +9,7 @@ import { parseFloorPlan, stairPlanLines } from "@physical-ai/contracts";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const wizard = read("../src/components/HouseBoxWizard.tsx");
+const planPage = read("../src/app/plan/page.tsx");
 const editor = read("../src/components/PlanEditor.tsx");
 
 test("the house-box wizard submits discriminated straight, L-turn or U-turn stairs", () => {
@@ -52,9 +53,32 @@ test("the shared plan helper draws a U-turn through both parallel flights", () =
   assert.deepEqual(lines?.walkline, [[4380, 3500], [7120, 4000], [4380, 4500]]);
 });
 
+test("the wizard submits a strict winder stair without hidden fields", () => {
+  const body = wizard.match(/\{\s+kind: "winder_turn",[\s\S]+?\n\s+\}/)?.[0] ?? "";
+  assert.match(body, /lower_step_count: winderLowerSteps,\s+upper_step_count: winderUpperSteps,\s+newel_mm: newelMm,\s+turn: stairTurn,\s+placement: stairPlacement,\s+railing: false,/);
+  // Nothing from the straight, L or U controls leaks, and the hidden railing state is not sent.
+  assert.deepEqual(
+    [...body.matchAll(/^\s+([a-z_]+):/gm)].map((match) => match[1]).sort(),
+    ["kind", "lower_step_count", "material_id", "newel_mm", "placement", "railing", "tread_depth_mm", "turn", "upper_step_count", "width_mm"],
+  );
+  assert.doesNotMatch(body, /stepCount|uFlightSteps|[^r]lowerSteps|[^r]upperSteps|railing,/);
+  // newel_mm belongs to the winder request only.
+  assert.equal(wizard.match(/newel_mm/g)?.length, 1);
+  assert.match(wizard, /\{!winderTurn && \(\s+<label className="check">\s+<input type="checkbox" checked=\{railing\}/);
+  assert.match(wizard, /winderTurn \? \(\s+<>[\s\S]+value=\{winderLowerSteps\} min=\{3\} max=\{24\}[\s\S]+value=\{newelMm\} min=\{200\} max=\{500\}/);
+  assert.match(wizard, /ru: "Забежная, 90°", en: "Winder turn, 90°"/);
+  assert.match(wizard, /checkWinderStair\(\{[\s\S]+upperFloorSetbackMm: effectiveUpperInset,/);
+  assert.match(wizard, /winder\.problem && WINDER_STAIR_PROBLEM_TEXT\[winder\.problem\]\[language\]/);
+  assert.match(wizard, /Railings, a newel post, structure and building codes are not modelled/);
+});
+
 test("the plan editor draws treads and the walking line from stairPlanLines", () => {
   assert.match(editor, /const lines = stairPlanLines\(stair\);/);
   assert.match(editor, /lines\.treads\.map/);
+  assert.match(editor, /stair\.newel && \(\s+<polygon/);
+  assert.match(editor, /lines\.walkline\[Math\.floor\(lines\.walkline\.length \/ 2\)\]/);
+  assert.match(editor, /stair\.kind === "winder_turn" \? " · W"/);
+  assert.match(planPage, /"winder_turn" \? \(ru \? " · с тремя забежными ступенями, без ограждения" : " · three winders, no railing"\)/);
   assert.match(editor, /<polyline points=\{lines\.walkline/);
   const plan = parseFloorPlan({
     rooms: [{ name: "Floor", outline: [[0, 0], [12000, 0], [12000, 8000], [0, 8000]] }],

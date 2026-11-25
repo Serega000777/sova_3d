@@ -906,7 +906,7 @@ export default function PlanPage() {
           )}
           {activeFloor && plan.stairs?.length ? (
             <span className="chip">
-              {plan.stairs.map((stair) => stair.role === "up" ? "↑" : "↓").join(" ")} · {plan.stairs[0]!.step_count} {ru ? "ступ." : "steps"}{plan.stairs[0]!.kind === "l_turn" ? (ru ? " · Г-образная с площадкой" : " · L-turn with landing") : plan.stairs[0]!.kind === "u_turn" ? (ru ? " · П-образная с площадкой" : " · U-turn with landing") : ""}
+              {plan.stairs.map((stair) => stair.role === "up" ? "↑" : "↓").join(" ")} · {plan.stairs[0]!.step_count} {ru ? "ступ." : "steps"}{plan.stairs[0]!.kind === "l_turn" ? (ru ? " · Г-образная с площадкой" : " · L-turn with landing") : plan.stairs[0]!.kind === "u_turn" ? (ru ? " · П-образная с площадкой" : " · U-turn with landing") : plan.stairs[0]!.kind === "winder_turn" ? (ru ? " · с тремя забежными ступенями, без ограждения" : " · three winders, no railing") : ""}
             </span>
           ) : null}
           <span className="chip">{plan.rooms.length > 1 ? (ru ? `Здание · ${plan.rooms.length} комн.` : `Building · ${plan.rooms.length} rooms`) : ru ? "Одна комната" : "Single room"}</span>

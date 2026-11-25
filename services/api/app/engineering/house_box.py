@@ -9,7 +9,7 @@ from typing import Annotated, Any, Literal
 from pydantic import ConfigDict, Discriminator, Field, Tag
 from pydantic.dataclasses import dataclass
 
-from app.geometry.operations import OperationPlan
+from app.geometry.operations import MAX_PLAN_OPERATIONS, OperationPlan
 
 HouseShape = Literal["rectangle", "l_shape", "t_shape"]
 HouseLength = Annotated[float, Field(ge=2_000, le=50_000)]
@@ -21,6 +21,11 @@ StairTread = Annotated[float, Field(ge=200, le=400)]
 StairSteps = Annotated[int, Field(ge=10, le=30)]
 FlightSteps = Annotated[int, Field(ge=3, le=26)]
 UTurnFlightSteps = Annotated[int, Field(ge=5, le=14)]
+# The winder variant is strict: no coercion from strings/booleans and no non-finite lengths.
+WinderWidth = Annotated[float, Field(ge=700, le=2_000, strict=True, allow_inf_nan=False)]
+WinderTread = Annotated[float, Field(ge=200, le=400, strict=True, allow_inf_nan=False)]
+WinderFlightSteps = Annotated[int, Field(ge=3, le=24, strict=True)]
+WinderNewel = Annotated[float, Field(ge=200, le=500, strict=True, allow_inf_nan=False)]
 StairPlacement = Literal["left", "center", "right"]
 StairTurn = Literal["left", "right"]
 
@@ -29,6 +34,13 @@ STAIR_CLEARANCE_MM = WALL_MM + 100.0
 OPENING_MARGIN_MM = 50.0
 # Comfort rule for the quarter-turn flights: 2 × rise + tread (Blondel step formula).
 L_STAIR_STRIDE_MM = (550.0, 700.0)
+# A winder stair always turns through exactly three 30° treads.
+WINDER_COUNT = 3
+WINDER_ANGLE_RAD = math.pi / 6
+# Winder goings are compared on one arc this far outside the newel square's near side.
+WINDER_WALKLINE_OFFSET_MM = 300.0
+# Geometric guard far above kernel tolerance: no winder edge may approach a collapsed sliver.
+WINDER_MIN_EDGE_MM = 50.0
 
 
 @dataclass(frozen=True, config=ConfigDict(extra="forbid"))
@@ -97,6 +109,38 @@ class UTurnStairRequest:
         return 2 * self.flight_step_count + 1
 
 
+@dataclass(frozen=True, config=ConfigDict(extra="forbid"))
+class WinderTurnStairRequest:
+    """Two perpendicular flights joined by exactly three winder treads around a newel void.
+
+    Flight 1 climbs along +X; three 30° winders turn around an open ``newel × newel`` square;
+    flight 2 climbs along +Y (``turn="left"``) or −Y (``turn="right"``).  Every winder is one
+    riser, so the derived riser is ``floor_height / (lower + 3 + upper)``.  Railings along a
+    winder turn are not modelled, therefore ``railing`` only accepts ``False``.
+    """
+
+    kind: Literal["winder_turn"]
+    width_mm: WinderWidth = 1_000
+    tread_depth_mm: WinderTread = 280
+    lower_step_count: WinderFlightSteps = 7
+    upper_step_count: WinderFlightSteps = 7
+    newel_mm: WinderNewel = 250
+    turn: StairTurn = "left"
+    placement: StairPlacement = "center"
+    railing: Literal[False] = False
+    material_id: Annotated[str, Field(min_length=1, max_length=120)] | None = None
+
+    @property
+    def step_count(self) -> int:
+        """Total risers between floors, the three winders included."""
+        return self.lower_step_count + WINDER_COUNT + self.upper_step_count
+
+    @property
+    def walkline_going_mm(self) -> float:
+        """Arc going of every winder on the shared walking line."""
+        return (float(self.newel_mm) + WINDER_WALKLINE_OFFSET_MM) * WINDER_ANGLE_RAD
+
+
 def stair_kind(value: Any) -> str:
     """Historical stored requests have no ``kind`` and are always straight flights."""
     if isinstance(value, dict):
@@ -107,7 +151,8 @@ def stair_kind(value: Any) -> str:
 StairRequest = Annotated[
     Annotated[StraightStairRequest, Tag("straight")]
     | Annotated[LTurnStairRequest, Tag("l_turn")]
-    | Annotated[UTurnStairRequest, Tag("u_turn")],
+    | Annotated[UTurnStairRequest, Tag("u_turn")]
+    | Annotated[WinderTurnStairRequest, Tag("winder_turn")],
     Discriminator(stair_kind),
 ]
 
@@ -142,6 +187,9 @@ class HouseBoxRequest:
             raise ValueError("a stair requires at least two floors")
         if self.shape != "rectangle":
             raise ValueError("the bounded stair builder currently requires a rectangular house")
+        if isinstance(self.stair, WinderTurnStairRequest):
+            _validate_winder_stair(self)
+            return
         if isinstance(self.stair, (LTurnStairRequest, UTurnStairRequest)):
             if not 10 <= self.stair.step_count <= 30:
                 raise ValueError(
@@ -393,6 +441,235 @@ def u_stair_layout(request: HouseBoxRequest) -> UStairLayout:
     )
 
 
+Polygon = tuple[tuple[float, float], ...]
+
+
+@plain_dataclass(frozen=True, slots=True)
+class WinderStairLayout:
+    """Trusted plan-space geometry of one winder stair, shared by the CAD plan and 2D plans.
+
+    ``turn_box`` is the square that holds the three winders plus the open ``newel`` square in
+    its inner corner.  Every winder polygon is counter-clockwise for both turn directions, so
+    the exact prism extruded from it is never inside-out.
+    """
+
+    turn: StairTurn
+    width: float
+    tread: float
+    rise: float
+    lower_steps: int
+    upper_steps: int
+    lower: Rect
+    turn_box: Rect
+    upper: Rect
+    newel: Rect
+    winders: tuple[Polygon, ...]
+
+    @property
+    def outline(self) -> list[tuple[float, float]]:
+        """Six-corner swept footprint; the re-entrant corner is the newel's near corner."""
+        x0, y0, _, y1 = self.lower
+        _, _, tx1, _ = self.turn_box
+        ux0, uy0, _, uy1 = self.upper
+        if self.turn == "left":
+            return [(x0, y0), (tx1, y0), (tx1, uy1), (ux0, uy1), (ux0, y1), (x0, y1)]
+        return [(x0, y0), (ux0, y0), (ux0, uy0), (tx1, uy0), (tx1, y1), (x0, y1)]
+
+    @property
+    def opening_rects(self) -> list[Rect]:
+        """Two overlapping rectangles whose union is exactly ``outline``."""
+        x0, y0, _, y1 = self.lower
+        _, ty0, tx1, ty1 = self.turn_box
+        ux0, uy0, ux1, uy1 = self.upper
+        return [(x0, y0, tx1, y1), (ux0, min(ty0, uy0), ux1, max(ty1, uy1))]
+
+
+def winder_stair_layout(request: HouseBoxRequest) -> WinderStairLayout:
+    """Place the winder footprint inside the house or reject an impossible stair/opening."""
+    stair = request.stair
+    if not isinstance(stair, WinderTurnStairRequest):  # pragma: no cover - callers prove this
+        raise ValueError("the house has no winder-turn stair")
+    length = float(request.length_mm)
+    house_width = float(request.width_mm)
+    width = float(stair.width_mm)
+    tread = float(stair.tread_depth_mm)
+    newel = float(stair.newel_mm)
+    size = width + newel
+    run1 = tread * stair.lower_step_count
+    run2 = tread * stair.upper_step_count
+    extent_x = run1 + size
+    extent_y = size + run2
+    clearance = STAIR_CLEARANCE_MM
+    min_x = (length - extent_x) / 2
+    if stair.placement == "left":
+        min_y = clearance
+    elif stair.placement == "right":
+        min_y = house_width - clearance - extent_y
+    else:
+        min_y = (house_width - extent_y) / 2
+    if (
+        min_x < clearance
+        or min_x + extent_x > length - clearance
+        or min_y < clearance
+        or min_y + extent_y > house_width - clearance
+    ):
+        raise ValueError("the winder stair and its opening do not fit inside the house footprint")
+
+    # Canonical left turn in turn-box coordinates.  All riser lines meet in the newel's far
+    # corner (0, size); the two inner ones are at 30° and 60°, so all three treads are 30°.
+    inner = newel * math.tan(WINDER_ANGLE_RAD)
+    outer = size * math.tan(WINDER_ANGLE_RAD)
+    inner_1, outer_1 = (inner, width), (outer, 0.0)
+    inner_2, outer_2 = (newel, size - inner), (size, size - outer)
+    local: tuple[Polygon, ...] = (
+        ((0.0, width), (0.0, 0.0), outer_1, inner_1),
+        (inner_1, outer_1, (size, 0.0), outer_2, inner_2, (newel, width)),
+        (inner_2, outer_2, (size, size), (newel, size)),
+    )
+    left = stair.turn == "left"
+    turn_x = min_x + run1
+    turn_y = min_y if left else min_y + run2
+
+    def place(polygon: Polygon) -> Polygon:
+        if left:
+            return tuple((turn_x + x, turn_y + y) for x, y in polygon)
+        # Mirroring reverses the winding, so the vertex order is reversed back.
+        return tuple((turn_x + x, turn_y + (size - y)) for x, y in reversed(polygon))
+
+    lower_y = turn_y if left else turn_y + newel
+    layout = WinderStairLayout(
+        turn=stair.turn,
+        width=width,
+        tread=tread,
+        rise=float(request.floor_height_mm) / stair.step_count,
+        lower_steps=stair.lower_step_count,
+        upper_steps=stair.upper_step_count,
+        lower=(min_x, lower_y, turn_x, lower_y + width),
+        turn_box=(turn_x, turn_y, turn_x + size, turn_y + size),
+        upper=(
+            (turn_x + newel, turn_y + size, turn_x + size, turn_y + size + run2)
+            if left
+            else (turn_x + newel, min_y, turn_x + size, turn_y)
+        ),
+        newel=(
+            turn_x,
+            turn_y + width if left else turn_y,
+            turn_x + newel,
+            turn_y + size if left else turn_y + newel,
+        ),
+        winders=tuple(place(polygon) for polygon in local),
+    )
+    _validate_winder_layout(layout)
+    return layout
+
+
+def _signed_area(polygon: Polygon) -> float:
+    return (
+        sum(
+            x0 * y1 - x1 * y0
+            for (x0, y0), (x1, y1) in zip(polygon, (*polygon[1:], polygon[0]), strict=True)
+        )
+        / 2
+    )
+
+
+def _edges(polygon: Polygon) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    return list(zip(polygon, (*polygon[1:], polygon[0]), strict=True))
+
+
+def _polygon_is_simple(polygon: Polygon) -> bool:
+    """True when no two non-adjacent edges touch."""
+
+    def side(a: tuple[float, float], b: tuple[float, float], p: tuple[float, float]) -> float:
+        return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+
+    edges = _edges(polygon)
+    for left in range(len(edges)):
+        for right in range(left + 2, len(edges)):
+            if left == 0 and right == len(edges) - 1:
+                continue
+            (a, b), (c, d) = edges[left], edges[right]
+            if side(a, b, c) * side(a, b, d) <= 0 and side(c, d, a) * side(c, d, b) <= 0:
+                return False
+    return True
+
+
+def _validate_winder_layout(layout: WinderStairLayout) -> None:
+    """Prove the three treads are simple, face-connected and tile the turn around the newel."""
+    tolerance = 1e-6
+    size = layout.turn_box[2] - layout.turn_box[0]
+    newel = layout.newel[2] - layout.newel[0]
+    for polygon in layout.winders:
+        if any(math.dist(a, b) < WINDER_MIN_EDGE_MM for a, b in _edges(polygon)):
+            raise ValueError("a winder tread edge collapses below the buildable minimum")
+        if _signed_area(polygon) <= 0 or not _polygon_is_simple(polygon):
+            raise ValueError("a winder tread is not a simple counter-clockwise polygon")
+    expected_area = size * size - newel * newel
+    if (
+        len(layout.winders) != WINDER_COUNT
+        or abs(sum(map(_signed_area, layout.winders)) - expected_area) > tolerance * expected_area
+    ):
+        raise ValueError("the winder treads do not tile the turn around the newel")
+    # Every neighbouring pair (including both flights) must share one whole riser edge,
+    # otherwise the fuse would silently produce separate solids.
+    up_y = layout.upper[1] if layout.turn == "left" else layout.upper[3]
+    chain = [
+        {(layout.lower[2], layout.lower[1]), (layout.lower[2], layout.lower[3])},
+        *(
+            set(before) & set(after)
+            for before, after in zip(layout.winders, layout.winders[1:], strict=False)
+        ),
+        {(layout.upper[0], up_y), (layout.upper[2], up_y)},
+    ]
+    for polygon, entry, leave in zip(layout.winders, chain, chain[1:], strict=False):
+        for edge in (entry, leave):
+            if len(edge) != 2 or any(
+                min(math.dist(point, vertex) for vertex in polygon) > tolerance for point in edge
+            ):
+                raise ValueError("neighbouring winder treads do not share a riser edge")
+
+
+def winder_operation_count(request: HouseBoxRequest) -> int:
+    """Exact OperationPlan size: shells, openings, roof and every fused transition."""
+    stair = request.stair
+    assert isinstance(stair, WinderTurnStairRequest)
+    transitions = request.floors - 1
+    shells = 2 * request.floors  # box + shell per floor
+    openings = 2 * 2 * transitions  # two rectangles, box + cut each, per upper floor
+    roof = 1
+    flights = (2 * stair.step_count - 1) * transitions  # one body per riser, fused into step 1
+    return shells + openings + roof + flights
+
+
+def _validate_winder_stair(request: HouseBoxRequest) -> None:
+    """Reject every impossible winder request, including its complete generated plan."""
+    stair = request.stair
+    assert isinstance(stair, WinderTurnStairRequest)
+    if not 10 <= stair.step_count <= 30:
+        raise ValueError(
+            "a winder stair needs 10-30 risers in total (both flights plus three winders)"
+        )
+    rise = float(request.floor_height_mm) / stair.step_count
+    if not 120 <= rise <= 220:
+        raise ValueError(
+            "floor height divided by the total riser count must produce a 120-220 mm rise"
+        )
+    low, high = L_STAIR_STRIDE_MM
+    if not low <= 2 * rise + float(stair.tread_depth_mm) <= high:
+        raise ValueError("2 × rise + tread must stay within 550-700 mm for a turning stair")
+    if not low <= 2 * rise + stair.walkline_going_mm <= high:
+        raise ValueError(
+            "2 × rise + winder walking-line going must stay within 550-700 mm; change newel_mm"
+        )
+    winder_stair_layout(request)
+    _validate_stair_against_upper_floor(request)
+    if winder_operation_count(request) > MAX_PLAN_OPERATIONS:  # pragma: no cover - bounds prove
+        raise ValueError(f"the winder house exceeds {MAX_PLAN_OPERATIONS} plan operations")
+    # The whole OperationPlan is validated before a job or project can be persisted.
+    if len(build(request).operations) != winder_operation_count(request):  # pragma: no cover
+        raise ValueError("the winder house plan does not match its derived operation count")
+
+
 def l_stair_rail_ids(floor_index: int) -> list[str]:
     """Stable rail body ids for one L-turn transition (two per flight, two on the landing)."""
     suffix = f"{floor_index + 1}_{floor_index + 2}"
@@ -442,6 +719,19 @@ def _rotate(
         "axis": axis,
         "angle_deg": angle_deg,
         "origin_mm": origin_mm,
+    }
+
+
+def _extrude_polygon(
+    op_id: str, *, polygon: Polygon, height_mm: float, z_mm: float
+) -> dict[str, object]:
+    return {
+        "id": op_id,
+        "type": "extrude",
+        "schema_version": 1,
+        "profile": {"kind": "polygon", "points_mm": [list(point) for point in polygon]},
+        "height_mm": height_mm,
+        "origin_mm": (0.0, 0.0, z_mm),
     }
 
 
@@ -693,6 +983,55 @@ def _u_stair_operations(
     return operations, outputs
 
 
+def _winder_stair_operations(
+    request: HouseBoxRequest, layout: WinderStairLayout, floor_index: int
+) -> tuple[list[dict[str, object]], list[str]]:
+    """One fused exact winder flight: lower boxes, three polygonal prisms, upper boxes."""
+    assert isinstance(request.stair, WinderTurnStairRequest)
+    z = floor_index * float(request.floor_height_mm)
+    rise, tread, width = layout.rise, layout.tread, layout.width
+    flight_id = f"stair_{floor_index + 1}_{floor_index + 2}"
+    first_step = f"{flight_id}_step_1"
+    operations: list[dict[str, object]] = []
+    lower_x, lower_y, _, _ = layout.lower
+    upper_x, upper_y, _, upper_y1 = layout.upper
+    for riser in range(1, request.stair.step_count + 1):
+        height = rise * riser
+        if riser <= layout.lower_steps:
+            step_id = f"{flight_id}_step_{riser}"
+            body = _box(
+                step_id,
+                width_mm=tread,
+                depth_mm=width,
+                height_mm=height,
+                origin_mm=(lower_x + tread * (riser - 1), lower_y, z),
+            )
+        elif riser <= layout.lower_steps + WINDER_COUNT:
+            winder = riser - layout.lower_steps
+            step_id = f"{flight_id}_winder_{winder}"
+            body = _extrude_polygon(
+                step_id, polygon=layout.winders[winder - 1], height_mm=height, z_mm=z
+            )
+        else:
+            k = riser - layout.lower_steps - WINDER_COUNT  # 1-based index within flight 2
+            step_id = f"{flight_id}_step_{riser - WINDER_COUNT}"
+            body = _box(
+                step_id,
+                width_mm=width,
+                depth_mm=tread,
+                height_mm=height,
+                origin_mm=(
+                    upper_x,
+                    upper_y + tread * (k - 1) if layout.turn == "left" else upper_y1 - tread * k,
+                    z,
+                ),
+            )
+        operations.append(body)
+        if riser > 1:
+            operations.append(_fuse(f"join_{step_id}", target=first_step, tool=step_id))
+    return operations, [first_step]
+
+
 def _opening_rects(request: HouseBoxRequest) -> list[Rect]:
     """Upper-floor openings (before margin) that keep the whole stair footprint clear."""
     stair = request.stair
@@ -706,6 +1045,8 @@ def _opening_rects(request: HouseBoxRequest) -> list[Rect]:
         min_x, min_y = u_layout.outline[0]
         max_x, max_y = u_layout.outline[2]
         return [(min_x, min_y, max_x, max_y)]
+    if isinstance(stair, WinderTurnStairRequest):
+        return winder_stair_layout(request).opening_rects
     assert stair is not None
     x, y = _stair_origin(request)
     run = float(stair.tread_depth_mm) * stair.step_count
@@ -863,6 +1204,15 @@ def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, obj
             operations.extend(flight_operations)
             outputs.extend(flight_outputs)
         return operations, outputs
+    if isinstance(stair, WinderTurnStairRequest):
+        winder_layout = winder_stair_layout(request)
+        for floor_index in range(request.floors - 1):
+            flight_operations, flight_outputs = _winder_stair_operations(
+                request, winder_layout, floor_index
+            )
+            operations.extend(flight_operations)
+            outputs.extend(flight_outputs)
+        return operations, outputs
 
     tread = float(stair.tread_depth_mm)
     stair_width = float(stair.width_mm)
@@ -956,6 +1306,32 @@ def build(request: HouseBoxRequest) -> OperationPlan:
                     "Confirm every upper floor has an "
                     f"{'U' if u_turn else 'L'} opening aligned to both flights.",
                     "Confirm the landing and both flights fuse into one solid per transition.",
+                    "Confirm the top step reaches the exact floor-to-floor height.",
+                ],
+                "expected_outputs": outputs,
+            }
+        )
+    if isinstance(request.stair, WinderTurnStairRequest):
+        operations, outputs = _multifloor_operations(request)
+        return OperationPlan.model_validate(
+            {
+                "schema_version": 1,
+                "goal": f"{request.floors}-floor house with a winder-turn stair",
+                "assumptions": [
+                    "All dimensions are millimetres.",
+                    "Each floor is a separate exact shell so floor visibility is deterministic.",
+                    (
+                        "Both flights, three 30-degree winders around an open newel square and "
+                        "the upper-floor openings are generated from one stair spec; each winder "
+                        "counts as one riser."
+                    ),
+                    "No newel post, railing, structural or building-code claim is modelled.",
+                ],
+                "operations": operations,
+                "validation_steps": [
+                    "Confirm every floor shell is a valid solid.",
+                    "Confirm every upper floor has an L opening over the swept stair footprint.",
+                    "Confirm both flights and three winders fuse into one solid per transition.",
                     "Confirm the top step reaches the exact floor-to-floor height.",
                 ],
                 "expected_outputs": outputs,

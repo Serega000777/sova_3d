@@ -16,6 +16,7 @@ from app.engineering.house_box import (
     StairRequest,
     StraightStairRequest,
     UTurnStairRequest,
+    WinderTurnStairRequest,
     stair_kind,
 )
 from app.engineering.house_text import HouseTextError, ParsedHouseText, parse_house_text
@@ -71,10 +72,32 @@ class UTurnStairBody(BaseModel):
     material_id: str | None = Field(default=None, min_length=1, max_length=120)
 
 
+class WinderTurnStairBody(BaseModel):
+    """Two perpendicular flights and exactly three 30° winder treads around an open newel square.
+
+    Values are strict (no string/boolean coercion), unknown fields are rejected and ``railing``
+    accepts only ``false`` because rails along a winder turn are not modelled.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["winder_turn"]
+    width_mm: float = Field(default=1_000, ge=700, le=2_000, strict=True, allow_inf_nan=False)
+    tread_depth_mm: float = Field(default=280, ge=200, le=400, strict=True, allow_inf_nan=False)
+    lower_step_count: int = Field(default=7, ge=3, le=24, strict=True)
+    upper_step_count: int = Field(default=7, ge=3, le=24, strict=True)
+    newel_mm: float = Field(default=250, ge=200, le=500, strict=True, allow_inf_nan=False)
+    turn: Literal["left", "right"] = "left"
+    placement: Literal["left", "center", "right"] = "center"
+    railing: Literal[False] = False
+    material_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 StairBody = Annotated[
     Annotated[StraightStairBody, Tag("straight")]
     | Annotated[LTurnStairBody, Tag("l_turn")]
-    | Annotated[UTurnStairBody, Tag("u_turn")],
+    | Annotated[UTurnStairBody, Tag("u_turn")]
+    | Annotated[WinderTurnStairBody, Tag("winder_turn")],
     Discriminator(stair_kind),
 ]
 
@@ -84,6 +107,8 @@ def _stair_request(body: StairBody) -> StairRequest:
         return LTurnStairRequest(**body.model_dump())
     if isinstance(body, UTurnStairBody):
         return UTurnStairRequest(**body.model_dump())
+    if isinstance(body, WinderTurnStairBody):
+        return WinderTurnStairRequest(**body.model_dump())
     return StraightStairRequest(**body.model_dump())
 
 

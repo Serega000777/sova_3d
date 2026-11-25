@@ -161,10 +161,10 @@ function PlanContent({
         const length = Math.hypot(tipX - tailX, tipY - tailY) || 1;
         const ux = (tipX - tailX) / length;
         const uy = (tipY - tailY) / length;
-        // Straight stairs keep the label at mid-run; an L stair labels its landing.
+        // Straight stairs keep the label at mid-run; a turning stair labels its turn.
         const [labelX, labelY] = lines.walkline.length === 2
           ? [(lines.walkline[0]![0] + tipX) / 2, (lines.walkline[0]![1] + tipY) / 2]
-          : lines.walkline[1]!;
+          : lines.walkline[Math.floor(lines.walkline.length / 2)]!;
         return (
           <g key={stair.id} style={{ pointerEvents: "none" }}>
             <polygon
@@ -174,6 +174,9 @@ function PlanContent({
               strokeWidth={2 * px}
               strokeDasharray={stair.role === "down" ? `${7 * px} ${4 * px}` : undefined}
             />
+            {stair.newel && (
+              <polygon points={stair.newel.map((point) => point.join(",")).join(" ")} fill="none" stroke={ink} strokeWidth={px} strokeDasharray={`${3 * px} ${3 * px}`} opacity={0.55} />
+            )}
             {lines.treads.map(([a, b], index) => (
               <line key={index} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={ink} strokeWidth={px} opacity={0.55} />
             ))}
@@ -185,7 +188,7 @@ function PlanContent({
               strokeWidth={2 * px}
             />
             <text x={labelX} y={labelY - 70 * px} fill={ink} fontSize={11 * px} textAnchor="middle">
-              {stair.role === "up" ? "UP" : "DOWN"} · {stair.step_count}{stair.kind === "l_turn" ? " · L" : stair.kind === "u_turn" ? " · U" : ""}
+              {stair.role === "up" ? "UP" : "DOWN"} · {stair.step_count}{stair.kind === "l_turn" ? " · L" : stair.kind === "u_turn" ? " · U" : stair.kind === "winder_turn" ? " · W" : ""}
             </text>
           </g>
         );

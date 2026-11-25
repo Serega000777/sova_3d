@@ -59,21 +59,25 @@ export interface PlanStair {
   role: "up" | "down";
   from_floor: number;
   to_floor: number;
-  /** 4 corners for a straight/U-turn stair, 6 for an L-turn stair. */
+  /** 4 corners for a straight/U-turn stair, 6 for an L-turn or winder-turn stair. */
   outline: Point[];
   width_mm: number;
   run_mm: number;
-  /** Total risers between the floors; an L-turn landing counts as one. */
+  /** Total risers between the floors; a landing counts as one, every winder too. */
   step_count: number;
   tread_depth_mm: number;
   riser_height_mm: number;
   railing: boolean;
   material_id?: string | null;
   /** Historical plans without a kind are parsed as straight. */
-  kind: "straight" | "l_turn" | "u_turn";
+  kind: "straight" | "l_turn" | "u_turn" | "winder_turn";
   turn?: "left" | "right" | null;
   flights?: PlanStairFlight[];
   landing?: Point[] | null;
+  /** Winder-turn only: three polygonal treads in climbing order. */
+  winders?: Point[][];
+  /** Winder-turn only: the open newel square the treads wind around. */
+  newel?: Point[] | null;
 }
 
 export interface FloorPlan {
@@ -270,11 +274,42 @@ function flightLines(
   return { treads, start: forward ? low : high, end: forward ? high : low };
 }
 
+/** The riser edge two neighbouring winder treads share, or null when they do not share one. */
+function sharedEdge(before: readonly Point[], after: readonly Point[]): [Point, Point] | null {
+  const shared = before.filter(([x, y]) => after.some((point) => point[0] === x && point[1] === y));
+  return shared.length === 2 ? [shared[0]!, shared[1]!] : null;
+}
+
+function winderRisers(winders: readonly (readonly Point[])[]): [[Point, Point], [Point, Point]] | null {
+  if (winders.length !== 3) return null;
+  const first = sharedEdge(winders[0]!, winders[1]!);
+  const second = sharedEdge(winders[1]!, winders[2]!);
+  return first && second ? [first, second] : null;
+}
+
 /**
  * Derive tread lines and the walking line of a straight or turning stair. The walking line
  * runs bottom→top for `up` and top→bottom for `down`, so its last point carries the arrow.
  */
 export function stairPlanLines(stair: PlanStair): StairPlanLines | null {
+  if (stair.kind === "winder_turn") {
+    const risers = winderRisers(stair.winders ?? []);
+    if (stair.flights?.length !== 2 || !risers) return null;
+    const [lower, upper] = stair.flights as [PlanStairFlight, PlanStairFlight];
+    const first = flightLines(lower.outline, lower.step_count, lower.direction);
+    const second = flightLines(upper.outline, upper.step_count, upper.direction);
+    const walkline: Point[] = [
+      first.start,
+      first.end,
+      ...risers.map(([a, b]): Point => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]),
+      second.start,
+      second.end,
+    ];
+    return {
+      treads: [...first.treads, ...risers, ...second.treads],
+      walkline: stair.role === "up" ? walkline : walkline.reverse(),
+    };
+  }
   if (stair.kind !== "straight" && stair.flights?.length === 2 && stair.landing) {
     const [lower, upper] = stair.flights as [PlanStairFlight, PlanStairFlight];
     const first = flightLines(lower.outline, lower.step_count, lower.direction);
@@ -449,9 +484,9 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
       || stair.to_floor < 1
       || stair.to_floor > 2
       || stair.from_floor >= stair.to_floor
-      || (stair.kind != null && stair.kind !== "straight" && stair.kind !== "l_turn" && stair.kind !== "u_turn")
+      || (stair.kind != null && stair.kind !== "straight" && stair.kind !== "l_turn" && stair.kind !== "u_turn" && stair.kind !== "winder_turn")
       || !Array.isArray(stair.outline)
-      || stair.outline.length !== (stair.kind === "l_turn" ? 6 : 4)
+      || stair.outline.length !== (stair.kind === "l_turn" || stair.kind === "winder_turn" ? 6 : 4)
       || !stair.outline.every(isPoint)
       || typeof stair.width_mm !== "number"
       || !Number.isFinite(stair.width_mm)
@@ -480,14 +515,20 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
         || stair.material_id.length > 120
       ))
     ) return null;
-    let turning: Pick<PlanStair, "kind" | "turn" | "flights" | "landing"> | null = null;
-    if (stair.kind === "l_turn" || stair.kind === "u_turn") {
+    let turning: Pick<PlanStair, "kind" | "turn" | "flights" | "landing" | "winders" | "newel"> | null = null;
+    const winderTurn = stair.kind === "winder_turn";
+    // Winder geometry on any other kind (or a landing on a winder stair) is contradictory data.
+    if (!winderTurn && (
+      (stair.winders != null && !(Array.isArray(stair.winders) && stair.winders.length === 0))
+      || stair.newel != null
+    )) return null;
+    if (stair.kind === "l_turn" || stair.kind === "u_turn" || stair.kind === "winder_turn") {
       const flights = Array.isArray(stair.flights) ? stair.flights as Record<string, unknown>[] : [];
       if (
         (stair.turn !== "left" && stair.turn !== "right")
-        || !Array.isArray(stair.landing)
-        || stair.landing.length !== 4
-        || !stair.landing.every(isPoint)
+        || (winderTurn
+          ? stair.landing != null
+          : !Array.isArray(stair.landing) || stair.landing.length !== 4 || !stair.landing.every(isPoint))
         || flights.length !== 2
         || !flights.every((flight) => (
           flight !== null
@@ -501,7 +542,7 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
           && flight.step_count <= 26
           && (flight.direction === "+x" || flight.direction === "-x" || flight.direction === "+y" || flight.direction === "-y")
         ))
-        || (flights[0]!.step_count as number) + (flights[1]!.step_count as number) + 1 !== stair.step_count
+        || (flights[0]!.step_count as number) + (flights[1]!.step_count as number) + (winderTurn ? 3 : 1) !== stair.step_count
         || (stair.kind === "l_turn" && (
           flights[0]!.direction !== "+x"
           || (flights[1]!.direction !== "+y" && flights[1]!.direction !== "-y")
@@ -510,6 +551,20 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
           flights[0]!.step_count !== flights[1]!.step_count
           || flights[0]!.direction !== "+x"
           || flights[1]!.direction !== "-x"
+        ))
+        || (winderTurn && (
+          flights[0]!.direction !== "+x"
+          || flights[1]!.direction !== (stair.turn === "left" ? "+y" : "-y")
+          || stair.railing
+          || !Array.isArray(stair.newel)
+          || stair.newel.length !== 4
+          || !stair.newel.every(isPoint)
+          || !Array.isArray(stair.winders)
+          || stair.winders.length !== 3
+          || !stair.winders.every((winder, index) => (
+            Array.isArray(winder) && winder.length === (index === 1 ? 6 : 4) && winder.every(isPoint)
+          ))
+          || !winderRisers(stair.winders as Point[][])
         ))
       ) return null;
       turning = {
@@ -520,7 +575,9 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
           step_count: flight.step_count as number,
           direction: flight.direction as PlanStairFlight["direction"],
         })),
-        landing: stair.landing as Point[],
+        ...(winderTurn
+          ? { winders: stair.winders as Point[][], newel: stair.newel as Point[] }
+          : { landing: stair.landing as Point[] }),
       };
     }
     stairs.push({
@@ -950,6 +1007,8 @@ export function translatePlan(plan: FloorPlan, dx: number, dy: number): FloorPla
         ? { flights: stair.flights.map((flight) => ({ ...flight, outline: flight.outline.map(move) })) }
         : {}),
       ...(stair.landing ? { landing: stair.landing.map(move) } : {}),
+      ...(stair.winders ? { winders: stair.winders.map((winder) => winder.map(move)) } : {}),
+      ...(stair.newel ? { newel: stair.newel.map(move) } : {}),
     })),
   };
 }

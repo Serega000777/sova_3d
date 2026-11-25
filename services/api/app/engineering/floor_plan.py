@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -17,10 +17,12 @@ from app.engineering.house_box import (
     HouseBoxRequest,
     LTurnStairRequest,
     UTurnStairRequest,
+    WinderTurnStairRequest,
     _stair_origin,
     floor_rect,
     l_stair_layout,
     u_stair_layout,
+    winder_stair_layout,
 )
 from app.engineering.house_walls import HouseWallsRequest, ordered_wall_outline
 
@@ -100,13 +102,23 @@ class PlanStair(BaseModel):
     riser_height_mm: float = Field(ge=120, le=220)
     railing: bool
     material_id: str | None = Field(default=None, min_length=1, max_length=120)
-    kind: Literal["straight", "l_turn", "u_turn"] = "straight"
+    kind: Literal["straight", "l_turn", "u_turn", "winder_turn"] = "straight"
     turn: Literal["left", "right"] | None = None
     flights: list[PlanStairFlight] = Field(default_factory=list, max_length=2)
     landing: list[Point] | None = Field(default=None, min_length=4, max_length=4)
+    # Winder stairs only: three polygonal treads in climbing order and the open newel square.
+    winders: list[Annotated[list[Point], Field(min_length=4, max_length=6)]] = Field(
+        default_factory=list, max_length=3
+    )
+    newel: list[Point] | None = Field(default=None, min_length=4, max_length=4)
 
     @model_validator(mode="after")
     def _kind_matches_geometry(self) -> PlanStair:
+        if self.kind == "winder_turn":
+            self._check_winder_turn()
+            return self
+        if self.winders or self.newel is not None:
+            raise ValueError("only a winder-turn stair has winders and a newel")
         if self.kind == "straight":
             if len(self.outline) != 4 or self.flights or self.landing is not None or self.turn:
                 raise ValueError("a straight stair has a 4-point outline and no flights/landing")
@@ -132,6 +144,32 @@ class PlanStair(BaseModel):
         ] != ["+x", "-x"]:
             raise ValueError("U-turn flights must have equal step counts and climb +x then -x")
         return self
+
+    def _check_winder_turn(self) -> None:
+        if (
+            len(self.outline) != 6
+            or len(self.flights) != 2
+            or self.landing is not None
+            or self.turn is None
+            or [len(winder) for winder in self.winders] != [4, 6, 4]
+            or self.newel is None
+        ):
+            raise ValueError(
+                "a winder-turn stair needs a 6-point outline, two flights, three winders, a "
+                "newel and no landing"
+            )
+        if self.railing:
+            raise ValueError("a winder-turn stair has no modelled railing")
+        if sum(flight.step_count for flight in self.flights) + 3 != self.step_count:
+            raise ValueError("winder flight steps plus three winders must equal the riser count")
+        expected = "+y" if self.turn == "left" else "-y"
+        if [flight.direction for flight in self.flights] != ["+x", expected]:
+            raise ValueError("winder-turn flights must climb +x then +y (left) or -y (right)")
+        if any(
+            len(set(before) & set(after)) != 2
+            for before, after in zip(self.winders, self.winders[1:], strict=False)
+        ):
+            raise ValueError("neighbouring winders must share exactly one riser edge")
 
 
 class FloorPlan(BaseModel):
@@ -302,6 +340,34 @@ def floor_plans_from_house_box(
                 ),
             ],
             "landing": corners(u_layout.landing),
+        }
+    elif isinstance(stair, WinderTurnStairRequest):
+        w_layout = winder_stair_layout(request)
+
+        def corners(rect: tuple[float, float, float, float]) -> list[Point]:
+            min_x, min_y, max_x, max_y = rect
+            return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
+
+        stair_fields = {
+            "kind": "winder_turn",
+            "turn": stair.turn,
+            "outline": w_layout.outline,
+            # Flight run only, like the L-turn: winder goings vary across the tread.
+            "run_mm": stair.tread_depth_mm * (stair.lower_step_count + stair.upper_step_count),
+            "flights": [
+                PlanStairFlight(
+                    outline=corners(w_layout.lower),
+                    step_count=stair.lower_step_count,
+                    direction="+x",
+                ),
+                PlanStairFlight(
+                    outline=corners(w_layout.upper),
+                    step_count=stair.upper_step_count,
+                    direction="+y" if stair.turn == "left" else "-y",
+                ),
+            ],
+            "winders": [list(winder) for winder in w_layout.winders],
+            "newel": corners(w_layout.newel),
         }
     elif stair is not None:
         x, y = _stair_origin(request)

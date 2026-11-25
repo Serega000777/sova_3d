@@ -228,6 +228,100 @@ test("an L-turn stair keeps flights and landing through parsing, drawing and tra
   }
 });
 
+/** Exactly what the server emits for the default winder stair in a 12 × 8 m house. */
+const winderLeft = {
+  id: "stair_1_2_up",
+  role: "up",
+  from_floor: 0,
+  to_floor: 1,
+  kind: "winder_turn",
+  turn: "left",
+  outline: [[4395, 2395], [7605, 2395], [7605, 5605], [6605, 5605], [6605, 3395], [4395, 3395]],
+  flights: [
+    { outline: [[4395, 2395], [6355, 2395], [6355, 3395], [4395, 3395]], step_count: 7, direction: "+x" },
+    { outline: [[6605, 3645], [7605, 3645], [7605, 5605], [6605, 5605]], step_count: 7, direction: "+y" },
+  ],
+  landing: null,
+  winders: [
+    [[6355, 3395], [6355, 2395], [7076.687836487032, 2395], [6499.337567297406, 3395]],
+    [[6499.337567297406, 3395], [7076.687836487032, 2395], [7605, 2395], [7605, 2923.312163512968], [6605, 3500.662432702594], [6605, 3395]],
+    [[6605, 3500.662432702594], [7605, 2923.312163512968], [7605, 3645], [6605, 3645]],
+  ],
+  newel: [[6355, 3395], [6605, 3395], [6605, 3645], [6355, 3645]],
+  width_mm: 1000,
+  run_mm: 3920,
+  step_count: 17,
+  tread_depth_mm: 280,
+  riser_height_mm: 3000 / 17,
+  railing: false,
+};
+/** The server's right turn: mirrored about the house axis, polygons still counter-clockwise. */
+const winderRight = {
+  ...winderLeft,
+  turn: "right",
+  outline: [[4395, 4605], [6605, 4605], [6605, 2395], [7605, 2395], [7605, 5605], [4395, 5605]],
+  flights: [
+    { outline: [[4395, 4605], [6355, 4605], [6355, 5605], [4395, 5605]], step_count: 7, direction: "+x" },
+    { outline: [[6605, 2395], [7605, 2395], [7605, 4355], [6605, 4355]], step_count: 7, direction: "-y" },
+  ],
+  winders: [
+    [[6499.337567297406, 4605], [7076.687836487032, 5605], [6355, 5605], [6355, 4605]],
+    [[6605, 4605], [6605, 4499.337567297406], [7605, 5076.687836487032], [7605, 5605], [7076.687836487032, 5605], [6499.337567297406, 4605]],
+    [[6605, 4355], [7605, 4355], [7605, 5076.687836487032], [6605, 4499.337567297406]],
+  ],
+  newel: [[6355, 4355], [6605, 4355], [6605, 4605], [6355, 4605]],
+};
+
+test("a winder stair keeps three treads and its newel through parsing, drawing and translation", () => {
+  const rooms = [{ name: "Floor", outline: [[0, 0], [12000, 0], [12000, 8000], [0, 8000]] }];
+  for (const [source, lowerY, sign] of [[winderLeft, 2895, 1], [winderRight, 5105, -1]] as const) {
+    const plan = parseFloorPlan({ rooms, stairs: [source] });
+    assert.ok(plan);
+    const stair = plan.stairs![0]!;
+    assert.equal(stair.kind, "winder_turn");
+    assert.equal(stair.turn, source.turn);
+    assert.equal(stair.winders?.length, 3);
+    assert.equal(stair.landing, undefined);
+    const lines = stairPlanLines(stair)!;
+    // Both flights' risers plus the two inner winder risers; no tread line crosses the newel.
+    assert.equal(lines.treads.length, 8 + 2 + 8);
+    assert.equal(lines.walkline.length, 6);
+    assert.deepEqual(lines.walkline[0], [4395, lowerY]);
+    assert.deepEqual(lines.walkline[1], [6355, lowerY]);
+    assert.deepEqual(lines.walkline[4], [7105, 4000 - sign * 355]);
+    assert.deepEqual(lines.walkline[5], [7105, 4000 + sign * 1605]);
+    const down = stairPlanLines({ ...stair, role: "down" })!;
+    assert.deepEqual(down.walkline, [...lines.walkline].reverse());
+    const movedPlan = translatePlan(plan, 100, -200);
+    const moved = movedPlan.stairs![0]!;
+    assert.deepEqual(moved.winders?.[0]?.[0], [source.winders[0]![0]![0]! + 100, source.winders[0]![0]![1]! - 200]);
+    assert.deepEqual(moved.newel?.[0], [source.newel[0]![0]! + 100, source.newel[0]![1]! - 200]);
+    assert.equal(stairPlanLines(moved)?.treads.length, 18);
+    assert.ok(parseFloorPlan(JSON.parse(JSON.stringify(movedPlan))));
+  }
+
+  const nudged = winderLeft.winders.map((winder, index) => (
+    index === 0 ? winder.map(([x, y]) => [x! + 1, y!]) : winder
+  ));
+  for (const broken of [
+    { ...winderLeft, outline: winderLeft.outline.slice(0, 4) },
+    { ...winderLeft, step_count: 18 },
+    { ...winderLeft, turn: "right" },
+    { ...winderLeft, turn: undefined },
+    { ...winderLeft, railing: true },
+    { ...winderLeft, newel: null },
+    { ...winderLeft, newel: winderLeft.newel.slice(0, 3) },
+    { ...winderLeft, landing: winderLeft.newel },
+    { ...winderLeft, winders: undefined },
+    { ...winderLeft, winders: winderLeft.winders.slice(0, 2) },
+    { ...winderLeft, winders: nudged },
+    { ...winderLeft, flights: [winderLeft.flights[0]] },
+    { ...winderLeft, kind: "l_turn", landing: winderLeft.newel },
+  ]) {
+    assert.equal(parseFloorPlan({ rooms, stairs: [broken] }), null);
+  }
+});
+
 test("straight stair drawing is unchanged by the L-turn helper", () => {
   const plan = parseFloorPlan({
     rooms: [{ name: "Floor", outline: [[0, 0], [12000, 0], [12000, 8000], [0, 8000]] }],

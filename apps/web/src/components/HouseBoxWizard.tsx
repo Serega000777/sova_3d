@@ -1,6 +1,6 @@
 "use client";
 
-import type { HouseBoxBody, InteriorMaterial, PhysicalAiClient } from "@physical-ai/contracts";
+import { checkWinderStair, type HouseBoxBody, type InteriorMaterial, type PhysicalAiClient, WINDER_STAIR_PROBLEM_TEXT } from "@physical-ai/contracts";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
@@ -36,10 +36,13 @@ export function HouseBoxWizard({
   const [stairWidthMm, setStairWidthMm] = useState(1_000);
   const [treadDepthMm, setTreadDepthMm] = useState(280);
   const [stepCount, setStepCount] = useState(17);
-  const [stairKind, setStairKind] = useState<"straight" | "l_turn" | "u_turn">("straight");
+  const [stairKind, setStairKind] = useState<"straight" | "l_turn" | "u_turn" | "winder_turn">("straight");
   const [lowerSteps, setLowerSteps] = useState(8);
   const [upperSteps, setUpperSteps] = useState(8);
   const [uFlightSteps, setUFlightSteps] = useState(8);
+  const [winderLowerSteps, setWinderLowerSteps] = useState(7);
+  const [winderUpperSteps, setWinderUpperSteps] = useState(7);
+  const [newelMm, setNewelMm] = useState(250);
   const [stairTurn, setStairTurn] = useState<"left" | "right">("left");
   const [stairPlacement, setStairPlacement] = useState<"left" | "center" | "right">("center");
   const [railing, setRailing] = useState(true);
@@ -50,15 +53,30 @@ export function HouseBoxWizard({
   const stairEnabled = floors > 1 && shape === "rectangle" && addStair;
   const lTurn = stairKind === "l_turn";
   const uTurn = stairKind === "u_turn";
-  const turning = lTurn || uTurn;
+  const winderTurn = stairKind === "winder_turn";
+  const turning = lTurn || uTurn || winderTurn;
   const setbackEnabled = floors > 1 && shape === "rectangle";
   const effectiveUpperInset = setbackEnabled ? upperFloorSetbackMm : 0;
-  // A turning landing counts as one riser, mirroring the server's derivation.
-  const riserCount = lTurn ? lowerSteps + upperSteps + 1 : uTurn ? 2 * uFlightSteps + 1 : stepCount;
+  const winder = checkWinderStair({
+    widthMm: stairWidthMm,
+    treadMm: treadDepthMm,
+    lowerSteps: winderLowerSteps,
+    upperSteps: winderUpperSteps,
+    newelMm,
+    placement: stairPlacement,
+    houseLengthMm: lengthMm,
+    houseWidthMm: widthMm,
+    floorHeightMm,
+    upperFloorSetbackMm: effectiveUpperInset,
+  });
+  // A turning landing counts as one riser and so does every winder, like the server's derivation.
+  const riserCount = winderTurn ? winder.riserCount : lTurn ? lowerSteps + upperSteps + 1 : uTurn ? 2 * uFlightSteps + 1 : stepCount;
   const riserMm = floorHeightMm / riserCount;
-  const stairRunMm = treadDepthMm * (lTurn ? lowerSteps + upperSteps : uTurn ? 2 * uFlightSteps : stepCount);
+  const stairRunMm = treadDepthMm * (winderTurn ? winderLowerSteps + winderUpperSteps : lTurn ? lowerSteps + upperSteps : uTurn ? 2 * uFlightSteps : stepCount);
   const strideMm = 2 * riserMm + treadDepthMm;
-  const turningFootprint = lTurn
+  const turningFootprint = winderTurn
+    ? winder.footprint
+    : lTurn
     ? { x: treadDepthMm * lowerSteps + stairWidthMm, y: stairWidthMm + treadDepthMm * upperSteps }
     : uTurn
       ? { x: treadDepthMm * uFlightSteps + stairWidthMm, y: 2 * stairWidthMm }
@@ -70,11 +88,15 @@ export function HouseBoxWizard({
     : null;
   const turningProblem = !turning
     ? null
+    : winderTurn
+    ? winder.problem && WINDER_STAIR_PROBLEM_TEXT[winder.problem][language]
     : riserCount < 10 || riserCount > 30
       ? (ru ? "Нужно 10–30 подъёмов вместе с площадкой." : "Use 10–30 risers including the landing.")
       : strideMm < 550 || strideMm > 700
         ? (ru ? "2 × подъём + проступь должно быть 550–700 мм." : "2 × rise + tread must be 550–700 mm.")
         : null;
+  // The shared winder check already covers rise, fit and every bound with one message.
+  const riseInvalid = !winderTurn && (riserMm < 120 || riserMm > 220);
   const stairInvalid = stairEnabled && (riserMm < 120 || riserMm > 220 || turningProblem !== null || stairFitProblem !== null);
   const setbackInvalid = setbackEnabled && upperFloorSetbackMm > 0 && (
     lengthMm - 2 * upperFloorSetbackMm < 2_000
@@ -116,6 +138,19 @@ export function HouseBoxWizard({
                   railing,
                   material_id: stairMaterialId || null,
                 }
+              : winderTurn
+                ? {
+                    kind: "winder_turn",
+                    width_mm: stairWidthMm,
+                    tread_depth_mm: treadDepthMm,
+                    lower_step_count: winderLowerSteps,
+                    upper_step_count: winderUpperSteps,
+                    newel_mm: newelMm,
+                    turn: stairTurn,
+                    placement: stairPlacement,
+                    railing: false,
+                    material_id: stairMaterialId || null,
+                  }
               : uTurn
                 ? {
                     kind: "u_turn",
@@ -206,6 +241,7 @@ export function HouseBoxWizard({
                       { id: "straight", glyph: "▬", ru: "Прямая", en: "Straight" },
                       { id: "l_turn", glyph: "⌐", ru: "Г-образная с площадкой", en: "L-turn with landing" },
                       { id: "u_turn", glyph: "∩", ru: "П-образная с площадкой", en: "U-turn with landing" },
+                      { id: "winder_turn", glyph: "◣", ru: "Забежная, 90°", en: "Winder turn, 90°" },
                     ] as const).map((option) => (
                       <button
                         key={option.id}
@@ -228,6 +264,19 @@ export function HouseBoxWizard({
                     <>
                       <NumberField label={ru ? "Ступеней в нижнем марше" : "Lower flight steps"} value={lowerSteps} min={3} max={26} step={1} onChange={setLowerSteps} />
                       <NumberField label={ru ? "Ступеней в верхнем марше" : "Upper flight steps"} value={upperSteps} min={3} max={26} step={1} onChange={setUpperSteps} />
+                      <label>
+                        <span>{ru ? "Поворот" : "Turn"}</span>
+                        <select className="input" value={stairTurn} onChange={(event) => setStairTurn(event.target.value as typeof stairTurn)}>
+                          <option value="left">{ru ? "Налево" : "Left"}</option>
+                          <option value="right">{ru ? "Направо" : "Right"}</option>
+                        </select>
+                      </label>
+                    </>
+                  ) : winderTurn ? (
+                    <>
+                      <NumberField label={ru ? "Ступеней в нижнем марше" : "Lower flight steps"} value={winderLowerSteps} min={3} max={24} step={1} onChange={setWinderLowerSteps} />
+                      <NumberField label={ru ? "Ступеней в верхнем марше" : "Upper flight steps"} value={winderUpperSteps} min={3} max={24} step={1} onChange={setWinderUpperSteps} />
+                      <NumberField label={ru ? "Внутренний просвет, мм" : "Newel void, mm"} value={newelMm} min={200} max={500} step={10} onChange={setNewelMm} />
                       <label>
                         <span>{ru ? "Поворот" : "Turn"}</span>
                         <select className="input" value={stairTurn} onChange={(event) => setStairTurn(event.target.value as typeof stairTurn)}>
@@ -265,29 +314,35 @@ export function HouseBoxWizard({
                       {materials.map((material) => <option key={material.id} value={material.id}>{ru ? material.name_ru : material.name}</option>)}
                     </select>
                   </label>
-                  <label className="check">
-                    <input type="checkbox" checked={railing} onChange={(event) => setRailing(event.target.checked)} />
-                    {ru ? "Ограждение" : "Railing"}
-                  </label>
+                  {!winderTurn && (
+                    <label className="check">
+                      <input type="checkbox" checked={railing} onChange={(event) => setRailing(event.target.checked)} />
+                      {ru ? "Ограждение" : "Railing"}
+                    </label>
+                  )}
                 </div>
                 <p className="house-total">
                   {ru ? "Подъём / проступь / длина" : "Rise / tread / run"}: <strong>{riserMm.toFixed(1)} / {treadDepthMm.toFixed(0)} / {stairRunMm.toFixed(0)} {ru ? "мм" : "mm"}</strong>
                   {turningFootprint && (
                     <>
-                      {" · "}{ru ? "площадка" : "landing"} {stairWidthMm.toFixed(0)}×{(stairWidthMm * (uTurn ? 2 : 1)).toFixed(0)}
+                      {" · "}{winderTurn
+                        ? `${ru ? "3 забежные по линии хода" : "3 winders, walking-line going"} ${winder.winderGoingMm.toFixed(0)}`
+                        : `${ru ? "площадка" : "landing"} ${stairWidthMm.toFixed(0)}×${(stairWidthMm * (uTurn ? 2 : 1)).toFixed(0)}`}
                       {" · "}{ru ? "габарит" : "footprint"} <strong>{turningFootprint.x.toFixed(0)}×{turningFootprint.y.toFixed(0)} {ru ? "мм" : "mm"}</strong>
                       {" · "}{riserCount} {ru ? "подъёмов" : "risers"}
                     </>
                   )}
                 </p>
-                {(riserMm < 120 || riserMm > 220) && <div className="error" role="alert">{ru
+                {riseInvalid && <div className="error" role="alert">{ru
                   ? "Измените число ступеней: высота ступени должна быть 120–220 мм."
                   : "Change the step count: rise must be 120–220 mm."}</div>}
-                {turningProblem && riserMm >= 120 && riserMm <= 220 && <div className="error" role="alert">{turningProblem}</div>}
-                {stairFitProblem && !turningProblem && riserMm >= 120 && riserMm <= 220 && <div className="error" role="alert">{stairFitProblem}</div>}
-                {turning && <span className="muted">{ru
-                  ? `Площадка ${uTurn ? "соединяет два равных параллельных марша" : "квадратная (ширина марша)"} и считается одним подъёмом. Забежные и винтовые лестницы пока не поддерживаются.`
-                  : `The landing ${uTurn ? "joins two equal parallel flights" : "is square (one flight width)"} and counts as one riser. Winder and spiral stairs are not supported yet.`}</span>}
+                {turningProblem && !riseInvalid && <div className="error" role="alert">{turningProblem}</div>}
+                {stairFitProblem && !turningProblem && !riseInvalid && <div className="error" role="alert">{stairFitProblem}</div>}
+                {winderTurn ? <span className="muted">{ru
+                  ? "Ровно три забежные ступени по 30° вокруг открытого внутреннего просвета; каждая считается подъёмом. Ограждение, столб, прочность и строительные нормы для этого поворота не моделируются. Винтовые лестницы пока не поддерживаются."
+                  : "Exactly three 30° winders around an open newel void; each counts as one riser. Railings, a newel post, structure and building codes are not modelled for this turn. Spiral stairs are not supported yet."}</span> : turning && <span className="muted">{ru
+                  ? `Площадка ${uTurn ? "соединяет два равных параллельных марша" : "квадратная (ширина марша)"} и считается одним подъёмом. Винтовые лестницы пока не поддерживаются.`
+                  : `The landing ${uTurn ? "joins two equal parallel flights" : "is square (one flight width)"} and counts as one riser. Spiral stairs are not supported yet.`}</span>}
               </>
             ) : null}
           </fieldset>

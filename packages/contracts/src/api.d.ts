@@ -7071,7 +7071,7 @@ export interface components {
              */
             shape: "rectangle" | "l_shape" | "t_shape";
             /** Stair */
-            stair?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"] | components["schemas"]["UTurnStairBody"]) | null;
+            stair?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"] | components["schemas"]["UTurnStairBody"] | components["schemas"]["WinderTurnStairBody"]) | null;
             /**
              * Upper Floor Setback Mm
              * @default 0
@@ -8871,13 +8871,23 @@ export interface components {
              * @default straight
              * @enum {string}
              */
-            kind: "straight" | "l_turn" | "u_turn";
+            kind: "straight" | "l_turn" | "u_turn" | "winder_turn";
             /** Turn */
             turn?: ("left" | "right") | null;
             /** Flights */
             flights?: components["schemas"]["PlanStairFlight"][];
             /** Landing */
             landing?: [
+                number,
+                number
+            ][] | null;
+            /** Winders */
+            winders?: [
+                number,
+                number
+            ][][];
+            /** Newel */
+            newel?: [
                 number,
                 number
             ][] | null;
@@ -11912,6 +11922,65 @@ export interface components {
             overlapping_upper_count: number;
             /** Overlap Area M2 */
             overlap_area_m2: number;
+        };
+        /**
+         * WinderTurnStairBody
+         * @description Two perpendicular flights and exactly three 30° winder treads around an open newel square.
+         *
+         *     Values are strict (no string/boolean coercion), unknown fields are rejected and ``railing``
+         *     accepts only ``false`` because rails along a winder turn are not modelled.
+         */
+        WinderTurnStairBody: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "winder_turn";
+            /**
+             * Width Mm
+             * @default 1000
+             */
+            width_mm: number;
+            /**
+             * Tread Depth Mm
+             * @default 280
+             */
+            tread_depth_mm: number;
+            /**
+             * Lower Step Count
+             * @default 7
+             */
+            lower_step_count: number;
+            /**
+             * Upper Step Count
+             * @default 7
+             */
+            upper_step_count: number;
+            /**
+             * Newel Mm
+             * @default 250
+             */
+            newel_mm: number;
+            /**
+             * Turn
+             * @default left
+             * @enum {string}
+             */
+            turn: "left" | "right";
+            /**
+             * Placement
+             * @default center
+             * @enum {string}
+             */
+            placement: "left" | "center" | "right";
+            /**
+             * Railing
+             * @default false
+             * @constant
+             */
+            railing: false;
+            /** Material Id */
+            material_id?: string | null;
         };
         /** WorkspaceBrief */
         WorkspaceBrief: {
