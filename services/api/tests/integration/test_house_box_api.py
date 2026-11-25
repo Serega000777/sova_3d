@@ -490,7 +490,7 @@ def test_l_turn_stair_fails_closed_before_enqueue(api_client: TestClient, actor:
         ({**base, "stair": {**l_stair, "tread_depth_mm": 400}}, "550-700 mm"),
         ({**base, "stair": {**l_stair, "width_mm": 650}}, "width_mm"),
         ({**base, "stair": {**l_stair, "step_count": 17}}, "step_count"),
-        ({**base, "stair": {"kind": "spiral"}}, "spiral"),
+        ({**base, "stair": {"kind": "helical"}}, "helical"),
         ({**base, "floors": 1, "stair": l_stair}, "at least two floors"),
         ({**base, "stair": {**l_stair, "material_id": "interior.wood.forged.v1"}}, "forged"),
         ({**base, "width_mm": 2_600, "stair": u_stair}, "do not fit"),
@@ -978,3 +978,138 @@ def test_construction_takeoff_hides_foreign_projects(
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+SPIRAL_STAIR = {
+    "kind": "spiral",
+    "diameter_mm": 2_200.0,
+    "post_diameter_mm": 200.0,
+    "step_count": 15,
+    "sweep_deg": 300.0,
+    "turn": "right",
+    "placement": "center",
+    "railing": False,
+    "material_id": None,
+}
+
+
+def test_spiral_stair_creates_aligned_plans_scene_and_operations(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    body = {"workspace_id": str(actor.workspace.id), **WINDER_HOUSE, "stair": SPIRAL_STAIR}
+    headers = {**actor.headers, "Idempotency-Key": f"spiral-{uuid.uuid4()}"}
+    response = api_client.post("/api/v1/house-boxes", json=body, headers=headers)
+    assert response.status_code == 202, response.text
+    project_id = response.json()["project_id"]
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    version_id = result["version_id"]
+    assert result["house_box"]["request"]["stair"] == SPIRAL_STAIR
+    bodies = {item["name"]: item for item in result["bodies"]}
+    for name in ("stair_1_2_step_1", "stair_2_3_step_1"):
+        assert bodies[name]["solids"] == 1 and bodies[name]["valid"]
+
+    floors = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert floors.status_code == 200, floors.text
+    levels = floors.json()["levels"]
+    up = levels[0]["plan"]["stairs"][0]
+    assert up["kind"] == "spiral" and up["turn"] == "right" and up["railing"] is False
+    assert len(up["outline"]) == 24 and up["flights"] == [] and up["landing"] is None
+    assert up["spiral"]["radius_mm"] == 1_100 and up["spiral"]["sweep_deg"] == 300
+    assert levels[2]["plan"]["stairs"][0]["outline"] == up["outline"]
+
+    scene = api_client.get(f"/api/v1/models/{version_id}/scene", headers=actor.headers)
+    assert scene.status_code == 200, scene.text
+    nodes = {node["id"]: node for node in scene.json()["nodes"]}
+    assert nodes["stair_1_2"]["name"] == "Винтовая лестница 1 → 2"
+    logged = [
+        (operation.operation_type, operation.params)
+        for operation in db_session.query(Operation)
+        .filter(Operation.project_version_id == uuid.UUID(version_id))
+        .order_by(Operation.sequence_no)
+    ]
+    # 3 shells, 2 sector openings (body + cut), roof, 2 x (15 treads + post + 15 fuses).
+    assert len(logged) == 6 + 4 + 1 + 2 * 31
+
+
+def test_spiral_stair_fails_closed_before_enqueue(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    base = {"workspace_id": str(actor.workspace.id), **WINDER_HOUSE, "floors": 2}
+    cases: list[tuple[dict[str, object], dict[str, object], str]] = [
+        ({"width_mm": 2_800}, {}, "do not fit"),
+        ({"floor_height_mm": 6_000}, {}, "120-220 mm rise"),
+        ({}, {"sweep_deg": 180.0}, "walking line"),
+        ({}, {"diameter_mm": 1_500.0}, "clear tread width"),
+        ({}, {"diameter_mm": "2200"}, "diameter_mm"),
+        ({}, {"step_count": 15.5}, "step_count"),
+        ({}, {"step_count": 21}, "less than or equal to 20"),
+        ({}, {"railing": True}, "railing"),
+        ({}, {"tread_depth_mm": 280}, "tread_depth_mm"),
+        ({"floors": 1}, {}, "at least two floors"),
+        ({"shape": "l_shape"}, {}, "rectangular house"),
+    ]
+    for house, stair, message in cases:
+        payload = {**base, **house, "stair": {**SPIRAL_STAIR, **stair}}
+        rejected = api_client.post("/api/v1/house-boxes", json=payload, headers=actor.headers)
+        assert rejected.status_code == 422, (payload, rejected.text)
+        assert message in rejected.text, (payload, rejected.text)
+    assert db_session.query(Job).filter(Job.workspace_id == actor.workspace.id).count() == 0
+
+
+def test_spiral_worker_revalidates_a_tampered_job_request(
+    api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    accepted = api_client.post(
+        "/api/v1/house-boxes",
+        json={"workspace_id": str(actor.workspace.id), **WINDER_HOUSE, "stair": SPIRAL_STAIR},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    queued = db_session.get(Job, uuid.UUID(accepted.json()["job"]["job_id"]))
+    assert queued is not None
+    tampered = copy.deepcopy(queued.input)
+    tampered["request"]["stair"]["railing"] = True
+    queued.input = tampered
+    db_session.flush()
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert (job.error or {})["code"] == "invalid_house_box"
+
+
+def test_spiral_job_rejects_a_disconnected_kernel_flight(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted = api_client.post(
+        "/api/v1/house-boxes",
+        json={"workspace_id": str(actor.workspace.id), **WINDER_HOUSE, "stair": SPIRAL_STAIR},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+
+    def split_flight(plan: OperationPlan) -> ExecutedPlan:
+        executed = run_plan(plan)
+        for body in executed.bodies:
+            if body["name"] == "stair_2_3_step_1":
+                body["solids"] = 2
+        return executed
+
+    monkeypatch.setattr("app.jobs.house_box.run_plan", split_flight)
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert (job.error or {})["code"] == "kernel_bad_output"
+    assert (
+        db_session.query(ProjectVersion)
+        .filter(ProjectVersion.project_id == uuid.UUID(accepted.json()["project_id"]))
+        .count()
+        == 0
+    )

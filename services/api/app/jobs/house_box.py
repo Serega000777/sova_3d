@@ -12,6 +12,7 @@ from app.engineering.floor_plan import floor_plan_from_house_box, floor_plans_fr
 from app.engineering.house_box import (
     HouseBoxRequest,
     LTurnStairRequest,
+    SpiralStairRequest,
     UTurnStairRequest,
     WinderTurnStairRequest,
     l_stair_rail_ids,
@@ -90,8 +91,8 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                 "the geometry engine did not return every floor and stair body",
                 details={"missing_bodies": sorted(missing)},
             )
-        if isinstance(request.stair, WinderTurnStairRequest):
-            # Face-joined winders must really have fused; never store a disconnected flight.
+        if isinstance(request.stair, (WinderTurnStairRequest, SpiralStairRequest)):
+            # Face-joined treads must really have fused; never store a disconnected flight.
             measured = {str(body["name"]): body for body in executed.bodies}
             broken = [
                 name
@@ -102,7 +103,7 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
             if broken:
                 raise JobFailureError(
                     "kernel_bad_output",
-                    "the winder stair did not fuse into one valid solid",
+                    "the winder or spiral stair did not fuse into one valid solid",
                     details={"broken_bodies": broken},
                 )
         part_assets: dict[str, tuple[Any, Any]] = {}
@@ -162,6 +163,7 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
             l_turn = isinstance(request.stair, LTurnStairRequest)
             u_turn = isinstance(request.stair, UTurnStairRequest)
             winder_turn = isinstance(request.stair, WinderTurnStairRequest)
+            spiral = isinstance(request.stair, SpiralStairRequest)
             nodes.append(
                 {
                     "id": flight_prefix,
@@ -172,6 +174,8 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                         if u_turn
                         else f"Лестница с забежными ступенями {floor_index + 1} → {floor_index + 2}"
                         if winder_turn
+                        else f"Винтовая лестница {floor_index + 1} → {floor_index + 2}"
+                        if spiral
                         else f"Лестница {floor_index + 1} → {floor_index + 2}"
                     ),
                     "kind": "object",

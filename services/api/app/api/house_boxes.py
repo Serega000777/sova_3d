@@ -13,6 +13,7 @@ from app.api.schemas import JobAccepted
 from app.engineering.house_box import (
     HouseBoxRequest,
     LTurnStairRequest,
+    SpiralStairRequest,
     StairRequest,
     StraightStairRequest,
     UTurnStairRequest,
@@ -93,11 +94,32 @@ class WinderTurnStairBody(BaseModel):
     material_id: str | None = Field(default=None, min_length=1, max_length=120)
 
 
+class SpiralStairBody(BaseModel):
+    """Equal circular-sector treads around a central post, sweeping ``sweep_deg`` in total.
+
+    Values are strict (no string/boolean coercion), unknown fields are rejected and ``railing``
+    accepts only ``false`` because rails along a helix are not modelled.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["spiral"]
+    diameter_mm: float = Field(default=2_200, ge=1_400, le=3_200, strict=True, allow_inf_nan=False)
+    post_diameter_mm: float = Field(default=200, ge=100, le=300, strict=True, allow_inf_nan=False)
+    step_count: int = Field(default=15, ge=10, le=20, strict=True)
+    sweep_deg: float = Field(default=300, ge=180, le=330, strict=True, allow_inf_nan=False)
+    turn: Literal["left", "right"] = "left"
+    placement: Literal["left", "center", "right"] = "center"
+    railing: Literal[False] = False
+    material_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 StairBody = Annotated[
     Annotated[StraightStairBody, Tag("straight")]
     | Annotated[LTurnStairBody, Tag("l_turn")]
     | Annotated[UTurnStairBody, Tag("u_turn")]
-    | Annotated[WinderTurnStairBody, Tag("winder_turn")],
+    | Annotated[WinderTurnStairBody, Tag("winder_turn")]
+    | Annotated[SpiralStairBody, Tag("spiral")],
     Discriminator(stair_kind),
 ]
 
@@ -109,6 +131,8 @@ def _stair_request(body: StairBody) -> StairRequest:
         return UTurnStairRequest(**body.model_dump())
     if isinstance(body, WinderTurnStairBody):
         return WinderTurnStairRequest(**body.model_dump())
+    if isinstance(body, SpiralStairBody):
+        return SpiralStairRequest(**body.model_dump())
     return StraightStairRequest(**body.model_dump())
 
 

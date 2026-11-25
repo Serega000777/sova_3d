@@ -1,11 +1,11 @@
-import { checkWinderStair, type HouseBoxBody, type PhysicalAiClient, WINDER_STAIR_PROBLEM_TEXT } from "@physical-ai/contracts";
+import { checkSpiralStair, checkWinderStair, type HouseBoxBody, type PhysicalAiClient, SPIRAL_STAIR_PROBLEM_TEXT, WINDER_STAIR_PROBLEM_TEXT } from "@physical-ai/contracts";
 import { useMemo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { colors, styles } from "./theme";
 
 type Shape = "rectangle" | "l_shape" | "t_shape";
-type StairKind = "straight" | "l_turn" | "u_turn" | "winder_turn";
+type StairKind = "straight" | "l_turn" | "u_turn" | "winder_turn" | "spiral";
 
 function millimetres(value: string): number {
   return Number(value.replace(",", ".")) * 1_000;
@@ -75,6 +75,10 @@ export function HouseBoxCreator({
   const [winderLowerSteps, setWinderLowerSteps] = useState("7");
   const [winderUpperSteps, setWinderUpperSteps] = useState("7");
   const [newelMm, setNewelMm] = useState("250");
+  const [spiralDiameterMm, setSpiralDiameterMm] = useState("2200");
+  const [spiralPostDiameterMm, setSpiralPostDiameterMm] = useState("200");
+  const [spiralSteps, setSpiralSteps] = useState("15");
+  const [spiralSweepDeg, setSpiralSweepDeg] = useState("300");
   const [turn, setTurn] = useState<"left" | "right">("left");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,8 +97,12 @@ export function HouseBoxCreator({
     winderLowerSteps: numberValue(winderLowerSteps),
     winderUpperSteps: numberValue(winderUpperSteps),
     newel: numberValue(newelMm),
+    spiralDiameter: numberValue(spiralDiameterMm),
+    spiralPostDiameter: numberValue(spiralPostDiameterMm),
+    spiralSteps: numberValue(spiralSteps),
+    spiralSweep: numberValue(spiralSweepDeg),
     upperFloorSetback: numberValue(upperFloorSetbackMm),
-  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps, uFlightSteps, winderLowerSteps, winderUpperSteps, newelMm, upperFloorSetbackMm]);
+  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps, uFlightSteps, winderLowerSteps, winderUpperSteps, newelMm, spiralDiameterMm, spiralPostDiameterMm, spiralSteps, spiralSweepDeg, upperFloorSetbackMm]);
 
   const winder = useMemo(() => checkWinderStair({
     widthMm: dimensions.stairWidth,
@@ -109,10 +117,25 @@ export function HouseBoxCreator({
     upperFloorSetbackMm: dimensions.upperFloorSetback,
   }), [dimensions]);
 
+  const spiral = useMemo(() => checkSpiralStair({
+    diameterMm: dimensions.spiralDiameter,
+    postDiameterMm: dimensions.spiralPostDiameter,
+    stepCount: dimensions.spiralSteps,
+    sweepDeg: dimensions.spiralSweep,
+    placement: "center",
+    houseLengthMm: dimensions.length,
+    houseWidthMm: dimensions.width,
+    floorHeightMm: dimensions.floorHeight,
+    upperFloorSetbackMm: dimensions.upperFloorSetback,
+  }), [dimensions]);
+
   const stairProblem = useMemo(() => {
     if (!addStair || !stairAllowed) return null;
     if (stairKind === "winder_turn") {
       return winder.problem ? WINDER_STAIR_PROBLEM_TEXT[winder.problem].ru : null;
+    }
+    if (stairKind === "spiral") {
+      return spiral.problem ? SPIRAL_STAIR_PROBLEM_TEXT[spiral.problem].ru : null;
     }
     const risers = stairKind === "straight"
       ? dimensions.straightSteps
@@ -155,7 +178,7 @@ export function HouseBoxCreator({
       || footprintWidth > dimensions.width - 2 * dimensions.upperFloorSetback - 700
     ) return "Лестница и проёмы не помещаются с отступом 350 мм от стен.";
     return null;
-  }, [addStair, stairAllowed, stairKind, dimensions, winder]);
+  }, [addStair, stairAllowed, stairKind, dimensions, spiral, winder]);
 
   async function create() {
     if (busy) return;
@@ -171,6 +194,8 @@ export function HouseBoxCreator({
           ? [dimensions.lowerSteps, dimensions.upperSteps]
           : stairKind === "winder_turn"
             ? [dimensions.winderLowerSteps, dimensions.winderUpperSteps, dimensions.newel]
+            : stairKind === "spiral"
+              ? [dimensions.spiralDiameter, dimensions.spiralPostDiameter, dimensions.spiralSteps, dimensions.spiralSweep]
             : [dimensions.uFlightSteps]),
     ];
     if (
@@ -191,10 +216,12 @@ export function HouseBoxCreator({
       ))
       || (stairEnabled && (
         stairDimensions.some((value) => !Number.isFinite(value))
-        || dimensions.stairWidth < 700
-        || dimensions.stairWidth > 2_000
-        || dimensions.tread < 200
-        || dimensions.tread > 400
+        || (stairKind !== "spiral" && (
+          dimensions.stairWidth < 700
+          || dimensions.stairWidth > 2_000
+          || dimensions.tread < 200
+          || dimensions.tread > 400
+        ))
         || stairProblem !== null
       ))
     ) {
@@ -238,6 +265,18 @@ export function HouseBoxCreator({
                 railing: false,
                 material_id: null,
               }
+            : stairKind === "spiral"
+              ? {
+                  kind: "spiral",
+                  diameter_mm: dimensions.spiralDiameter,
+                  post_diameter_mm: dimensions.spiralPostDiameter,
+                  step_count: dimensions.spiralSteps,
+                  sweep_deg: dimensions.spiralSweep,
+                  turn,
+                  placement: "center",
+                  railing: false,
+                  material_id: null,
+                }
             : {
               kind: "u_turn",
               width_mm: dimensions.stairWidth,
@@ -314,12 +353,38 @@ export function HouseBoxCreator({
                 <Choice value="l_turn" selected={stairKind} label="Г-образная" disabled={busy} onChange={setStairKind} />
                 <Choice value="u_turn" selected={stairKind} label="П-образная" disabled={busy} onChange={setStairKind} />
                 <Choice value="winder_turn" selected={stairKind} label="Забежная 90°" disabled={busy} onChange={setStairKind} />
+                <Choice value="spiral" selected={stairKind} label="Винтовая" disabled={busy} onChange={setStairKind} />
               </View>
-              <View style={styles.row}>
-                <TextInput style={[styles.input, { flex: 1 }]} value={stairWidthMm} editable={!busy} onChangeText={setStairWidthMm} keyboardType="number-pad" placeholder="Марш, мм" placeholderTextColor={colors.muted} />
-                <TextInput style={[styles.input, { flex: 1 }]} value={treadMm} editable={!busy} onChangeText={setTreadMm} keyboardType="number-pad" placeholder="Проступь, мм" placeholderTextColor={colors.muted} />
-              </View>
-              {stairKind === "straight" ? (
+              {stairKind !== "spiral" ? (
+                <View style={styles.row}>
+                  <TextInput style={[styles.input, { flex: 1 }]} value={stairWidthMm} editable={!busy} onChangeText={setStairWidthMm} keyboardType="number-pad" placeholder="Марш, мм" placeholderTextColor={colors.muted} />
+                  <TextInput style={[styles.input, { flex: 1 }]} value={treadMm} editable={!busy} onChangeText={setTreadMm} keyboardType="number-pad" placeholder="Проступь, мм" placeholderTextColor={colors.muted} />
+                </View>
+              ) : null}
+              {stairKind === "spiral" ? (
+                <>
+                  <View style={styles.row}>
+                    <TextInput style={[styles.input, { flex: 1 }]} value={spiralDiameterMm} editable={!busy} onChangeText={setSpiralDiameterMm} keyboardType="number-pad" placeholder="Диаметр, мм" placeholderTextColor={colors.muted} accessibilityLabel="Диаметр винтовой лестницы" />
+                    <TextInput style={[styles.input, { flex: 1 }]} value={spiralPostDiameterMm} editable={!busy} onChangeText={setSpiralPostDiameterMm} keyboardType="number-pad" placeholder="Столб, мм" placeholderTextColor={colors.muted} accessibilityLabel="Диаметр центрального столба" />
+                  </View>
+                  <View style={styles.row}>
+                    <TextInput style={[styles.input, { flex: 1 }]} value={spiralSteps} editable={!busy} onChangeText={setSpiralSteps} keyboardType="number-pad" placeholder="Ступеней" placeholderTextColor={colors.muted} />
+                    <TextInput style={[styles.input, { flex: 1 }]} value={spiralSweepDeg} editable={!busy} onChangeText={setSpiralSweepDeg} keyboardType="number-pad" placeholder="Поворот, °" placeholderTextColor={colors.muted} />
+                  </View>
+                  <View style={styles.row} accessibilityRole="radiogroup">
+                    <Choice value="left" selected={turn} label="Против часовой" disabled={busy} onChange={setTurn} />
+                    <Choice value="right" selected={turn} label="По часовой" disabled={busy} onChange={setTurn} />
+                  </View>
+                  {spiral.problem ? null : (
+                    <Text style={styles.muted}>
+                      {`${dimensions.spiralSteps} подъёмов по ${spiral.riseMm.toFixed(1)} мм · ${spiral.treadAngleDeg.toFixed(1)}° на ступень · проступь по линии хода ${spiral.goingMm.toFixed(0)} мм`}
+                    </Text>
+                  )}
+                  <Text style={styles.muted}>
+                    Точные секторные ступени объединяются с центральным столбом. Винтовое ограждение, прочность и строительные нормы не моделируются.
+                  </Text>
+                </>
+              ) : stairKind === "straight" ? (
                 <TextInput style={styles.input} value={straightSteps} editable={!busy} onChangeText={setStraightSteps} keyboardType="number-pad" placeholder="Подъёмов" placeholderTextColor={colors.muted} />
               ) : stairKind === "l_turn" ? (
                 <>

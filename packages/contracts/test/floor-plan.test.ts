@@ -322,6 +322,71 @@ test("a winder stair keeps three treads and its newel through parsing, drawing a
   }
 });
 
+test("a spiral stair keeps circular geometry through parsing, drawing and translation", () => {
+  const center: [number, number] = [6_000, 4_000];
+  const outline = Array.from({ length: 24 }, (_, index): [number, number] => {
+    const angle = index * Math.PI / 12;
+    const radius = 1_100 / Math.cos(Math.PI / 24);
+    return [center[0] + radius * Math.cos(angle), center[1] + radius * Math.sin(angle)];
+  });
+  const source = {
+    id: "stair_1_2_up",
+    role: "up",
+    from_floor: 0,
+    to_floor: 1,
+    kind: "spiral",
+    turn: "right",
+    outline,
+    width_mm: 1_000,
+    run_mm: 600 * 300 * Math.PI / 180,
+    step_count: 15,
+    tread_depth_mm: 600 * 20 * Math.PI / 180,
+    riser_height_mm: 200,
+    railing: false,
+    flights: [],
+    landing: null,
+    winders: [],
+    newel: null,
+    spiral: {
+      center,
+      radius_mm: 1_100,
+      post_radius_mm: 100,
+      start_angle_deg: 0,
+      sweep_deg: 300,
+    },
+  };
+  const rooms = [{ name: "Floor", outline: [[0, 0], [12000, 0], [12000, 8000], [0, 8000]] }];
+  const plan = parseFloorPlan({ rooms, stairs: [source] });
+  assert.ok(plan);
+  const stair = plan.stairs![0]!;
+  assert.equal(stair.kind, "spiral");
+  assert.deepEqual(stair.spiral?.center, center);
+  const lines = stairPlanLines(stair)!;
+  assert.equal(lines.treads.length, 16);
+  assert.equal(lines.walkline.length, 16);
+  assert.deepEqual(lines.walkline[0], [6_600, 4_000]);
+  assert.ok(Math.abs(lines.walkline.at(-1)![0] - 6_300) < 1e-9);
+  assert.ok(Math.abs(lines.walkline.at(-1)![1] - (4_000 + 300 * Math.sqrt(3))) < 1e-9);
+  assert.deepEqual(stairPlanLines({ ...stair, role: "down" })?.walkline, [...lines.walkline].reverse());
+  const moved = translatePlan(plan, 100, -200).stairs![0]!;
+  assert.deepEqual(moved.spiral?.center, [6_100, 3_800]);
+  assert.deepEqual(moved.outline[0], [outline[0]![0] + 100, outline[0]![1] - 200]);
+
+  for (const broken of [
+    { ...source, outline: source.outline.slice(0, 23) },
+    { ...source, turn: undefined },
+    { ...source, railing: true },
+    { ...source, spiral: null },
+    { ...source, spiral: { ...source.spiral, post_radius_mm: 1_100 } },
+    { ...source, spiral: { ...source.spiral, sweep_deg: 331 } },
+    { ...source, flights: [{ outline: source.outline.slice(0, 4), step_count: 5, direction: "+x" }] },
+    { ...source, landing: source.outline.slice(0, 4) },
+    { ...source, kind: "straight" },
+  ]) {
+    assert.equal(parseFloorPlan({ rooms, stairs: [broken] }), null);
+  }
+});
+
 test("straight stair drawing is unchanged by the L-turn helper", () => {
   const plan = parseFloorPlan({
     rooms: [{ name: "Floor", outline: [[0, 0], [12000, 0], [12000, 8000], [0, 8000]] }],

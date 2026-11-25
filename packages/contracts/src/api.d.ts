@@ -7071,7 +7071,7 @@ export interface components {
              */
             shape: "rectangle" | "l_shape" | "t_shape";
             /** Stair */
-            stair?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"] | components["schemas"]["UTurnStairBody"] | components["schemas"]["WinderTurnStairBody"]) | null;
+            stair?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"] | components["schemas"]["UTurnStairBody"] | components["schemas"]["WinderTurnStairBody"] | components["schemas"]["SpiralStairBody"]) | null;
             /**
              * Upper Floor Setback Mm
              * @default 0
@@ -8871,7 +8871,7 @@ export interface components {
              * @default straight
              * @enum {string}
              */
-            kind: "straight" | "l_turn" | "u_turn" | "winder_turn";
+            kind: "straight" | "l_turn" | "u_turn" | "winder_turn" | "spiral";
             /** Turn */
             turn?: ("left" | "right") | null;
             /** Flights */
@@ -8891,6 +8891,7 @@ export interface components {
                 number,
                 number
             ][] | null;
+            spiral?: components["schemas"]["PlanStairSpiral"] | null;
         };
         /**
          * PlanStairFlight
@@ -8909,6 +8910,25 @@ export interface components {
              * @enum {string}
              */
             direction: "+x" | "-x" | "+y" | "-y";
+        };
+        /**
+         * PlanStairSpiral
+         * @description Exact circular geometry of a spiral stair; treads are equal sectors of ``sweep_deg``.
+         */
+        PlanStairSpiral: {
+            /** Center */
+            center: [
+                number,
+                number
+            ];
+            /** Radius Mm */
+            radius_mm: number;
+            /** Post Radius Mm */
+            post_radius_mm: number;
+            /** Start Angle Deg */
+            start_angle_deg: number;
+            /** Sweep Deg */
+            sweep_deg: number;
         };
         /** PlanWall */
         PlanWall: {
@@ -11031,6 +11051,60 @@ export interface components {
              * @default 55
              */
             max_travel_mm: number;
+        };
+        /**
+         * SpiralStairBody
+         * @description Equal circular-sector treads around a central post, sweeping ``sweep_deg`` in total.
+         *
+         *     Values are strict (no string/boolean coercion), unknown fields are rejected and ``railing``
+         *     accepts only ``false`` because rails along a helix are not modelled.
+         */
+        SpiralStairBody: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "spiral";
+            /**
+             * Diameter Mm
+             * @default 2200
+             */
+            diameter_mm: number;
+            /**
+             * Post Diameter Mm
+             * @default 200
+             */
+            post_diameter_mm: number;
+            /**
+             * Step Count
+             * @default 15
+             */
+            step_count: number;
+            /**
+             * Sweep Deg
+             * @default 300
+             */
+            sweep_deg: number;
+            /**
+             * Turn
+             * @default left
+             * @enum {string}
+             */
+            turn: "left" | "right";
+            /**
+             * Placement
+             * @default center
+             * @enum {string}
+             */
+            placement: "left" | "center" | "right";
+            /**
+             * Railing
+             * @default false
+             * @constant
+             */
+            railing: false;
+            /** Material Id */
+            material_id?: string | null;
         };
         /** SplitBody */
         SplitBody: {

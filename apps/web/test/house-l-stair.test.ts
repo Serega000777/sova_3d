@@ -12,10 +12,11 @@ const wizard = read("../src/components/HouseBoxWizard.tsx");
 const planPage = read("../src/app/plan/page.tsx");
 const editor = read("../src/components/PlanEditor.tsx");
 
-test("the house-box wizard submits discriminated straight, L-turn or U-turn stairs", () => {
+test("the house-box wizard submits discriminated straight, L-turn, U-turn or spiral stairs", () => {
   assert.match(wizard, /kind: "l_turn",\s+width_mm: stairWidthMm,[\s\S]+lower_step_count: lowerSteps,\s+upper_step_count: upperSteps,\s+turn: stairTurn,/);
   assert.match(wizard, /kind: "straight",\s+width_mm: stairWidthMm,[\s\S]+step_count: stepCount,/);
   assert.match(wizard, /kind: "u_turn",\s+width_mm: stairWidthMm,[\s\S]+flight_step_count: uFlightSteps,\s+turn: stairTurn,/);
+  assert.match(wizard, /kind: "spiral",\s+diameter_mm: spiralDiameterMm,\s+post_diameter_mm: spiralPostDiameterMm,\s+step_count: spiralSteps,\s+sweep_deg: spiralSweepDeg,\s+turn: stairTurn,\s+placement: stairPlacement,\s+railing: false,/);
   // The landing is one riser and the comfort/fit checks gate submission like the server does.
   assert.match(wizard, /lowerSteps \+ upperSteps \+ 1/);
   assert.match(wizard, /2 \* uFlightSteps \+ 1/);
@@ -64,12 +65,23 @@ test("the wizard submits a strict winder stair without hidden fields", () => {
   assert.doesNotMatch(body, /stepCount|uFlightSteps|[^r]lowerSteps|[^r]upperSteps|railing,/);
   // newel_mm belongs to the winder request only.
   assert.equal(wizard.match(/newel_mm/g)?.length, 1);
-  assert.match(wizard, /\{!winderTurn && \(\s+<label className="check">\s+<input type="checkbox" checked=\{railing\}/);
+  assert.match(wizard, /\{!winderTurn && !spiralStair && \(\s+<label className="check">\s+<input type="checkbox" checked=\{railing\}/);
   assert.match(wizard, /winderTurn \? \(\s+<>[\s\S]+value=\{winderLowerSteps\} min=\{3\} max=\{24\}[\s\S]+value=\{newelMm\} min=\{200\} max=\{500\}/);
   assert.match(wizard, /ru: "Забежная, 90°", en: "Winder turn, 90°"/);
   assert.match(wizard, /checkWinderStair\(\{[\s\S]+upperFloorSetbackMm: effectiveUpperInset,/);
   assert.match(wizard, /winder\.problem && WINDER_STAIR_PROBLEM_TEXT\[winder\.problem\]\[language\]/);
   assert.match(wizard, /Railings, a newel post, structure and building codes are not modelled/);
+});
+
+test("the web spiral controls use the shared fail-closed check", () => {
+  assert.match(wizard, /ru: "Винтовая", en: "Spiral"/);
+  assert.match(wizard, /checkSpiralStair\(\{[\s\S]+diameterMm: spiralDiameterMm,[\s\S]+upperFloorSetbackMm: effectiveUpperInset,/);
+  assert.match(wizard, /SPIRAL_STAIR_PROBLEM_TEXT\[spiral\.problem\]\[language\]/);
+  assert.match(wizard, /value=\{spiralDiameterMm\} min=\{1_400\} max=\{3_200\}/);
+  assert.match(wizard, /value=\{spiralPostDiameterMm\} min=\{100\} max=\{300\}/);
+  assert.match(wizard, /value=\{spiralSteps\} min=\{10\} max=\{20\}/);
+  assert.match(wizard, /value=\{spiralSweepDeg\} min=\{180\} max=\{330\}/);
+  assert.match(wizard, /A helical railing, structure and building codes are not modelled/);
 });
 
 test("the plan editor draws treads and the walking line from stairPlanLines", () => {
@@ -78,7 +90,9 @@ test("the plan editor draws treads and the walking line from stairPlanLines", ()
   assert.match(editor, /stair\.newel && \(\s+<polygon/);
   assert.match(editor, /lines\.walkline\[Math\.floor\(lines\.walkline\.length \/ 2\)\]/);
   assert.match(editor, /stair\.kind === "winder_turn" \? " · W"/);
+  assert.match(editor, /stair\.kind === "spiral" \? " · S"/);
   assert.match(planPage, /"winder_turn" \? \(ru \? " · с тремя забежными ступенями, без ограждения" : " · three winders, no railing"\)/);
+  assert.match(planPage, /"spiral" \? \(ru \? " · винтовая вокруг центрального столба, без ограждения" : " · spiral around a central post, no railing"\)/);
   assert.match(editor, /<polyline points=\{lines\.walkline/);
   const plan = parseFloorPlan({
     rooms: [{ name: "Floor", outline: [[0, 0], [12000, 0], [12000, 8000], [0, 8000]] }],

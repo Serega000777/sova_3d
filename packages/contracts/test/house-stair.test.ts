@@ -3,9 +3,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  checkSpiralStair,
   checkWinderStair,
+  SPIRAL_STAIR_LIMITS,
+  SPIRAL_STAIR_PROBLEM_TEXT,
   WINDER_STAIR_LIMITS,
   WINDER_STAIR_PROBLEM_TEXT,
+  type SpiralStairInput,
   type WinderStairInput,
 } from "../src/house-stair.ts";
 
@@ -61,4 +65,54 @@ test("every server bound is rejected by the client with its own message", () => 
   assert.equal(checkWinderStair({ ...base, houseLengthMm: 3_910, houseWidthMm: 3_910 }).problem, null);
   assert.deepEqual(WINDER_STAIR_LIMITS.flightSteps, [3, 24]);
   for (const text of Object.values(WINDER_STAIR_PROBLEM_TEXT)) assert.ok(text.ru && text.en);
+});
+
+const spiralBase: SpiralStairInput = {
+  diameterMm: 2_200,
+  postDiameterMm: 200,
+  stepCount: 15,
+  sweepDeg: 300,
+  placement: "center",
+  houseLengthMm: 12_000,
+  houseWidthMm: 8_000,
+  floorHeightMm: 3_000,
+  upperFloorSetbackMm: 0,
+};
+
+test("the default spiral stair is accepted with server-identical derived metrics", () => {
+  const check = checkSpiralStair(spiralBase);
+  assert.equal(check.problem, null);
+  assert.equal(check.riseMm, 200);
+  assert.equal(check.treadAngleDeg, 20);
+  assert.equal(check.clearWidthMm, 1_000);
+  assert.equal(check.walklineRadiusMm, 600);
+  assert.ok(Math.abs(check.goingMm - 600 * Math.PI / 9) < 1e-9);
+  assert.deepEqual(check.footprint, { x: 2_200, y: 2_200 });
+});
+
+test("the shared spiral check rejects every server boundary before submit", () => {
+  const cases: [Partial<SpiralStairInput>, string][] = [
+    [{ diameterMm: 1_399 }, "diameter"],
+    [{ diameterMm: Number.NaN }, "diameter"],
+    [{ postDiameterMm: 99 }, "post"],
+    [{ postDiameterMm: Number.POSITIVE_INFINITY }, "post"],
+    [{ stepCount: 9 }, "steps"],
+    [{ stepCount: 15.5 }, "steps"],
+    [{ sweepDeg: 179 }, "sweep"],
+    [{ floorHeightMm: 6_000 }, "rise"],
+    [{ stepCount: 21 }, "steps"],
+    [{ floorHeightMm: 2_200, stepCount: 10, sweepDeg: 330 }, "tread_angle"],
+    [{ diameterMm: 1_500 }, "clear_width"],
+    [{ sweepDeg: 180 }, "going"],
+    [{ floorHeightMm: 2_400, stepCount: 20, sweepDeg: 330, diameterMm: 3_000, postDiameterMm: 300 }, "stride"],
+    [{ houseLengthMm: 2_899 }, "fit"],
+    [{ houseWidthMm: 2_899 }, "fit"],
+    [{ upperFloorSetbackMm: 100, placement: "left" }, "fit"],
+  ];
+  for (const [change, problem] of cases) {
+    assert.equal(checkSpiralStair({ ...spiralBase, ...change }).problem, problem, JSON.stringify(change));
+  }
+  assert.equal(checkSpiralStair({ ...spiralBase, houseLengthMm: 2_900, houseWidthMm: 2_900 }).problem, null);
+  assert.deepEqual(SPIRAL_STAIR_LIMITS.steps, [10, 20]);
+  for (const text of Object.values(SPIRAL_STAIR_PROBLEM_TEXT)) assert.ok(text.ru && text.en);
 });

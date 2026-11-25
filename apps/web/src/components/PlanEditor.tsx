@@ -188,7 +188,7 @@ function PlanContent({
               strokeWidth={2 * px}
             />
             <text x={labelX} y={labelY - 70 * px} fill={ink} fontSize={11 * px} textAnchor="middle">
-              {stair.role === "up" ? "UP" : "DOWN"} · {stair.step_count}{stair.kind === "l_turn" ? " · L" : stair.kind === "u_turn" ? " · U" : stair.kind === "winder_turn" ? " · W" : ""}
+              {stair.role === "up" ? "UP" : "DOWN"} · {stair.step_count}{stair.kind === "l_turn" ? " · L" : stair.kind === "u_turn" ? " · U" : stair.kind === "winder_turn" ? " · W" : stair.kind === "spiral" ? " · S" : ""}
             </text>
           </g>
         );

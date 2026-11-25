@@ -14,19 +14,28 @@ test("mobile house creation exposes the exact typed house-box job", () => {
   assert.match(creator, /onCreated\(accepted\.project_id\)/);
 });
 
-test("mobile sends discriminated straight, L-turn or U-turn stair parameters", () => {
+test("mobile sends discriminated straight, L-turn, U-turn or spiral stair parameters", () => {
   assert.match(creator, /kind: "straight"[\s\S]+step_count: dimensions\.straightSteps/);
   assert.match(creator, /kind: "l_turn"[\s\S]+lower_step_count: dimensions\.lowerSteps/);
   assert.match(creator, /upper_step_count: dimensions\.upperSteps/);
   assert.match(creator, /kind: "u_turn"[\s\S]+flight_step_count: dimensions\.uFlightSteps/);
+  assert.match(creator, /kind: "spiral"[\s\S]+diameter_mm: dimensions\.spiralDiameter,[\s\S]+post_diameter_mm: dimensions\.spiralPostDiameter,[\s\S]+step_count: dimensions\.spiralSteps,[\s\S]+sweep_deg: dimensions\.spiralSweep,[\s\S]+railing: false/);
   assert.match(creator, /turn,[\s\S]+placement: "center"/);
   assert.match(creator, /2 \* rise \+ dimensions\.tread < 550/);
   assert.match(creator, /footprintLength > dimensions\.length - 2 \* dimensions\.upperFloorSetback - 700/);
   assert.match(creator, /footprintWidth > dimensions\.width - 2 \* dimensions\.upperFloorSetback - 700/);
-  assert.match(creator, /stairKind === "straight"[\s\S]+\[dimensions\.straightSteps\][\s\S]+\[dimensions\.lowerSteps, dimensions\.upperSteps\][\s\S]+\[dimensions\.uFlightSteps\]/);
+  assert.match(creator, /stairKind === "straight"[\s\S]+\[dimensions\.straightSteps\][\s\S]+\[dimensions\.lowerSteps, dimensions\.upperSteps\][\s\S]+\[dimensions\.spiralDiameter, dimensions\.spiralPostDiameter, dimensions\.spiralSteps, dimensions\.spiralSweep\][\s\S]+\[dimensions\.uFlightSteps\]/);
   assert.match(creator, /Лестницы пока доступны только для прямоугольного дома/);
   assert.match(creator, /upper_floor_setback_mm: floors > 1 && shape === "rectangle" \? dimensions\.upperFloorSetback : 0/);
   assert.match(creator, /Отступ верхних этажей, мм/);
+});
+
+test("mobile spiral controls mirror the bounded server rules", () => {
+  assert.match(creator, /value="spiral" selected=\{stairKind\} label="Винтовая"/);
+  assert.match(creator, /checkSpiralStair\(\{[\s\S]+diameterMm: dimensions\.spiralDiameter,[\s\S]+upperFloorSetbackMm: dimensions\.upperFloorSetback,/);
+  assert.match(creator, /SPIRAL_STAIR_PROBLEM_TEXT\[spiral\.problem\]\.ru/);
+  assert.match(creator, /value=\{spiralDiameterMm\}[\s\S]+value=\{spiralPostDiameterMm\}[\s\S]+value=\{spiralSteps\}[\s\S]+value=\{spiralSweepDeg\}/);
+  assert.match(creator, /Винтовое ограждение, прочность и строительные нормы не моделируются/);
 });
 
 test("mobile winder stair sends only its own bounded fields and no railing", () => {

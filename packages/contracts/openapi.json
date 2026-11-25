@@ -25392,6 +25392,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/WinderTurnStairBody"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SpiralStairBody"
                   }
                 ]
               },
@@ -30439,7 +30442,7 @@
               "minItems": 2
             },
             "type": "array",
-            "maxItems": 6,
+            "maxItems": 24,
             "minItems": 4,
             "title": "Outline"
           },
@@ -30496,7 +30499,8 @@
               "straight",
               "l_turn",
               "u_turn",
-              "winder_turn"
+              "winder_turn",
+              "spiral"
             ],
             "title": "Kind",
             "default": "straight"
@@ -30598,6 +30602,16 @@
               }
             ],
             "title": "Newel"
+          },
+          "spiral": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanStairSpiral"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -30662,6 +30676,58 @@
         ],
         "title": "PlanStairFlight",
         "description": "One straight flight of a turning stair, climbing in ``direction``."
+      },
+      "PlanStairSpiral": {
+        "properties": {
+          "center": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Center"
+          },
+          "radius_mm": {
+            "type": "number",
+            "maximum": 1600.0,
+            "minimum": 700.0,
+            "title": "Radius Mm"
+          },
+          "post_radius_mm": {
+            "type": "number",
+            "maximum": 150.0,
+            "minimum": 50.0,
+            "title": "Post Radius Mm"
+          },
+          "start_angle_deg": {
+            "type": "number",
+            "maximum": 360.0,
+            "minimum": -360.0,
+            "title": "Start Angle Deg"
+          },
+          "sweep_deg": {
+            "type": "number",
+            "maximum": 330.0,
+            "minimum": 180.0,
+            "title": "Sweep Deg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "center",
+          "radius_mm",
+          "post_radius_mm",
+          "start_angle_deg",
+          "sweep_deg"
+        ],
+        "title": "PlanStairSpiral",
+        "description": "Exact circular geometry of a spiral stair; treads are equal sectors of ``sweep_deg``."
       },
       "PlanWall": {
         "properties": {
@@ -36439,6 +36505,88 @@
         "type": "object",
         "title": "SlidingLidBody",
         "description": "Open box with retaining guide lips and a separate lid sliding along platform +Y."
+      },
+      "SpiralStairBody": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "spiral",
+            "title": "Kind"
+          },
+          "diameter_mm": {
+            "type": "number",
+            "maximum": 3200.0,
+            "minimum": 1400.0,
+            "title": "Diameter Mm",
+            "default": 2200
+          },
+          "post_diameter_mm": {
+            "type": "number",
+            "maximum": 300.0,
+            "minimum": 100.0,
+            "title": "Post Diameter Mm",
+            "default": 200
+          },
+          "step_count": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 10.0,
+            "title": "Step Count",
+            "default": 15
+          },
+          "sweep_deg": {
+            "type": "number",
+            "maximum": 330.0,
+            "minimum": 180.0,
+            "title": "Sweep Deg",
+            "default": 300
+          },
+          "turn": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ],
+            "title": "Turn",
+            "default": "left"
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ],
+            "title": "Placement",
+            "default": "center"
+          },
+          "railing": {
+            "type": "boolean",
+            "const": false,
+            "title": "Railing",
+            "default": false
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "SpiralStairBody",
+        "description": "Equal circular-sector treads around a central post, sweeping ``sweep_deg`` in total.\n\nValues are strict (no string/boolean coercion), unknown fields are rejected and ``railing``\naccepts only ``false`` because rails along a helix are not modelled."
       },
       "SplitBody": {
         "properties": {

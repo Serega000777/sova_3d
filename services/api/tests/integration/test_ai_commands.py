@@ -74,26 +74,48 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
         if width >= depth:
             vertices = np.array(
                 [
-                    [0, 0, 0], [width, 0, 0], [width, depth, 0], [0, depth, 0],
+                    [0, 0, 0],
+                    [width, 0, 0],
+                    [width, depth, 0],
+                    [0, depth, 0],
                     [depth / 2, depth / 2, height],
                     [width - depth / 2, depth / 2, height],
                 ]
             )
             faces = np.array(
-                [[0, 3, 2], [0, 2, 1], [0, 1, 5], [0, 5, 4], [1, 2, 5],
-                 [3, 4, 5], [3, 5, 2], [0, 4, 3]]
+                [
+                    [0, 3, 2],
+                    [0, 2, 1],
+                    [0, 1, 5],
+                    [0, 5, 4],
+                    [1, 2, 5],
+                    [3, 4, 5],
+                    [3, 5, 2],
+                    [0, 4, 3],
+                ]
             )
         else:
             vertices = np.array(
                 [
-                    [0, 0, 0], [width, 0, 0], [width, depth, 0], [0, depth, 0],
+                    [0, 0, 0],
+                    [width, 0, 0],
+                    [width, depth, 0],
+                    [0, depth, 0],
                     [width / 2, width / 2, height],
                     [width / 2, depth - width / 2, height],
                 ]
             )
             faces = np.array(
-                [[0, 3, 2], [0, 2, 1], [0, 1, 4], [1, 2, 5], [1, 5, 4],
-                 [3, 5, 2], [0, 4, 5], [0, 5, 3]]
+                [
+                    [0, 3, 2],
+                    [0, 2, 1],
+                    [0, 1, 4],
+                    [1, 2, 5],
+                    [1, 5, 4],
+                    [3, 5, 2],
+                    [0, 4, 5],
+                    [0, 5, 3],
+                ]
             )
         vertices += np.array([x0, y0, z0])
         return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
@@ -143,6 +165,27 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
             elif op["type"] == "create_cylinder":
                 mesh = trimesh.creation.cylinder(
                     radius=op["diameter_mm"] / 2, height=op["height_mm"]
+                )
+            elif op["type"] == "extrude" and any(
+                segment.get("kind") == "arc"
+                for segment in op.get("profile", {}).get("segments", [])
+            ):
+                # Exact circular-sector stairs are built by OCCT from line/arc sketch edges.
+                # The no-kernel integration fallback only needs a deterministic valid artifact
+                # for the API/job/scene path, so bound those profile points conservatively.
+                points = np.asarray(op["profile"]["points_mm"], dtype=float)
+                origin = np.asarray(op.get("origin_mm", [0, 0, 0]), dtype=float)
+                span = np.maximum(points.max(axis=0) - points.min(axis=0), 1.0)
+                mesh = trimesh.creation.box(extents=(span[0], span[1], op["height_mm"]))
+                mesh.apply_translation(
+                    origin
+                    + np.array(
+                        [
+                            points[:, 0].min() + span[0] / 2,
+                            points[:, 1].min() + span[1] / 2,
+                            op["height_mm"] / 2,
+                        ]
+                    )
                 )
             elif op["type"] == "analytic_surface_patch":
                 # The production worker delegates this exact creator to OCCT. The integration

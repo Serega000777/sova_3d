@@ -16,11 +16,13 @@ from pydantic import BaseModel, Field, model_validator
 from app.engineering.house_box import (
     HouseBoxRequest,
     LTurnStairRequest,
+    SpiralStairRequest,
     UTurnStairRequest,
     WinderTurnStairRequest,
     _stair_origin,
     floor_rect,
     l_stair_layout,
+    spiral_stair_layout,
     u_stair_layout,
     winder_stair_layout,
 )
@@ -89,12 +91,27 @@ class PlanStairFlight(BaseModel):
     direction: Literal["+x", "-x", "+y", "-y"]
 
 
+# The 2D outline of a spiral stair is a polygon circumscribed around its whole circle, so it
+# always contains the real treads, the post and the entry/exit zone.
+SPIRAL_OUTLINE_SIDES = 24
+
+
+class PlanStairSpiral(BaseModel):
+    """Exact circular geometry of a spiral stair; treads are equal sectors of ``sweep_deg``."""
+
+    center: Point
+    radius_mm: float = Field(ge=700, le=1_600)
+    post_radius_mm: float = Field(ge=50, le=150)
+    start_angle_deg: float = Field(ge=-360, le=360)
+    sweep_deg: float = Field(ge=180, le=330)
+
+
 class PlanStair(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     role: Literal["up", "down"]
     from_floor: int = Field(ge=0, le=2)
     to_floor: int = Field(ge=1, le=2)
-    outline: list[Point] = Field(min_length=4, max_length=6)
+    outline: list[Point] = Field(min_length=4, max_length=SPIRAL_OUTLINE_SIDES)
     width_mm: float = Field(ge=700, le=2_000)
     run_mm: float = Field(gt=0, le=12_000)
     step_count: int = Field(ge=10, le=30)
@@ -102,7 +119,7 @@ class PlanStair(BaseModel):
     riser_height_mm: float = Field(ge=120, le=220)
     railing: bool
     material_id: str | None = Field(default=None, min_length=1, max_length=120)
-    kind: Literal["straight", "l_turn", "u_turn", "winder_turn"] = "straight"
+    kind: Literal["straight", "l_turn", "u_turn", "winder_turn", "spiral"] = "straight"
     turn: Literal["left", "right"] | None = None
     flights: list[PlanStairFlight] = Field(default_factory=list, max_length=2)
     landing: list[Point] | None = Field(default=None, min_length=4, max_length=4)
@@ -111,9 +128,16 @@ class PlanStair(BaseModel):
         default_factory=list, max_length=3
     )
     newel: list[Point] | None = Field(default=None, min_length=4, max_length=4)
+    # Spiral stairs only: centre, radii and the swept angle of the treads.
+    spiral: PlanStairSpiral | None = None
 
     @model_validator(mode="after")
     def _kind_matches_geometry(self) -> PlanStair:
+        if self.kind == "spiral":
+            self._check_spiral()
+            return self
+        if self.spiral is not None:
+            raise ValueError("only a spiral stair has spiral geometry")
         if self.kind == "winder_turn":
             self._check_winder_turn()
             return self
@@ -144,6 +168,25 @@ class PlanStair(BaseModel):
         ] != ["+x", "-x"]:
             raise ValueError("U-turn flights must have equal step counts and climb +x then -x")
         return self
+
+    def _check_spiral(self) -> None:
+        if (
+            self.spiral is None
+            or len(self.outline) != SPIRAL_OUTLINE_SIDES
+            or self.flights
+            or self.landing is not None
+            or self.winders
+            or self.newel is not None
+            or self.turn is None
+        ):
+            raise ValueError(
+                f"a spiral stair needs spiral geometry, a {SPIRAL_OUTLINE_SIDES}-point outline, "
+                "a turn and no flights/landing/winders"
+            )
+        if self.railing:
+            raise ValueError("a spiral stair has no modelled railing")
+        if self.spiral.post_radius_mm >= self.spiral.radius_mm:
+            raise ValueError("the spiral post must be smaller than the stair")
 
     def _check_winder_turn(self) -> None:
         if (
@@ -369,6 +412,29 @@ def floor_plans_from_house_box(
             "winders": [list(winder) for winder in w_layout.winders],
             "newel": corners(w_layout.newel),
         }
+    elif isinstance(stair, SpiralStairRequest):
+        s_layout = spiral_stair_layout(request)
+        step = 360.0 / SPIRAL_OUTLINE_SIDES
+        circumscribed = s_layout.radius / math.cos(math.radians(step / 2))
+        low, high = s_layout.sweep_bounds_deg
+        stair_fields = {
+            "kind": "spiral",
+            "turn": stair.turn,
+            "outline": [
+                s_layout.point(step * index, circumscribed) for index in range(SPIRAL_OUTLINE_SIDES)
+            ],
+            # Walking-line values: middle of the clear width between the post and the outer edge.
+            "width_mm": stair.clear_width_mm,
+            "tread_depth_mm": stair.walkline_going_mm,
+            "run_mm": stair.walkline_radius_mm * math.radians(float(stair.sweep_deg)),
+            "spiral": PlanStairSpiral(
+                center=s_layout.center,
+                radius_mm=s_layout.radius,
+                post_radius_mm=s_layout.post_radius,
+                start_angle_deg=s_layout.angles_deg[0],
+                sweep_deg=high - low,
+            ),
+        }
     elif stair is not None:
         x, y = _stair_origin(request)
         run = float(stair.tread_depth_mm) * stair.step_count
@@ -391,9 +457,12 @@ def floor_plans_from_house_box(
         if stair is not None and stair_fields is not None:
             common = {
                 **stair_fields,
-                "width_mm": stair.width_mm,
+                **(
+                    {}
+                    if isinstance(stair, SpiralStairRequest)
+                    else {"width_mm": stair.width_mm, "tread_depth_mm": stair.tread_depth_mm}
+                ),
                 "step_count": stair.step_count,
-                "tread_depth_mm": stair.tread_depth_mm,
                 "riser_height_mm": float(request.floor_height_mm) / stair.step_count,
                 "railing": stair.railing,
                 "material_id": stair.material_id,

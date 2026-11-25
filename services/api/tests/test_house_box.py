@@ -15,11 +15,14 @@ from app.engineering.floor_plan import PlanStair, floor_plans_from_house_box
 from app.engineering.house_box import (
     HouseBoxRequest,
     LTurnStairRequest,
+    SpiralStairRequest,
     StraightStairRequest,
     UTurnStairRequest,
     WinderTurnStairRequest,
     l_stair_layout,
     l_stair_rail_ids,
+    spiral_operation_count,
+    spiral_stair_layout,
     u_stair_layout,
     u_stair_rail_ids,
     winder_operation_count,
@@ -407,7 +410,7 @@ def test_stored_requests_without_kind_stay_straight_and_kinds_do_not_mix() -> No
             width_mm=8_000,
             floor_height_mm=3_000,
             floors=2,
-            stair={"kind": "spiral"},  # type: ignore[arg-type]
+            stair={"kind": "helical"},  # type: ignore[arg-type]
         )
 
 
@@ -994,3 +997,179 @@ def test_stair_must_fit_inside_setback_upper_floor() -> None:
             upper_floor_setback_mm=1_500,
             stair=StraightStairRequest(placement="left"),
         )
+
+
+def _spiral_request(house: dict[str, object] | None = None, **stair: object) -> HouseBoxRequest:
+    values: dict[str, object] = {
+        "length_mm": 12_000,
+        "width_mm": 8_000,
+        "floor_height_mm": 3_000,
+        "floors": 2,
+        **(house or {}),
+    }
+    return HouseBoxRequest(**values, stair=SpiralStairRequest(kind="spiral", **stair))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("turn", ["left", "right"])
+def test_spiral_stair_builds_exact_sector_treads_post_and_sector_opening(turn: str) -> None:
+    request = _spiral_request(house={"floors": 3}, turn=turn)
+    plan = request.build()
+    assert len(plan.operations) == spiral_operation_count(request) == 73
+    assert plan.expected_outputs == [
+        "floor_1",
+        "floor_2",
+        "floor_3",
+        "roof",
+        "stair_1_2_step_1",
+        "stair_2_3_step_1",
+    ]
+    layout = spiral_stair_layout(request)
+    assert layout.center == (6_000.0, 4_000.0) and layout.rise == 200.0
+    ops = {op.id: op for op in plan.operations}
+    sign = 1 if turn == "left" else -1
+    assert layout.angles_deg[1] == pytest.approx(sign * 20.0)
+    for riser in range(1, 16):
+        tread = ops[f"stair_2_3_step_{riser}"]
+        assert tread.height_mm == pytest.approx(200.0 * riser)
+        assert tread.origin_mm == (0.0, 0.0, 3_000.0)
+        profile = tread.profile
+        assert [segment.kind for segment in profile.segments] == ["line", "arc", "line"]
+        # Every sector is counter-clockwise from its lower to its higher angle.
+        low, high = layout.tread_bounds_deg(riser)
+        assert profile.points_mm[1] == pytest.approx(layout.point(low))
+        assert profile.points_mm[2] == pytest.approx(layout.point(high))
+        assert high - low == pytest.approx(20.0)
+        if riser > 1:
+            assert ops[f"join_stair_2_3_step_{riser}"].target == "stair_2_3_step_1"
+    assert ops["stair_1_2_post"].height_mm == 3_000.0
+    assert ops["join_stair_1_2_post"].target == "stair_1_2_step_1"
+    opening = ops["stair_opening_2"].profile
+    low, high = layout.sweep_bounds_deg
+    assert high - low == pytest.approx(300.0)
+    assert opening.points_mm[0] == layout.center
+    assert opening.points_mm[1] == pytest.approx(layout.point(low, 1_150.0))
+    assert opening.points_mm[2] == pytest.approx(layout.point(high, 1_150.0))
+    assert ops["cut_stair_opening_3"].target == "floor_3"
+    assert "stair_opening_1" not in ops
+
+
+def test_spiral_neighbouring_treads_share_bit_identical_riser_lines() -> None:
+    request = _spiral_request(turn="right", step_count=16, sweep_deg=320.0)
+    ops = {op.id: op for op in request.build().operations}
+    for riser in range(1, 16):
+        before = ops[f"stair_1_2_step_{riser}"].profile.points_mm
+        after = ops[f"stair_1_2_step_{riser + 1}"].profile.points_mm
+        assert len({tuple(p) for p in before} & {tuple(p) for p in after}) == 2
+
+
+def test_spiral_floor_plans_share_outline_and_spiral_geometry() -> None:
+    request = _spiral_request(house={"floors": 3}, turn="right", placement="left")
+    floors = floor_plans_from_house_box(request, project_id="p", version_id="v", name="H")
+    stairs = [stair for level in floors.levels for stair in level.plan.stairs]
+    assert [stair.role for stair in stairs] == ["up", "down", "up", "down"]
+    layout = spiral_stair_layout(request)
+    for stair in stairs:
+        assert stair.kind == "spiral" and stair.turn == "right" and not stair.railing
+        assert stair.spiral is not None
+        assert stair.spiral.center == layout.center == (6_000.0, 1_450.0)
+        assert stair.spiral.radius_mm == 1_100.0 and stair.spiral.post_radius_mm == 100.0
+        assert stair.spiral.sweep_deg == pytest.approx(300.0)
+        assert len(stair.outline) == 24
+        # The circumscribed outline contains the whole circle.
+        assert min(math.dist(point, layout.center) for point in stair.outline) >= 1_100.0
+        assert stair.width_mm == 1_000.0 and stair.tread_depth_mm == pytest.approx(209.44, 1e-3)
+        assert stair.step_count == 15 and stair.riser_height_mm == 200.0
+    assert stairs[0].outline == stairs[1].outline
+
+
+@pytest.mark.parametrize(
+    ("house", "stair", "message"),
+    [
+        ({}, {"step_count": 21}, "less than or equal to 20"),
+        ({"floor_height_mm": 4_800}, {"step_count": 12}, "120-220 mm rise"),
+        ({}, {"step_count": 15, "sweep_deg": 330.0, "diameter_mm": 3_200.0}, "clear tread width"),
+        ({}, {"diameter_mm": 1_500.0}, "clear tread width"),
+        ({}, {"sweep_deg": 180.0}, "walking line"),
+        ({"floor_height_mm": 2_200}, {"step_count": 10, "sweep_deg": 330.0}, "tread angle"),
+        (
+            {"floor_height_mm": 2_400},
+            {"step_count": 20, "sweep_deg": 330.0, "diameter_mm": 3_000.0, "post_diameter_mm": 300},
+            "550-700",
+        ),
+        ({"width_mm": 2_899}, {}, "do not fit"),
+        ({"length_mm": 2_899}, {}, "do not fit"),
+        ({"width_mm": 2_900}, {}, None),
+        ({"upper_floor_setback_mm": 2_700}, {}, "setback upper floor"),
+        ({"floors": 1}, {}, "at least two floors"),
+        ({"shape": "l_shape"}, {}, "rectangular house"),
+    ],
+)
+def test_invalid_spiral_stairs_fail_before_kernel(
+    house: dict[str, object], stair: dict[str, object], message: str | None
+) -> None:
+    if message is None:  # the exact 350 mm clearance boundary is accepted
+        _spiral_request(house=house, **stair)
+        return
+    with pytest.raises(ValidationError, match=message):
+        _spiral_request(house=house, **stair)
+
+
+def test_spiral_request_is_strict_round_trips_and_rejects_railing() -> None:
+    restored = HouseBoxRequest(**asdict(_spiral_request(turn="right", sweep_deg=315.0)))
+    assert isinstance(restored.stair, SpiralStairRequest) and restored.stair.turn == "right"
+    assert restored.build() == _spiral_request(turn="right", sweep_deg=315.0).build()
+    base = {"length_mm": 12_000, "width_mm": 8_000, "floor_height_mm": 3_000, "floors": 2}
+    for stair in (
+        {"kind": "spiral", "railing": True},
+        {"kind": "spiral", "diameter_mm": "2200"},
+        {"kind": "spiral", "step_count": 15.0},
+        {"kind": "spiral", "sweep_deg": float("nan")},
+        {"kind": "spiral", "tread_depth_mm": 280},
+        {"kind": "winder_turn", "sweep_deg": 300},
+    ):
+        with pytest.raises(ValidationError):
+            HouseBoxRequest(**base, stair=stair)  # type: ignore[arg-type]
+
+
+def test_maximum_spiral_stair_stays_within_operation_plan_limit() -> None:
+    request = _spiral_request(
+        house={"floors": 3, "floor_height_mm": 4_000},
+        step_count=20,
+        sweep_deg=330.0,
+        diameter_mm=2_600.0,
+        post_diameter_mm=200.0,
+    )
+    # 20 risers stays well inside the worker's 120-second kernel sandbox; 21 is rejected.
+    assert len(request.build().operations) == spiral_operation_count(request) == 93
+    with pytest.raises(ValidationError):
+        _spiral_request(
+            house={"floor_height_mm": 4_200},
+            step_count=21,
+            sweep_deg=330.0,
+            diameter_mm=2_600.0,
+            post_diameter_mm=200.0,
+        )
+
+
+@pytest.mark.skipif(not kernel.available(), reason="geometry-service binary is not installed")
+@pytest.mark.parametrize("turn", ["left", "right"])
+def test_real_kernel_fuses_each_spiral_flight_into_one_exact_solid(
+    turn: str, tmp_path: Path
+) -> None:
+    request = _spiral_request(house={"floors": 3}, turn=turn)
+    plan = request.build()
+    result = kernel.execute_plan(plan.model_dump(mode="json"), tmp_path / "out")
+    assert result.ok, result.error
+    bodies = {body.name: body for body in result.bodies}
+    assert set(plan.expected_outputs) <= set(bodies)
+    layout = spiral_stair_layout(request)
+    sector = math.pi * layout.radius**2 * 20.0 / 360.0
+    post = math.pi * layout.post_radius**2
+    # Treads are exact sectors; the post adds its part outside each tread's height.
+    treads = sum(layout.rise * riser * sector for riser in range(1, 16))
+    inside = sum((3_000.0 - layout.rise * riser) * post * 20.0 / 360.0 for riser in range(1, 16))
+    outside = 3_000.0 * post * 60.0 / 360.0
+    for name in ("stair_1_2_step_1", "stair_2_3_step_1"):
+        assert bodies[name].solids == 1 and bodies[name].valid
+        assert bodies[name].volume_mm3 == pytest.approx(treads + inside + outside, rel=1e-6)
+    assert all(bodies[f"floor_{n}"].valid and bodies[f"floor_{n}"].solids == 1 for n in (1, 2, 3))

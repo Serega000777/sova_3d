@@ -26,6 +26,11 @@ WinderWidth = Annotated[float, Field(ge=700, le=2_000, strict=True, allow_inf_na
 WinderTread = Annotated[float, Field(ge=200, le=400, strict=True, allow_inf_nan=False)]
 WinderFlightSteps = Annotated[int, Field(ge=3, le=24, strict=True)]
 WinderNewel = Annotated[float, Field(ge=200, le=500, strict=True, allow_inf_nan=False)]
+# The spiral variant is strict like the winder one.
+SpiralDiameter = Annotated[float, Field(ge=1_400, le=3_200, strict=True, allow_inf_nan=False)]
+SpiralPost = Annotated[float, Field(ge=100, le=300, strict=True, allow_inf_nan=False)]
+SpiralSteps = Annotated[int, Field(ge=10, le=20, strict=True)]
+SpiralSweep = Annotated[float, Field(ge=180, le=330, strict=True, allow_inf_nan=False)]
 StairPlacement = Literal["left", "center", "right"]
 StairTurn = Literal["left", "right"]
 
@@ -41,6 +46,10 @@ WINDER_ANGLE_RAD = math.pi / 6
 WINDER_WALKLINE_OFFSET_MM = 300.0
 # Geometric guard far above kernel tolerance: no winder edge may approach a collapsed sliver.
 WINDER_MIN_EDGE_MM = 50.0
+# Spiral treads: angular pitch, clear width (post to outer edge) and walking-line going bounds.
+SPIRAL_TREAD_ANGLE_DEG = (10.0, 30.0)
+SPIRAL_CLEAR_WIDTH_MM = (700.0, 1_400.0)
+SPIRAL_GOING_MM = (200.0, 400.0)
 
 
 @dataclass(frozen=True, config=ConfigDict(extra="forbid"))
@@ -141,6 +150,45 @@ class WinderTurnStairRequest:
         return (float(self.newel_mm) + WINDER_WALKLINE_OFFSET_MM) * WINDER_ANGLE_RAD
 
 
+@dataclass(frozen=True, config=ConfigDict(extra="forbid"))
+class SpiralStairRequest:
+    """A spiral stair: ``step_count`` equal circular-sector treads around a central post.
+
+    The treads sweep ``sweep_deg`` in total, counter-clockwise for ``turn="left"`` and clockwise
+    for ``turn="right"``; the remaining sector stays covered by the upper floor as the exit.
+    Each tread is one riser.  Railings along the helix are not modelled, so ``railing`` only
+    accepts ``False``.
+    """
+
+    kind: Literal["spiral"]
+    diameter_mm: SpiralDiameter = 2_200
+    post_diameter_mm: SpiralPost = 200
+    step_count: SpiralSteps = 15
+    sweep_deg: SpiralSweep = 300
+    turn: StairTurn = "left"
+    placement: StairPlacement = "center"
+    railing: Literal[False] = False
+    material_id: Annotated[str, Field(min_length=1, max_length=120)] | None = None
+
+    @property
+    def tread_angle_deg(self) -> float:
+        return float(self.sweep_deg) / self.step_count
+
+    @property
+    def clear_width_mm(self) -> float:
+        """Walkable tread width between the post and the outer edge."""
+        return (float(self.diameter_mm) - float(self.post_diameter_mm)) / 2
+
+    @property
+    def walkline_radius_mm(self) -> float:
+        """The walking line runs through the middle of the clear width."""
+        return (float(self.diameter_mm) + float(self.post_diameter_mm)) / 4
+
+    @property
+    def walkline_going_mm(self) -> float:
+        return self.walkline_radius_mm * math.radians(self.tread_angle_deg)
+
+
 def stair_kind(value: Any) -> str:
     """Historical stored requests have no ``kind`` and are always straight flights."""
     if isinstance(value, dict):
@@ -152,7 +200,8 @@ StairRequest = Annotated[
     Annotated[StraightStairRequest, Tag("straight")]
     | Annotated[LTurnStairRequest, Tag("l_turn")]
     | Annotated[UTurnStairRequest, Tag("u_turn")]
-    | Annotated[WinderTurnStairRequest, Tag("winder_turn")],
+    | Annotated[WinderTurnStairRequest, Tag("winder_turn")]
+    | Annotated[SpiralStairRequest, Tag("spiral")],
     Discriminator(stair_kind),
 ]
 
@@ -189,6 +238,9 @@ class HouseBoxRequest:
             raise ValueError("the bounded stair builder currently requires a rectangular house")
         if isinstance(self.stair, WinderTurnStairRequest):
             _validate_winder_stair(self)
+            return
+        if isinstance(self.stair, SpiralStairRequest):
+            _validate_spiral_stair(self)
             return
         if isinstance(self.stair, (LTurnStairRequest, UTurnStairRequest)):
             if not 10 <= self.stair.step_count <= 30:
@@ -670,6 +722,202 @@ def _validate_winder_stair(request: HouseBoxRequest) -> None:
         raise ValueError("the winder house plan does not match its derived operation count")
 
 
+@plain_dataclass(frozen=True, slots=True)
+class SpiralStairLayout:
+    """Trusted plan-space geometry of one spiral stair, shared by the CAD plan and 2D plans.
+
+    ``angles_deg`` holds the ``step_count + 1`` riser lines in climbing order; tread ``k``
+    (1-based) is the circular sector between ``angles_deg[k - 1]`` and ``angles_deg[k]``.
+    """
+
+    turn: StairTurn
+    center: tuple[float, float]
+    radius: float
+    post_radius: float
+    rise: float
+    angles_deg: tuple[float, ...]
+
+    @property
+    def sweep_bounds_deg(self) -> tuple[float, float]:
+        """Counter-clockwise ``(low, high)`` of the whole swept sector."""
+        first, last = self.angles_deg[0], self.angles_deg[-1]
+        return (first, last) if first < last else (last, first)
+
+    @property
+    def bounding_rect(self) -> Rect:
+        cx, cy = self.center
+        r = self.radius
+        return (cx - r, cy - r, cx + r, cy + r)
+
+    def point(self, angle_deg: float, radius: float | None = None) -> tuple[float, float]:
+        r = self.radius if radius is None else radius
+        cx, cy = self.center
+        angle = math.radians(angle_deg)
+        return (cx + r * math.cos(angle), cy + r * math.sin(angle))
+
+    def tread_bounds_deg(self, tread: int) -> tuple[float, float]:
+        """Counter-clockwise angular bounds of 1-based tread ``tread``."""
+        a, b = self.angles_deg[tread - 1], self.angles_deg[tread]
+        return (a, b) if a < b else (b, a)
+
+
+def spiral_stair_layout(request: HouseBoxRequest) -> SpiralStairLayout:
+    """Place the spiral stair's circle inside the house or reject an impossible stair."""
+    stair = request.stair
+    if not isinstance(stair, SpiralStairRequest):  # pragma: no cover - callers prove this
+        raise ValueError("the house has no spiral stair")
+    length = float(request.length_mm)
+    house_width = float(request.width_mm)
+    radius = float(stair.diameter_mm) / 2
+    clearance = STAIR_CLEARANCE_MM
+    if stair.placement == "left":
+        cy = clearance + radius
+    elif stair.placement == "right":
+        cy = house_width - clearance - radius
+    else:
+        cy = house_width / 2
+    cx = length / 2
+    if cx - radius < clearance or cy - radius < clearance or cy + radius > house_width - clearance:
+        raise ValueError("the spiral stair and its opening do not fit inside the house footprint")
+    pitch = stair.tread_angle_deg * (1 if stair.turn == "left" else -1)
+    # Riser angles are computed once so neighbouring treads share bit-identical radial edges.
+    angles = tuple(pitch * index for index in range(stair.step_count + 1))
+    return SpiralStairLayout(
+        turn=stair.turn,
+        center=(cx, cy),
+        radius=radius,
+        post_radius=float(stair.post_diameter_mm) / 2,
+        rise=float(request.floor_height_mm) / stair.step_count,
+        angles_deg=angles,
+    )
+
+
+def spiral_operation_count(request: HouseBoxRequest) -> int:
+    """Exact OperationPlan size: shells, sector openings, roof and every fused transition."""
+    stair = request.stair
+    assert isinstance(stair, SpiralStairRequest)
+    transitions = request.floors - 1
+    shells = 2 * request.floors
+    openings = 2 * transitions  # one exact sector body + cut per upper floor
+    roof = 1
+    flights = (2 * stair.step_count + 1) * transitions  # post + treads, fused into step 1
+    return shells + openings + roof + flights
+
+
+def _validate_spiral_stair(request: HouseBoxRequest) -> None:
+    """Reject every impossible spiral request, including its complete generated plan."""
+    stair = request.stair
+    assert isinstance(stair, SpiralStairRequest)
+    rise = float(request.floor_height_mm) / stair.step_count
+    if not 120 <= rise <= 220:
+        raise ValueError("floor height divided by the riser count must produce a 120-220 mm rise")
+    low, high = SPIRAL_TREAD_ANGLE_DEG
+    if not low <= stair.tread_angle_deg <= high:
+        raise ValueError("sweep_deg / step_count must give a 10-30 degree tread angle")
+    low, high = SPIRAL_CLEAR_WIDTH_MM
+    if not low <= stair.clear_width_mm <= high:
+        raise ValueError("the clear tread width (diameter - post) / 2 must be 700-1400 mm")
+    low, high = SPIRAL_GOING_MM
+    if not low <= stair.walkline_going_mm <= high:
+        raise ValueError("the going on the walking line must be 200-400 mm")
+    low, high = L_STAIR_STRIDE_MM
+    if not low <= 2 * rise + stair.walkline_going_mm <= high:
+        raise ValueError("2 × rise + walking-line going must stay within 550-700 mm")
+    spiral_stair_layout(request)
+    _validate_stair_against_upper_floor(request)
+    if spiral_operation_count(request) > MAX_PLAN_OPERATIONS:  # pragma: no cover - bounds prove
+        raise ValueError(f"the spiral house exceeds {MAX_PLAN_OPERATIONS} plan operations")
+    # The whole OperationPlan is validated before a job or project can be persisted.
+    if len(build(request).operations) != spiral_operation_count(request):  # pragma: no cover
+        raise ValueError("the spiral house plan does not match its derived operation count")
+
+
+def _sector_sketch(
+    center: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> dict[str, object]:
+    """Exact counter-clockwise circular sector: apex → arc start → (arc) → arc end → apex."""
+    return {
+        "kind": "sketch",
+        "points_mm": [list(center), list(start), list(end)],
+        "segments": [
+            {"kind": "line"},
+            {"kind": "arc", "center_mm": list(center)},
+            {"kind": "line"},
+        ],
+    }
+
+
+def _extrude_sketch(
+    op_id: str, *, profile: dict[str, object], height_mm: float, z_mm: float
+) -> dict[str, object]:
+    return {
+        "id": op_id,
+        "type": "extrude",
+        "schema_version": 1,
+        "profile": profile,
+        "height_mm": height_mm,
+        "origin_mm": (0.0, 0.0, z_mm),
+    }
+
+
+def _spiral_opening_profile(layout: SpiralStairLayout) -> dict[str, object]:
+    low, high = layout.sweep_bounds_deg
+    radius = layout.radius + OPENING_MARGIN_MM
+    return _sector_sketch(layout.center, layout.point(low, radius), layout.point(high, radius))
+
+
+def _spiral_stair_operations(
+    request: HouseBoxRequest, layout: SpiralStairLayout, floor_index: int
+) -> tuple[list[dict[str, object]], list[str]]:
+    """One fused exact spiral flight: sector treads stacked from the floor plus the post."""
+    assert isinstance(request.stair, SpiralStairRequest)
+    z = floor_index * float(request.floor_height_mm)
+    flight_id = f"stair_{floor_index + 1}_{floor_index + 2}"
+    first_step = f"{flight_id}_step_1"
+    points = [layout.point(angle) for angle in layout.angles_deg]
+    operations: list[dict[str, object]] = []
+    for riser in range(1, request.stair.step_count + 1):
+        step_id = f"{flight_id}_step_{riser}"
+        before, after = points[riser - 1], points[riser]
+        start, end = (before, after) if layout.turn == "left" else (after, before)
+        operations.append(
+            _extrude_sketch(
+                step_id,
+                profile=_sector_sketch(layout.center, start, end),
+                height_mm=layout.rise * riser,
+                z_mm=z,
+            )
+        )
+        if riser > 1:
+            operations.append(_fuse(f"join_{step_id}", target=first_step, tool=step_id))
+        if riser == 1:
+            # The post covers the shared apex line of every tread and carries the flight.
+            cx, cy = layout.center
+            r = layout.post_radius
+            post_id = f"{flight_id}_post"
+            operations.extend(
+                [
+                    _extrude_sketch(
+                        post_id,
+                        profile={
+                            "kind": "sketch",
+                            "points_mm": [[cx + r, cy], [cx - r, cy]],
+                            "segments": [
+                                {"kind": "arc", "center_mm": [cx, cy]},
+                                {"kind": "arc", "center_mm": [cx, cy]},
+                            ],
+                        },
+                        height_mm=float(request.floor_height_mm),
+                        z_mm=z,
+                    ),
+                    _fuse(f"join_{post_id}", target=first_step, tool=post_id),
+                ]
+            )
+    return operations, [first_step]
+
+
 def l_stair_rail_ids(floor_index: int) -> list[str]:
     """Stable rail body ids for one L-turn transition (two per flight, two on the landing)."""
     suffix = f"{floor_index + 1}_{floor_index + 2}"
@@ -1047,6 +1295,9 @@ def _opening_rects(request: HouseBoxRequest) -> list[Rect]:
         return [(min_x, min_y, max_x, max_y)]
     if isinstance(stair, WinderTurnStairRequest):
         return winder_stair_layout(request).opening_rects
+    if isinstance(stair, SpiralStairRequest):
+        # Conservative square for setback checks; the real cut is the exact swept sector.
+        return [spiral_stair_layout(request).bounding_rect]
     assert stair is not None
     x, y = _stair_origin(request)
     run = float(stair.tread_depth_mm) * stair.step_count
@@ -1157,7 +1408,20 @@ def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, obj
                 "open_face": {"kind": "face_by_normal", "axis": "z", "sign": "+"},
             }
         )
-        if floor_index > 0:
+        if floor_index > 0 and isinstance(stair, SpiralStairRequest):
+            opening_id = f"stair_opening_{floor_index + 1}"
+            operations.extend(
+                [
+                    _extrude_sketch(
+                        opening_id,
+                        profile=_spiral_opening_profile(spiral_stair_layout(request)),
+                        height_mm=wall + 2,
+                        z_mm=z - 1,
+                    ),
+                    _cut(f"cut_{opening_id}", target=floor_id, tool=opening_id),
+                ]
+            )
+        elif floor_index > 0:
             for opening_index, (min_x, min_y, max_x, max_y) in enumerate(openings):
                 # The straight stair keeps its historical single opening id.
                 opening_id = f"stair_opening_{floor_index + 1}" + (
@@ -1209,6 +1473,15 @@ def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, obj
         for floor_index in range(request.floors - 1):
             flight_operations, flight_outputs = _winder_stair_operations(
                 request, winder_layout, floor_index
+            )
+            operations.extend(flight_operations)
+            outputs.extend(flight_outputs)
+        return operations, outputs
+    if isinstance(stair, SpiralStairRequest):
+        spiral_layout = spiral_stair_layout(request)
+        for floor_index in range(request.floors - 1):
+            flight_operations, flight_outputs = _spiral_stair_operations(
+                request, spiral_layout, floor_index
             )
             operations.extend(flight_operations)
             outputs.extend(flight_outputs)
@@ -1332,6 +1605,32 @@ def build(request: HouseBoxRequest) -> OperationPlan:
                     "Confirm every floor shell is a valid solid.",
                     "Confirm every upper floor has an L opening over the swept stair footprint.",
                     "Confirm both flights and three winders fuse into one solid per transition.",
+                    "Confirm the top step reaches the exact floor-to-floor height.",
+                ],
+                "expected_outputs": outputs,
+            }
+        )
+    if isinstance(request.stair, SpiralStairRequest):
+        operations, outputs = _multifloor_operations(request)
+        return OperationPlan.model_validate(
+            {
+                "schema_version": 1,
+                "goal": f"{request.floors}-floor house with a spiral stair",
+                "assumptions": [
+                    "All dimensions are millimetres.",
+                    "Each floor is a separate exact shell so floor visibility is deterministic.",
+                    (
+                        "Equal circular-sector treads around a central post and the exact "
+                        "sector-shaped upper-floor openings are generated from one stair spec; "
+                        "each tread counts as one riser and is a solid block down to its floor."
+                    ),
+                    "No railing, structural or building-code claim is modelled.",
+                ],
+                "operations": operations,
+                "validation_steps": [
+                    "Confirm every floor shell is a valid solid.",
+                    "Confirm every upper floor has a sector opening over the swept treads.",
+                    "Confirm the post and every tread fuse into one solid per transition.",
                     "Confirm the top step reaches the exact floor-to-floor height.",
                 ],
                 "expected_outputs": outputs,

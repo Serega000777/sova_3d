@@ -54,12 +54,20 @@ export interface PlanStairFlight {
   direction: "+x" | "-x" | "+y" | "-y";
 }
 
+export interface PlanStairSpiral {
+  center: Point;
+  radius_mm: number;
+  post_radius_mm: number;
+  start_angle_deg: number;
+  sweep_deg: number;
+}
+
 export interface PlanStair {
   id: string;
   role: "up" | "down";
   from_floor: number;
   to_floor: number;
-  /** 4 corners for a straight/U-turn stair, 6 for an L-turn or winder-turn stair. */
+  /** 4 corners for straight/U-turn, 6 for L/winder, or 24 around a spiral circle. */
   outline: Point[];
   width_mm: number;
   run_mm: number;
@@ -70,7 +78,7 @@ export interface PlanStair {
   railing: boolean;
   material_id?: string | null;
   /** Historical plans without a kind are parsed as straight. */
-  kind: "straight" | "l_turn" | "u_turn" | "winder_turn";
+  kind: "straight" | "l_turn" | "u_turn" | "winder_turn" | "spiral";
   turn?: "left" | "right" | null;
   flights?: PlanStairFlight[];
   landing?: Point[] | null;
@@ -78,6 +86,8 @@ export interface PlanStair {
   winders?: Point[][];
   /** Winder-turn only: the open newel square the treads wind around. */
   newel?: Point[] | null;
+  /** Spiral only: exact centre, post/outer radii and swept tread angle. */
+  spiral?: PlanStairSpiral | null;
 }
 
 export interface FloorPlan {
@@ -292,6 +302,28 @@ function winderRisers(winders: readonly (readonly Point[])[]): [[Point, Point], 
  * runs bottom→top for `up` and top→bottom for `down`, so its last point carries the arrow.
  */
 export function stairPlanLines(stair: PlanStair): StairPlanLines | null {
+  if (stair.kind === "spiral") {
+    const spiral = stair.spiral;
+    if (!spiral || !stair.turn) return null;
+    const sign = stair.turn === "left" ? 1 : -1;
+    const angleStep = spiral.sweep_deg / stair.step_count;
+    const point = (angleDeg: number, radius: number): Point => {
+      const angle = angleDeg * Math.PI / 180;
+      return [
+        spiral.center[0] + radius * Math.cos(angle),
+        spiral.center[1] + radius * Math.sin(angle),
+      ];
+    };
+    const treads: [Point, Point][] = [];
+    const walkline: Point[] = [];
+    const walklineRadius = (spiral.radius_mm + spiral.post_radius_mm) / 2;
+    for (let index = 0; index <= stair.step_count; index += 1) {
+      const angle = spiral.start_angle_deg + sign * angleStep * index;
+      treads.push([point(angle, spiral.post_radius_mm), point(angle, spiral.radius_mm)]);
+      walkline.push(point(angle, walklineRadius));
+    }
+    return { treads, walkline: stair.role === "up" ? walkline : walkline.reverse() };
+  }
   if (stair.kind === "winder_turn") {
     const risers = winderRisers(stair.winders ?? []);
     if (stair.flights?.length !== 2 || !risers) return null;
@@ -484,9 +516,9 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
       || stair.to_floor < 1
       || stair.to_floor > 2
       || stair.from_floor >= stair.to_floor
-      || (stair.kind != null && stair.kind !== "straight" && stair.kind !== "l_turn" && stair.kind !== "u_turn" && stair.kind !== "winder_turn")
+      || (stair.kind != null && stair.kind !== "straight" && stair.kind !== "l_turn" && stair.kind !== "u_turn" && stair.kind !== "winder_turn" && stair.kind !== "spiral")
       || !Array.isArray(stair.outline)
-      || stair.outline.length !== (stair.kind === "l_turn" || stair.kind === "winder_turn" ? 6 : 4)
+      || stair.outline.length !== (stair.kind === "spiral" ? 24 : stair.kind === "l_turn" || stair.kind === "winder_turn" ? 6 : 4)
       || !stair.outline.every(isPoint)
       || typeof stair.width_mm !== "number"
       || !Number.isFinite(stair.width_mm)
@@ -515,14 +547,55 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
         || stair.material_id.length > 120
       ))
     ) return null;
-    let turning: Pick<PlanStair, "kind" | "turn" | "flights" | "landing" | "winders" | "newel"> | null = null;
+    let geometry: Pick<PlanStair, "kind" | "turn" | "flights" | "landing" | "winders" | "newel" | "spiral"> | null = null;
     const winderTurn = stair.kind === "winder_turn";
+    const spiralStair = stair.kind === "spiral";
     // Winder geometry on any other kind (or a landing on a winder stair) is contradictory data.
     if (!winderTurn && (
       (stair.winders != null && !(Array.isArray(stair.winders) && stair.winders.length === 0))
       || stair.newel != null
     )) return null;
-    if (stair.kind === "l_turn" || stair.kind === "u_turn" || stair.kind === "winder_turn") {
+    if (!spiralStair && stair.spiral != null) return null;
+    if (spiralStair) {
+      const spiral = stair.spiral as Record<string, unknown> | null | undefined;
+      if (
+        (stair.turn !== "left" && stair.turn !== "right")
+        || stair.railing
+        || !spiral
+        || !isPoint(spiral.center)
+        || typeof spiral.radius_mm !== "number"
+        || !Number.isFinite(spiral.radius_mm)
+        || spiral.radius_mm < 700
+        || spiral.radius_mm > 1_600
+        || typeof spiral.post_radius_mm !== "number"
+        || !Number.isFinite(spiral.post_radius_mm)
+        || spiral.post_radius_mm < 50
+        || spiral.post_radius_mm > 150
+        || spiral.post_radius_mm >= spiral.radius_mm
+        || typeof spiral.start_angle_deg !== "number"
+        || !Number.isFinite(spiral.start_angle_deg)
+        || spiral.start_angle_deg < -360
+        || spiral.start_angle_deg > 360
+        || typeof spiral.sweep_deg !== "number"
+        || !Number.isFinite(spiral.sweep_deg)
+        || spiral.sweep_deg < 180
+        || spiral.sweep_deg > 330
+        || (Array.isArray(stair.flights) && stair.flights.length !== 0)
+        || stair.landing != null
+      ) return null;
+      geometry = {
+        kind: "spiral",
+        turn: stair.turn,
+        flights: [],
+        spiral: {
+          center: spiral.center,
+          radius_mm: spiral.radius_mm,
+          post_radius_mm: spiral.post_radius_mm,
+          start_angle_deg: spiral.start_angle_deg,
+          sweep_deg: spiral.sweep_deg,
+        },
+      };
+    } else if (stair.kind === "l_turn" || stair.kind === "u_turn" || stair.kind === "winder_turn") {
       const flights = Array.isArray(stair.flights) ? stair.flights as Record<string, unknown>[] : [];
       if (
         (stair.turn !== "left" && stair.turn !== "right")
@@ -567,7 +640,7 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
           || !winderRisers(stair.winders as Point[][])
         ))
       ) return null;
-      turning = {
+      geometry = {
         kind: stair.kind,
         turn: stair.turn,
         flights: flights.map((flight) => ({
@@ -593,7 +666,7 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
       riser_height_mm: stair.riser_height_mm,
       railing: stair.railing,
       material_id: stair.material_id as string | null | undefined,
-      ...(turning ?? { kind: "straight" }),
+      ...(geometry ?? { kind: "straight" }),
     });
   }
   if (cleanWalls.length === 0 && rooms.length === 0) return null;
@@ -1009,6 +1082,7 @@ export function translatePlan(plan: FloorPlan, dx: number, dy: number): FloorPla
       ...(stair.landing ? { landing: stair.landing.map(move) } : {}),
       ...(stair.winders ? { winders: stair.winders.map((winder) => winder.map(move)) } : {}),
       ...(stair.newel ? { newel: stair.newel.map(move) } : {}),
+      ...(stair.spiral ? { spiral: { ...stair.spiral, center: move(stair.spiral.center) } } : {}),
     })),
   };
 }
