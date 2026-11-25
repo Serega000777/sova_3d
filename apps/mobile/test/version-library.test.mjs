@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   groupVersionAssets,
+  singleVersionScanAssetId,
   uniqueVersionAssetCount,
   versionAssetRoleLabel,
 } from "../src/version-library.ts";
@@ -27,9 +28,25 @@ test("O03 groups only real persisted version assets and canonical view angles", 
   assert.equal(versionAssetRoleLabel("room_shell", true), "Оболочка комнаты");
 });
 
+test("O03 exposes only one unambiguous frozen scan source", () => {
+  assert.equal(singleVersionScanAssetId([
+    { asset_id: "model", role: "model" },
+    { asset_id: "scan-source", role: "scan" },
+    { asset_id: "scan-source", role: "scan" },
+  ]), "scan-source");
+  assert.equal(singleVersionScanAssetId([
+    { asset_id: "scan-a", role: "scan" },
+    { asset_id: "scan-b", role: "scan" },
+  ]), null);
+  assert.equal(singleVersionScanAssetId([{ asset_id: "model", role: "model" }]), null);
+});
+
 test("O03 renders the selected immutable version inventory inside the editor", () => {
   assert.match(project, /accessibilityLabel=\{ru \? "Файлы выбранной версии"/);
   assert.match(project, /groupVersionAssets\(activeHistory\.assets\)/);
   assert.match(project, /uniqueVersionAssetCount\(activeHistory\.assets\)/);
   assert.match(project, /formatAssetBytes\(activeHistory\.total_asset_bytes\)/);
+  assert.match(project, /openVersionScanSource\(activeHistory\)/);
+  assert.match(project, /download\.asset_id !== assetId/);
+  assert.match(project, /Открыть исходный скан версии/);
 });

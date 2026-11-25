@@ -41,6 +41,16 @@ export function uniqueVersionAssetCount(assets: VersionAssetLink[]): number {
   return new Set(assets.map((asset) => asset.asset_id).filter(Boolean)).size;
 }
 
+/** One unambiguous frozen scan source can be opened; multiple sources require a picker. */
+export function singleVersionScanAssetId(assets: VersionAssetLink[]): string | null {
+  const ids = new Set(
+    assets
+      .filter((asset) => asset.role === "scan" && asset.asset_id)
+      .map((asset) => asset.asset_id),
+  );
+  return ids.size === 1 ? [...ids][0] ?? null : null;
+}
+
 export function versionAssetRoleLabel(role: string, ru: boolean): string {
   const labels: Record<string, [string, string]> = {
     model: ["3D-модель", "3D model"],

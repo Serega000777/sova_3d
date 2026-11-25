@@ -232,6 +232,7 @@ import { VoiceButton } from "@/src/VoiceButton";
 import { VersionImageComparison } from "@/src/VersionImageComparison";
 import {
   groupVersionAssets,
+  singleVersionScanAssetId,
   uniqueVersionAssetCount,
   versionAssetRoleLabel,
 } from "@/src/version-library";
@@ -3732,6 +3733,36 @@ export default function ProjectScreen() {
     }
   }
 
+  async function openVersionScanSource(version: Pick<Version, "assets">) {
+    if (!client) return;
+    const assetId = singleVersionScanAssetId(version.assets);
+    if (!assetId) {
+      setError(
+        ru
+          ? "У этой версии нет одного однозначного исходного скана."
+          : "This version does not have one unambiguous source scan.",
+      );
+      return;
+    }
+    setBusy(ru ? "Открываю исходный скан…" : "Opening source scan…");
+    setError(null);
+    try {
+      const download = await client.download(assetId);
+      if (download.asset_id !== assetId) {
+        throw new Error(
+          ru
+            ? "Ссылка скачивания не совпадает с исходным сканом версии."
+            : "The download does not match the version source scan.",
+        );
+      }
+      await Linking.openURL(download.url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function saveVersionComment() {
     if (!client || !active || busy || !versionCommentDirty) return;
     const details = versionHistory.find((item) => item.id === active.id);
@@ -6208,10 +6239,23 @@ export default function ProjectScreen() {
           {groupVersionAssets(activeHistory.assets).map((group) => (
             <View key={group.role} style={[styles.row, { justifyContent: "space-between" }]}>
               <Text style={styles.text}>{versionAssetRoleLabel(group.role, ru)}</Text>
-              <Text style={styles.muted}>
-                {group.assetCount}
-                {group.thumbnailAngles.length ? ` · ${group.thumbnailAngles.join(" / ")}` : ""}
-              </Text>
+              <View style={[styles.row, { justifyContent: "flex-end" }]}>
+                <Text style={styles.muted}>
+                  {group.assetCount}
+                  {group.thumbnailAngles.length ? ` · ${group.thumbnailAngles.join(" / ")}` : ""}
+                </Text>
+                {group.role === "scan" && singleVersionScanAssetId(activeHistory.assets) ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={ru ? "Открыть исходный скан версии" : "Open version source scan"}
+                    style={[styles.chip, busy && { opacity: 0.5 }]}
+                    disabled={Boolean(busy)}
+                    onPress={() => void openVersionScanSource(activeHistory)}
+                  >
+                    <Text style={styles.chipText}>{ru ? "Открыть исходник" : "Open source"}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           ))}
           {activeHistory.assets.length === 0 && (
