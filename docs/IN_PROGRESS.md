@@ -178,7 +178,9 @@ surface, хранятся реальными STL nodes в immutable scene и п�
 уже редактируют готовый участок через тот же immutable job; camera overlay не объявляется
 измеренным AR.
 
-Активный блок — оставшаяся mobile mesh-edit parity и scanned-façade cleanup workflows. Bounded façade-domain editor
+Активный блок — сохранение исходной scan-сетки через последующие semantic façade edits. Mobile
+mesh-edit parity и единый каталог его существующих инструментов функционально закрыты; их
+физическая touch/device-приёмка остаётся общей внешней проверкой. Bounded façade-domain editor
 MVP уже реализован поверх существующего exact house-box пути: он работает только с доказанным
 server-side lineage прямоугольного дома и fail-closed отклоняет scan/import, forged provenance,
 broken lineage и непрямоугольную форму. Exact surface material assignments закрыты `899c599`:

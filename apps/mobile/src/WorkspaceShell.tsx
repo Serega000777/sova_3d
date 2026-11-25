@@ -1,8 +1,10 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, ScrollView, Text, View } from "react-native";
 
-import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CubeIcon, CursorIcon, DimensionIcon, ExportIcon, FocusIcon, GridIcon, HistoryIcon, LayersIcon, LinkIcon, MoonIcon, PencilIcon, SunIcon, SwapIcon } from "./AppIcons";
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CubeIcon, CursorIcon, DimensionIcon, ExportIcon, FocusIcon, GridIcon, HistoryIcon, LayersIcon, LinkIcon, MoonIcon, PencilIcon, SlidersIcon, SunIcon, SwapIcon } from "./AppIcons";
 import type { DrawMode, ViewerCanvasTheme } from "./ModelViewer";
+import { StudioToolCatalog } from "./StudioToolCatalog";
+import type { StudioCatalogAction } from "./studio-tool-catalog";
 import { colors, styles } from "./theme";
 
 export type WorkspaceTab = "properties" | "check" | "versions" | "export";
@@ -111,6 +113,7 @@ export function WorkspaceShell({
   const [swapped, setSwapped] = useState(false);
   const [expanded, setExpanded] = useState<"source" | "model" | null>(null);
   const [modelFocused, setModelFocused] = useState(false);
+  const [toolCatalogOpen, setToolCatalogOpen] = useState(false);
   const splitWidth = useRef(1);
   const dragStartRatio = useRef(paneRatio);
   const paneRatioRef = useRef(paneRatio);
@@ -147,6 +150,13 @@ export function WorkspaceShell({
     </Pressable>
   ) : null;
 
+  function runCatalogAction(action: StudioCatalogAction) {
+    setToolCatalogOpen(false);
+    if (action.target.kind === "tool") onTool(action.target.id);
+    else if (action.target.kind === "tab") onTabChange(action.target.id);
+    else onExport();
+  }
+
   const toolbar = (
     <ScrollView
       horizontal={!isTablet}
@@ -154,6 +164,32 @@ export function WorkspaceShell({
       contentContainerStyle={isTablet ? { gap: 8 } : { gap: 8, paddingHorizontal: 2 }}
       style={isTablet ? undefined : { flexGrow: 0 }}
     >
+      {!isTablet ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={language === "ru" ? "Каталог инструментов Studio" : "Studio tool catalogue"}
+          accessibilityState={{ expanded: toolCatalogOpen }}
+          onPress={() => setToolCatalogOpen(true)}
+          style={{
+            width: 72,
+            minHeight: 54,
+            paddingHorizontal: 8,
+            paddingVertical: 8,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: colors.accent,
+            backgroundColor: colors.accentWash,
+          }}
+        >
+          <SlidersIcon color={colors.accent} size={20} />
+          <Text style={{ color: colors.accent, fontSize: 11, fontWeight: "600" }}>
+            {language === "ru" ? "Каталог" : "Catalogue"}
+          </Text>
+        </Pressable>
+      ) : null}
       {TOOLS.map((tool) => {
         const disabled = tool.id === "layers" ? !activeAvailable : Boolean(tool.needsModel && !modelAvailable);
         const isActive = activeTool === tool.id;
@@ -209,6 +245,14 @@ export function WorkspaceShell({
 
   return (
     <View style={{ borderColor: colors.border, borderWidth: 1, borderRadius: 18, overflow: "hidden", backgroundColor: colors.viewport }}>
+      <StudioToolCatalog
+        visible={toolCatalogOpen}
+        language={language}
+        modelAvailable={modelAvailable}
+        activeAvailable={activeAvailable}
+        onClose={() => setToolCatalogOpen(false)}
+        onAction={runCatalogAction}
+      />
       <View style={{ minHeight: 54, paddingHorizontal: 14, paddingVertical: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, backgroundColor: colors.panel, borderBottomColor: colors.border, borderBottomWidth: 1 }}>
         <View style={{ flex: 1 }}>
           <Text style={styles.heading} numberOfLines={1}>{projectName}</Text>
@@ -277,6 +321,16 @@ export function WorkspaceShell({
               ))}
             </View>
           )}
+          {isTablet ? <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={language === "ru" ? "Каталог инструментов Studio" : "Studio tool catalogue"}
+            accessibilityState={{ expanded: toolCatalogOpen }}
+            onPress={() => setToolCatalogOpen(true)}
+            style={styles.chip}
+          >
+            <SlidersIcon color={colors.text} size={16} />
+            <Text style={styles.chipText}>{language === "ru" ? "Инструменты" : "Tools"}</Text>
+          </Pressable> : null}
           <Pressable
             accessibilityRole="switch"
             accessibilityState={{ checked: canvasTheme === "light" }}
