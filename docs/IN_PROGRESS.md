@@ -174,8 +174,9 @@ API и job повторно проверяют rotated envelope/500-мм отс�
 по рельефу и создают отдельную площадку под ним; terrain/path/fence следуют одному triangulated
 surface, хранятся реальными STL nodes в immutable scene и проходят в viewer/export. Следующие
 самостоятельные этапы: произвольная boundary/heightmap, несколько дорожек/ворота/озеленение,
-редактирование готового участка, mobile creator и физический ARKit/ARCore placement; camera AR не
-объявляется готовым.
+проверенный server-owned нормативный каталог и физический ARKit/ARCore placement. Web и mobile
+уже редактируют готовый участок через тот же immutable job; camera overlay не объявляется
+измеренным AR.
 
 Активный блок — оставшаяся mobile mesh-edit parity и scanned-façade cleanup workflows. Bounded façade-domain editor
 MVP уже реализован поверх существующего exact house-box пути: он работает только с доказанным

@@ -187,7 +187,7 @@ import {
   type VerifiedGameLod,
 } from "@/lib/game-ready-lod";
 import { useSession } from "@/lib/session";
-import { DEFAULT_SITE_PLAN, sitePlanFromProvenance } from "@/lib/site-plan";
+import { DEFAULT_SITE_PLAN, sitePlanFromProvenance } from "@physical-ai/contracts";
 import {
   applyExplodedPreview,
   verifiedAssemblyInspection,

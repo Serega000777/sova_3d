@@ -1,4 +1,4 @@
-import type { SitePlan } from "@physical-ai/contracts";
+import type { SitePlan } from "./client.js";
 
 export const DEFAULT_SITE_PLAN: SitePlan = {
   plot_length_mm: 30000,
@@ -40,8 +40,15 @@ function boundaryRuleSet(value: unknown): NonNullable<SitePlan["boundary_rule_se
     return null;
   }
   let sourceUrl: URL;
+  const rawSourceUrl = source.source_url as string;
+  if (
+    [...rawSourceUrl].length < 9
+    || [...rawSourceUrl].length > 500
+    || rawSourceUrl !== rawSourceUrl.trim()
+    || [...rawSourceUrl].some((character) => character.charCodeAt(0) < 32)
+  ) return null;
   try {
-    sourceUrl = new URL(source.source_url as string);
+    sourceUrl = new URL(rawSourceUrl);
   } catch {
     return null;
   }
@@ -71,7 +78,7 @@ function boundaryRuleSet(value: unknown): NonNullable<SitePlan["boundary_rule_se
     authority_status: "owner_declared",
     jurisdiction: (source.jurisdiction as string).trim(),
     title: (source.title as string).trim(),
-    source_url: source.source_url as string,
+    source_url: rawSourceUrl,
     source_version: (source.source_version as string).trim(),
     effective_date: source.effective_date as string,
     required_clearances_mm: {

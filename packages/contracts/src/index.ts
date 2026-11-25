@@ -23,6 +23,7 @@ export * from "./repair.js";
 export * from "./photo-measurement.js";
 export * from "./house-text.js";
 export * from "./house-stair.js";
+export * from "./site-plan.js";
 export * from "./exact-detail.js";
 export * from "./integrity.js";
 export * from "./marketplace-download.js";

@@ -51,6 +51,6 @@ Web Studio получил отдельный инструмент «Участо
 
 - кадастровая точность, геопривязка/GPS, произвольная boundary-полилиния и spline/heightmap terrain;
 - несколько дорожек, ворота, растения, инженерные сети, дренаж и нормативные отступы;
-- редактирование уже созданного участка и mobile creator;
+- server-owned проверяемый нормативный каталог вместо optional `owner_declared` источника;
 - ARKit/ARCore camera placement, occlusion и world anchors. Пункт 38 закрыт только для просмотра
   дома в общей 3D-сцене участка; physical AR — следующий нативный increment.

@@ -54,6 +54,7 @@ import type {
 } from "@physical-ai/contracts";
 import {
   ApiError,
+  DEFAULT_SITE_PLAN,
   GUIDED_PHOTO_VIEWS,
   assessGuidedPhotos,
   calibratedPhotoDistanceMm,
@@ -69,6 +70,7 @@ import {
   parseReplacementMeasurements,
   REPLACEMENT_DIMENSIONS,
   replacementDimensionLabel,
+  sitePlanFromProvenance,
   type GuidedPhotoIssue,
   type LiveEvent,
   type LiveRoom,
@@ -212,6 +214,7 @@ import {
   type SizeFamilyLabel,
 } from "@/src/size-family";
 import { SiteCameraOverlay } from "@/src/SiteCameraOverlay";
+import { SitePlanCreator } from "@/src/SitePlanCreator";
 import { SurfaceDetailSheet } from "@/src/SurfaceDetailSheet";
 import {
   type PlanEntitySelection,
@@ -1019,6 +1022,20 @@ export default function ProjectScreen() {
   const hasSitePlan = Boolean(
     (active?.provenance as { site_plan?: { schema_version?: unknown } } | undefined)?.site_plan,
   );
+  const siteHouseRequest = (
+    active?.provenance as {
+      house_box?: { request?: { length_mm?: number; width_mm?: number } };
+    } | undefined
+  )?.house_box?.request;
+  const hasHouseBoxLineage = Number.isFinite(siteHouseRequest?.length_mm)
+    && siteHouseRequest!.length_mm! >= 2_000
+    && siteHouseRequest!.length_mm! <= 50_000
+    && Number.isFinite(siteHouseRequest?.width_mm)
+    && siteHouseRequest!.width_mm! >= 2_000
+    && siteHouseRequest!.width_mm! <= 50_000;
+  const activeSitePlan = sitePlanFromProvenance(
+    (active?.provenance as { site_plan?: unknown } | undefined)?.site_plan,
+  ) ?? DEFAULT_SITE_PLAN;
   useEffect(() => {
     exchangeExportRevision.current += 1;
     setGameReadyResult(null);
@@ -5499,6 +5516,25 @@ export default function ProjectScreen() {
           </Text>
         </View>
       )}
+      {client && project && active && active.id === project.head_version?.id
+      && canEditWorkspace && hasHouseBoxLineage ? (
+        <SitePlanCreator
+          key={active.id}
+          client={client}
+          projectId={project.id}
+          sourceVersionId={active.id}
+          initialPlan={activeSitePlan}
+          houseDimensions={{
+            length_mm: siteHouseRequest!.length_mm!,
+            width_mm: siteHouseRequest!.width_mm!,
+          }}
+          onApplied={(version) => {
+            setActive(version);
+            void refresh();
+            setNotice("Участок сохранён в новой неизменяемой версии.");
+          }}
+        />
+      ) : null}
       {repairableScan && (
         <View style={{ gap: 8 }} accessibilityLabel={ru ? "Ремонт скана" : "Scan repair"}>
           <Text style={styles.heading}>{ru ? "Исправление скана" : "Scan repair"}</Text>
