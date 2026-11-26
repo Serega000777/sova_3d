@@ -244,6 +244,145 @@ def test_per_side_setback_rejections_create_no_project(
     assert projects.json() == []
 
 
+def test_per_floor_setbacks_persist_stepped_exact_plans(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    response = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 3,
+            "shape": "rectangle",
+            "upper_floor_setbacks_mm": [
+                {"x_max_mm": 1_500},
+                {"x_max_mm": 3_000, "y_min_mm": 1_000},
+            ],
+            "stair": {"kind": "straight", "placement": "right"},
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    project_id = response.json()["project_id"]
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    stored = (job.result or {})["house_box"]["request"]
+    assert stored["upper_floor_setback_mm"] == 0
+    assert "upper_floor_setback_sides_mm" not in stored
+    assert stored["upper_floor_setbacks_mm"] == [
+        {"x_min_mm": 0, "x_max_mm": 1_500, "y_min_mm": 0, "y_max_mm": 0},
+        {"x_min_mm": 0, "x_max_mm": 3_000, "y_min_mm": 1_000, "y_max_mm": 0},
+    ]
+
+    floor_set = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert floor_set.status_code == 200, floor_set.text
+    levels = floor_set.json()["levels"]
+    assert levels[1]["plan"]["rooms"][0]["outline"] == [
+        [0, 0],
+        [10_500, 0],
+        [10_500, 8_000],
+        [0, 8_000],
+    ]
+    assert levels[2]["plan"]["rooms"][0]["outline"] == [
+        [0, 1_000],
+        [9_000, 1_000],
+        [9_000, 8_000],
+        [0, 8_000],
+    ]
+    assert levels[1]["plan"]["stairs"] and levels[2]["plan"]["stairs"], levels
+
+
+def test_per_floor_setback_rejections_create_no_project(
+    api_client: TestClient, actor: Actor
+) -> None:
+    base = {
+        "workspace_id": str(actor.workspace.id),
+        "length_mm": 12_000,
+        "width_mm": 8_000,
+        "floor_height_mm": 3_000,
+        "floors": 3,
+        "shape": "rectangle",
+    }
+    levels = [{"x_min_mm": 100}, {"x_min_mm": 200}]
+    cases = [
+        ({**base, "upper_floor_setback_mm": 200, "upper_floor_setbacks_mm": levels}, "only one"),
+        (
+            {
+                **base,
+                "upper_floor_setback_sides_mm": {"x_min_mm": 1},
+                "upper_floor_setbacks_mm": levels,
+            },
+            "only one",
+        ),
+        ({**base, "upper_floor_setbacks_mm": levels[:1]}, "exactly one entry per upper floor"),
+        ({**base, "upper_floor_setbacks_mm": []}, "at least 1 item"),
+        ({**base, "upper_floor_setbacks_mm": [{}, {}]}, "at least one positive side"),
+        (
+            {**base, "upper_floor_setbacks_mm": [{"x_min_mm": 1_000}, {"x_min_mm": 500}]},
+            "no overhang",
+        ),
+        ({**base, "upper_floor_setbacks_mm": [{}, {"y_min_mm": 6_500}]}, "at least 2000 mm"),
+        ({**base, "upper_floor_setbacks_mm": [{}, {"x_min_mm": "100"}]}, "x_min_mm"),
+        ({**base, "upper_floor_setbacks_mm": [{}, {"x_min_mm": True}]}, "x_min_mm"),
+        ({**base, "upper_floor_setbacks_mm": [{}, {"front_mm": 100}]}, "front_mm"),
+        (
+            {
+                **base,
+                "upper_floor_setbacks_mm": [{}, {"y_min_mm": 500}],
+                "stair": {"kind": "straight", "placement": "left"},
+            },
+            "does not fit inside the setback upper floor",
+        ),
+    ]
+    for payload, message in cases:
+        rejected = api_client.post("/api/v1/house-boxes", json=payload, headers=actor.headers)
+        assert rejected.status_code == 422, (payload, rejected.text)
+        assert message in rejected.text, (payload, rejected.text)
+    projects = api_client.get(
+        "/api/v1/projects", params={"workspace_id": str(actor.workspace.id)}, headers=actor.headers
+    )
+    assert projects.json() == []
+
+
+def test_worker_revalidates_forged_per_floor_setbacks(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    response = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 3,
+            "shape": "rectangle",
+            "upper_floor_setbacks_mm": [{"x_max_mm": 1_000}, {"x_max_mm": 2_000}],
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    queued = db_session.get(Job, uuid.UUID(response.json()["job"]["job_id"]))
+    assert queued is not None
+    # A tampered queue entry that bypassed the API: the top floor overhangs floor 2.
+    tampered = copy.deepcopy(queued.input)
+    tampered["request"]["upper_floor_setbacks_mm"] = [{"x_max_mm": 2_000}, {"x_max_mm": 1_000}]
+    queued.input = tampered
+    db_session.flush()
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert (job.error or {})["code"] == "invalid_house_box"
+    assert "no overhang" in str(job.error)
+
+
 def test_house_box_api_reports_dimension_errors(api_client: TestClient, actor: Actor) -> None:
     response = api_client.post(
         "/api/v1/house-boxes",

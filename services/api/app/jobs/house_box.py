@@ -69,7 +69,7 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
     )
     tag = {"operation": HOUSE_BOX_JOB, "job_id": str(ctx.job.id)}
 
-    request_data = {
+    request_data: dict[str, Any] = {
         "length_mm": request.length_mm,
         "width_mm": request.width_mm,
         "floor_height_mm": request.floor_height_mm,
@@ -81,6 +81,10 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
     if request.upper_floor_setback_sides_mm is not None:
         # Only present when declared, so historical provenance stays byte-identical.
         request_data["upper_floor_setback_sides_mm"] = asdict(request.upper_floor_setback_sides_mm)
+    if request.upper_floor_setbacks_mm is not None:
+        request_data["upper_floor_setbacks_mm"] = [
+            asdict(level) for level in request.upper_floor_setbacks_mm
+        ]
     floor_plan = floor_plan_from_house_box(
         request,
         plan_id=f"project-{project_id}-floor-1",

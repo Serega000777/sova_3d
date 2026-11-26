@@ -27,8 +27,20 @@ test("the house-box wizard submits discriminated straight, L-turn, U-turn or spi
   assert.match(wizard, /upper_floor_setback_sides_mm: effectiveSides\s+\? \{ x_min_mm: effectiveSides\.xMinMm, x_max_mm: effectiveSides\.xMaxMm, y_min_mm: effectiveSides\.yMinMm, y_max_mm: effectiveSides\.yMaxMm \}\s+: null,/);
   assert.match(wizard, /checkUpperFloorSetbackSides\(effectiveSides, lengthMm, widthMm\)/);
   assert.match(wizard, /stairFootprintFits\(\{ footprint: stairFootprint, placement: stairPlacement, houseLengthMm: lengthMm, houseWidthMm: widthMm, insets \}\)/);
-  assert.match(wizard, /upperFloorSetbackSides: effectiveSides,[\s\S]+upperFloorSetbackSides: effectiveSides,/);
+  assert.match(wizard, /upperFloorSetbackSides: stairSides,[\s\S]+upperFloorSetbackSides: stairSides,/);
   assert.match(wizard, /lengthMm - 2 \* upperFloorSetbackMm < 2_000/);
+});
+
+test("a three-floor house sends one per-side setback per upper floor", () => {
+  // Two floors keep the historical single field; three floors use the per-floor list only.
+  assert.match(wizard, /const effectiveSides = setbackEnabled && perSideSetback && floors === 2 \? setbackSides : null;/);
+  assert.match(wizard, /const perFloorSides = setbackEnabled && perSideSetback && floors === 3 \? \[setbackSides, topFloorSides\] : null;/);
+  assert.match(wizard, /upper_floor_setbacks_mm: perFloorSides\s+\? perFloorSides\.map\(\(sides\) => \(\{ x_min_mm: sides\.xMinMm, x_max_mm: sides\.xMaxMm, y_min_mm: sides\.yMinMm, y_max_mm: sides\.yMaxMm \}\)\)\s+: null,/);
+  // The same stair has to fit every level, and the shared check gates submit.
+  assert.match(wizard, /const stairSides = perFloorSides \? stackedUpperFloorInsets\(perFloorSides\) : effectiveSides;/);
+  assert.match(wizard, /checkUpperFloorSetbackLevels\(perFloorSides, floors, lengthMm, widthMm\)/);
+  assert.match(wizard, /upperFloorSetbackProblemText\(sidesProblem\)\[language\]/);
+  assert.match(wizard, /ru \? "Этаж 3 и крыша" : "Floor 3 and roof"/);
 });
 
 test("the shared plan helper draws a U-turn through both parallel flights", () => {

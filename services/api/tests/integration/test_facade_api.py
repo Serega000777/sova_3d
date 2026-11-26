@@ -1669,6 +1669,7 @@ def test_facade_editor_rejects_stair_house_instead_of_dropping_floor_bodies(
     [
         {"upper_floor_setback_mm": 500},
         {"upper_floor_setback_sides_mm": {"x_max_mm": 3_000}},
+        {"floors": 3, "upper_floor_setbacks_mm": [{}, {"x_max_mm": 3_000}]},
     ],
 )
 def test_facade_editor_rejects_setback_house_instead_of_erasing_the_setback(

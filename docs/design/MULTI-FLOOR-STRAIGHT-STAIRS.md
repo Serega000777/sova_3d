@@ -212,6 +212,29 @@ The facade editor rebuilds one full-footprint shell, so it now rejects both symm
 per-side setback houses with `upper_floor_setback_not_supported` instead of silently erasing the
 setback. Cantilevers, supports and loads under the overhang are not computed.
 
+## Per-floor upper-floor setback follow-up
+
+`upper_floor_setbacks_mm` is a third, mutually exclusive way to inset the upper floors: a list of
+exactly `floors - 1` per-side entries (the same strict `x_min_mm`/`x_max_mm`/`y_min_mm`/`y_max_mm`
+object as above), floor 2 first. The roof repeats the top floor. It lets a 3-floor rectangular house
+step back twice, for example a terrace on floor 2's roof and a narrower floor 3. The request fails
+closed when it is combined with either the symmetric or the single per-side field, when the list
+length is not `floors - 1`, when every side of every level is zero, for an L/T house, when any
+level is below 2,000 × 2,000 mm, or when a level reaches outside the floor below it. Insets are
+still measured from the ground-floor walls; "no overhang" means each inset is at least the one of
+the level below, so no floor is modelled hanging over open air.
+
+`floor_rect(request, i)` picks entry `i - 1` (the roof uses the last entry), so the exact shells,
+the roof and every stored 2D plan keep coming from one function. A list of equal entries produces
+the same OperationPlan as the single per-side field, and older requests are unchanged; job
+provenance only carries the new key when it was declared. One stair or shaft rises through every
+upper floor, so its openings are checked against each level and the request is rejected (422
+before a job, and again in the worker) if any level cuts into it. Web and mobile show one group
+of four fields per upper floor for 3-floor houses (2-floor houses keep sending the single per-side
+field) and share `checkUpperFloorSetbackLevels` and `stackedUpperFloorInsets` with the API rules.
+The facade editor keeps rejecting these houses through the same `has_upper_floor_setback` check.
+No new kernel operation is involved: every level is still one aligned `create_box` + `shell`.
+
 ## Geometric cross-floor review follow-up
 
 The authenticated read-only
@@ -239,7 +262,8 @@ This is not a general staircase or building-information model. It does not claim
 - spiral stairs, half-turn or other winder counts, winder railings or newel posts, or L stairs with
   unequal landing size;
 - independently configured flights per transition;
-- stairs inside L- or T-shaped footprints, a different setback for each upper level or shape changes;
+- stairs inside L- or T-shaped footprints, upper floors that overhang the floor below, or shape
+  changes between levels;
 - pitched roofs in this multi-floor scene path;
 - one atomic all-floor transaction (web coordinates separate immutable per-floor steps);
 - automatic structural optimization of partitions, columns, wet stacks or load paths; the

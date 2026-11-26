@@ -1,6 +1,6 @@
 "use client";
 
-import { checkSpiralStair, checkUpperFloorSetbackSides, checkWinderStair, type HouseBoxBody, type InteriorMaterial, type PhysicalAiClient, SPIRAL_STAIR_PROBLEM_TEXT, stairFootprintFits, UPPER_FLOOR_SETBACK_PROBLEM_TEXT, upperFloorInsets, type UpperFloorSetbackSides, WINDER_STAIR_PROBLEM_TEXT } from "@physical-ai/contracts";
+import { checkSpiralStair, checkUpperFloorSetbackLevels, checkUpperFloorSetbackSides, checkWinderStair, type HouseBoxBody, type InteriorMaterial, type PhysicalAiClient, SPIRAL_STAIR_PROBLEM_TEXT, stackedUpperFloorInsets, stairFootprintFits, upperFloorInsets, upperFloorSetbackProblemText, type UpperFloorSetbackSides, WINDER_STAIR_PROBLEM_TEXT } from "@physical-ai/contracts";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
@@ -34,6 +34,7 @@ export function HouseBoxWizard({
   const [upperFloorSetbackMm, setUpperFloorSetbackMm] = useState(0);
   const [perSideSetback, setPerSideSetback] = useState(false);
   const [setbackSides, setSetbackSides] = useState<UpperFloorSetbackSides>({ xMinMm: 0, xMaxMm: 0, yMinMm: 0, yMaxMm: 0 });
+  const [topFloorSides, setTopFloorSides] = useState<UpperFloorSetbackSides>({ xMinMm: 0, xMaxMm: 0, yMinMm: 0, yMaxMm: 0 });
   const [addStair, setAddStair] = useState(true);
   const [stairWidthMm, setStairWidthMm] = useState(1_000);
   const [treadDepthMm, setTreadDepthMm] = useState(280);
@@ -64,8 +65,12 @@ export function HouseBoxWizard({
   const turning = lTurn || uTurn || winderTurn;
   const setbackEnabled = floors > 1 && shape === "rectangle";
   const effectiveUpperInset = setbackEnabled && !perSideSetback ? upperFloorSetbackMm : 0;
-  const effectiveSides = setbackEnabled && perSideSetback ? setbackSides : null;
-  const insets = upperFloorInsets(effectiveUpperInset, effectiveSides);
+  // Two floors keep the single per-side field; three floors send one entry per upper floor.
+  const effectiveSides = setbackEnabled && perSideSetback && floors === 2 ? setbackSides : null;
+  const perFloorSides = setbackEnabled && perSideSetback && floors === 3 ? [setbackSides, topFloorSides] : null;
+  // One stair rises through every upper floor, so it is checked against the tightest wall of each.
+  const stairSides = perFloorSides ? stackedUpperFloorInsets(perFloorSides) : effectiveSides;
+  const insets = upperFloorInsets(effectiveUpperInset, stairSides);
   const winder = checkWinderStair({
     widthMm: stairWidthMm,
     treadMm: treadDepthMm,
@@ -77,7 +82,7 @@ export function HouseBoxWizard({
     houseWidthMm: widthMm,
     floorHeightMm,
     upperFloorSetbackMm: effectiveUpperInset,
-    upperFloorSetbackSides: effectiveSides,
+    upperFloorSetbackSides: stairSides,
   });
   const spiral = checkSpiralStair({
     diameterMm: spiralDiameterMm,
@@ -89,7 +94,7 @@ export function HouseBoxWizard({
     houseWidthMm: widthMm,
     floorHeightMm,
     upperFloorSetbackMm: effectiveUpperInset,
-    upperFloorSetbackSides: effectiveSides,
+    upperFloorSetbackSides: stairSides,
   });
   // A turning landing counts as one riser and so does every winder, like the server's derivation.
   const riserCount = spiralStair ? spiralSteps : winderTurn ? winder.riserCount : lTurn ? lowerSteps + upperSteps + 1 : uTurn ? 2 * uFlightSteps + 1 : stepCount;
@@ -124,7 +129,9 @@ export function HouseBoxWizard({
   // The shared winder check already covers rise, fit and every bound with one message.
   const riseInvalid = !winderTurn && !spiralStair && (riserMm < 120 || riserMm > 220);
   const stairInvalid = stairEnabled && (riserMm < 120 || riserMm > 220 || turningProblem !== null || stairFitProblem !== null);
-  const sidesProblem = effectiveSides ? checkUpperFloorSetbackSides(effectiveSides, lengthMm, widthMm) : null;
+  const sidesProblem = perFloorSides
+    ? checkUpperFloorSetbackLevels(perFloorSides, floors, lengthMm, widthMm)
+    : effectiveSides ? checkUpperFloorSetbackSides(effectiveSides, lengthMm, widthMm) : null;
   const setbackInvalid = setbackEnabled && (sidesProblem !== null || (!perSideSetback && upperFloorSetbackMm > 0 && (
     lengthMm - 2 * upperFloorSetbackMm < 2_000
     || widthMm - 2 * upperFloorSetbackMm < 2_000
@@ -153,6 +160,9 @@ export function HouseBoxWizard({
           upper_floor_setback_mm: effectiveUpperInset,
           upper_floor_setback_sides_mm: effectiveSides
             ? { x_min_mm: effectiveSides.xMinMm, x_max_mm: effectiveSides.xMaxMm, y_min_mm: effectiveSides.yMinMm, y_max_mm: effectiveSides.yMaxMm }
+            : null,
+          upper_floor_setbacks_mm: perFloorSides
+            ? perFloorSides.map((sides) => ({ x_min_mm: sides.xMinMm, x_max_mm: sides.xMaxMm, y_min_mm: sides.yMinMm, y_max_mm: sides.yMaxMm }))
             : null,
           stair: !stairEnabled
             ? null
@@ -263,20 +273,32 @@ export function HouseBoxWizard({
               <input type="checkbox" checked={perSideSetback} onChange={(event) => setPerSideSetback(event.target.checked)} />
               {ru ? "Задать отступ каждой стены отдельно (терраса, балкон)" : "Set each wall's setback separately (terrace, balcony)"}
             </label>
-            {perSideSetback && (
-              <div className="house-dimensions">
-                <NumberField label={ru ? "От стены X = 0, мм" : "From wall X = 0, mm"} value={setbackSides.xMinMm} min={0} max={10_000} step={100} onChange={(value) => setSetbackSides((sides) => ({ ...sides, xMinMm: value }))} />
-                <NumberField label={ru ? "От стены X = длина, мм" : "From wall X = length, mm"} value={setbackSides.xMaxMm} min={0} max={10_000} step={100} onChange={(value) => setSetbackSides((sides) => ({ ...sides, xMaxMm: value }))} />
-                <NumberField label={ru ? "От левой стены (Y = 0), мм" : "From left wall (Y = 0), mm"} value={setbackSides.yMinMm} min={0} max={10_000} step={100} onChange={(value) => setSetbackSides((sides) => ({ ...sides, yMinMm: value }))} />
-                <NumberField label={ru ? "От правой стены (Y = ширина), мм" : "From right wall (Y = width), mm"} value={setbackSides.yMaxMm} min={0} max={10_000} step={100} onChange={(value) => setSetbackSides((sides) => ({ ...sides, yMaxMm: value }))} />
+            {perSideSetback && (floors === 3
+              ? [
+                  { sides: setbackSides, setSides: setSetbackSides, title: ru ? "Этаж 2" : "Floor 2" },
+                  { sides: topFloorSides, setSides: setTopFloorSides, title: ru ? "Этаж 3 и крыша" : "Floor 3 and roof" },
+                ]
+              : [{ sides: setbackSides, setSides: setSetbackSides, title: ru ? "Верхний этаж и крыша" : "Upper floor and roof" }]
+            ).map(({ sides, setSides, title }) => (
+              <div key={title} className="stack">
+                <strong>{title}</strong>
+                <div className="house-dimensions">
+                  <NumberField label={ru ? "От стены X = 0, мм" : "From wall X = 0, mm"} value={sides.xMinMm} min={0} max={10_000} step={100} onChange={(value) => setSides((current) => ({ ...current, xMinMm: value }))} />
+                  <NumberField label={ru ? "От стены X = длина, мм" : "From wall X = length, mm"} value={sides.xMaxMm} min={0} max={10_000} step={100} onChange={(value) => setSides((current) => ({ ...current, xMaxMm: value }))} />
+                  <NumberField label={ru ? "От левой стены (Y = 0), мм" : "From left wall (Y = 0), mm"} value={sides.yMinMm} min={0} max={10_000} step={100} onChange={(value) => setSides((current) => ({ ...current, yMinMm: value }))} />
+                  <NumberField label={ru ? "От правой стены (Y = ширина), мм" : "From right wall (Y = width), mm"} value={sides.yMaxMm} min={0} max={10_000} step={100} onChange={(value) => setSides((current) => ({ ...current, yMaxMm: value }))} />
+                </div>
+                <p className="muted">{ru
+                  ? `${title}: ${(lengthMm - sides.xMinMm - sides.xMaxMm).toLocaleString(language)} × ${(widthMm - sides.yMinMm - sides.yMaxMm).toLocaleString(language)} мм.`
+                  : `${title}: ${(lengthMm - sides.xMinMm - sides.xMaxMm).toLocaleString(language)} × ${(widthMm - sides.yMinMm - sides.yMaxMm).toLocaleString(language)} mm.`}</p>
               </div>
-            )}
+            ))}
             {perSideSetback && (
               <p className="muted">{ru
-                ? `Верхний этаж и крыша: ${(lengthMm - setbackSides.xMinMm - setbackSides.xMaxMm).toLocaleString(language)} × ${(widthMm - setbackSides.yMinMm - setbackSides.yMaxMm).toLocaleString(language)} мм. Это геометрия, а не расчёт консолей или опор.`
-                : `Upper floor and roof: ${(lengthMm - setbackSides.xMinMm - setbackSides.xMaxMm).toLocaleString(language)} × ${(widthMm - setbackSides.yMinMm - setbackSides.yMaxMm).toLocaleString(language)} mm. This is geometry, not a cantilever or support calculation.`}</p>
+                ? "Отступы считаются от стен первого этажа; каждый верхний этаж стоит внутри нижнего. Это геометрия, а не расчёт консолей или опор."
+                : "Setbacks are measured from the ground-floor walls; each upper floor stands inside the one below. This is geometry, not a cantilever or support calculation."}</p>
             )}
-            {sidesProblem && <div className="error" role="alert">{UPPER_FLOOR_SETBACK_PROBLEM_TEXT[sidesProblem][language]}</div>}
+            {sidesProblem && <div className="error" role="alert">{upperFloorSetbackProblemText(sidesProblem)[language]}</div>}
           </fieldset>
         )}
         <p className="house-total">

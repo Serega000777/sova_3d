@@ -57,6 +57,73 @@ export function checkUpperFloorSetbackSides(
   return null;
 }
 
+export type UpperFloorSetbackLevelsProblem = UpperFloorSetbackProblem | "levels" | "overhang";
+
+/**
+ * Mirror the server's `upper_floor_setbacks_mm` rules: exactly one entry per upper floor (floor 2
+ * first), a non-zero profile, every level at least 2000 × 2000 mm and each level standing inside
+ * the one below it. `null` means the request may be sent.
+ */
+export function checkUpperFloorSetbackLevels(
+  levels: readonly UpperFloorSetbackSides[],
+  floors: number,
+  houseLengthMm: number,
+  houseWidthMm: number,
+): UpperFloorSetbackLevelsProblem | null {
+  if (levels.length !== floors - 1 || levels.length === 0) return "levels";
+  const sideLimits = UPPER_FLOOR_SETBACK_LIMITS.sideMm;
+  const values = levels.flatMap((level) => [level.xMinMm, level.xMaxMm, level.yMinMm, level.yMaxMm]);
+  if (!values.every((value) => within(value, sideLimits))) return "side";
+  if (!values.some((value) => value > 0)) return "empty";
+  const min = UPPER_FLOOR_SETBACK_LIMITS.minUpperFloorMm;
+  let below: UpperFloorSetbackSides = { xMinMm: 0, xMaxMm: 0, yMinMm: 0, yMaxMm: 0 };
+  for (const level of levels) {
+    if (houseLengthMm - level.xMinMm - level.xMaxMm < min || houseWidthMm - level.yMinMm - level.yMaxMm < min) {
+      return "upper_floor";
+    }
+    if (level.xMinMm < below.xMinMm || level.xMaxMm < below.xMaxMm || level.yMinMm < below.yMinMm || level.yMaxMm < below.yMaxMm) {
+      return "overhang";
+    }
+    below = level;
+  }
+  return null;
+}
+
+/**
+ * The tightest inset on every wall across all upper levels. One stair/shaft rises through every
+ * upper floor, so fitting it inside this envelope is the same as fitting it inside each level.
+ */
+export function stackedUpperFloorInsets(levels: readonly UpperFloorSetbackSides[]): UpperFloorSetbackSides {
+  return levels.reduce<UpperFloorSetbackSides>(
+    (acc, level) => ({
+      xMinMm: Math.max(acc.xMinMm, level.xMinMm),
+      xMaxMm: Math.max(acc.xMaxMm, level.xMaxMm),
+      yMinMm: Math.max(acc.yMinMm, level.yMinMm),
+      yMaxMm: Math.max(acc.yMaxMm, level.yMaxMm),
+    }),
+    { xMinMm: 0, xMaxMm: 0, yMinMm: 0, yMaxMm: 0 },
+  );
+}
+
+export const UPPER_FLOOR_SETBACK_LEVELS_PROBLEM_TEXT: Record<"levels" | "overhang", { ru: string; en: string }> = {
+  levels: {
+    ru: "Задайте отступы для каждого верхнего этажа.",
+    en: "Give setbacks for every upper floor.",
+  },
+  overhang: {
+    ru: "Каждый верхний этаж должен стоять внутри нижнего: отступ этажа 3 не меньше отступа этажа 2 с каждой стороны.",
+    en: "Each upper floor must stand inside the one below: floor 3 needs at least floor 2's setback on every side.",
+  },
+};
+
+export function upperFloorSetbackProblemText(
+  problem: UpperFloorSetbackLevelsProblem,
+): { ru: string; en: string } {
+  return problem === "levels" || problem === "overhang"
+    ? UPPER_FLOOR_SETBACK_LEVELS_PROBLEM_TEXT[problem]
+    : UPPER_FLOOR_SETBACK_PROBLEM_TEXT[problem];
+}
+
 export const UPPER_FLOOR_SETBACK_PROBLEM_TEXT: Record<UpperFloorSetbackProblem, { ru: string; en: string }> = {
   side: { ru: "Отступ каждой стороны должен быть 0–10 000 мм.", en: "Each side setback must be 0–10,000 mm." },
   empty: {

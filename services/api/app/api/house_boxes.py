@@ -160,6 +160,10 @@ class HouseBoxBody(BaseModel):
     stair: StairBody | None = None
     upper_floor_setback_mm: float = Field(default=0, ge=0, le=10_000)
     upper_floor_setback_sides_mm: UpperFloorSetbackSidesBody | None = None
+    # Exactly ``floors - 1`` entries, floor 2 first; the roof repeats the top floor.
+    upper_floor_setbacks_mm: list[UpperFloorSetbackSidesBody] | None = Field(
+        default=None, min_length=1, max_length=2
+    )
 
 
 class HouseBoxAccepted(BaseModel):
@@ -190,6 +194,14 @@ def build_house_box(
             upper_floor_setback_sides_mm=(
                 UpperFloorSetbackSides(**body.upper_floor_setback_sides_mm.model_dump())
                 if body.upper_floor_setback_sides_mm is not None
+                else None
+            ),
+            upper_floor_setbacks_mm=(
+                tuple(
+                    UpperFloorSetbackSides(**level.model_dump())
+                    for level in body.upper_floor_setbacks_mm
+                )
+                if body.upper_floor_setbacks_mm is not None
                 else None
             ),
         )

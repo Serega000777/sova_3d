@@ -4,8 +4,11 @@ import { test } from "node:test";
 
 import {
   checkSpiralStair,
+  checkUpperFloorSetbackLevels,
   checkUpperFloorSetbackSides,
   checkWinderStair,
+  stackedUpperFloorInsets,
+  upperFloorSetbackProblemText,
   SPIRAL_STAIR_LIMITS,
   SPIRAL_STAIR_PROBLEM_TEXT,
   stairFootprintFits,
@@ -153,4 +156,32 @@ test("stair fit follows the server placement against the inset upper walls", () 
   assert.equal(checkWinderStair({ ...winder, upperFloorSetbackMm: 100, upperFloorSetbackSides: { ...none, yMaxMm: 100 } }).problem, null);
   assert.equal(checkSpiralStair({ ...spiralBase, placement: "left", upperFloorSetbackSides: { ...none, yMaxMm: 1_000 } }).problem, null);
   assert.equal(checkSpiralStair({ ...spiralBase, placement: "left", upperFloorSetbackSides: { ...none, yMinMm: 1 } }).problem, "fit");
+});
+
+test("per-floor setbacks mirror the server's stepped-level rules", () => {
+  const none = { xMinMm: 0, xMaxMm: 0, yMinMm: 0, yMaxMm: 0 };
+  const floor2 = { ...none, xMaxMm: 1_500 };
+  const floor3 = { ...none, xMaxMm: 3_000, yMinMm: 1_000 };
+  assert.equal(checkUpperFloorSetbackLevels([floor2, floor3], 3, 12_000, 8_000), null);
+  assert.equal(checkUpperFloorSetbackLevels([floor2], 3, 12_000, 8_000), "levels");
+  assert.equal(checkUpperFloorSetbackLevels([floor2, floor3], 2, 12_000, 8_000), "levels");
+  assert.equal(checkUpperFloorSetbackLevels([none, none], 3, 12_000, 8_000), "empty");
+  // A floor without its own setback is allowed while another level has one.
+  assert.equal(checkUpperFloorSetbackLevels([none, floor3], 3, 12_000, 8_000), null);
+  assert.equal(checkUpperFloorSetbackLevels([none, { ...none, xMinMm: Number.NaN }], 3, 12_000, 8_000), "side");
+  assert.equal(checkUpperFloorSetbackLevels([none, { ...none, yMinMm: 6_001 }], 3, 12_000, 8_000), "upper_floor");
+  assert.equal(checkUpperFloorSetbackLevels([floor3, floor2], 3, 12_000, 8_000), "overhang");
+  for (const problem of ["levels", "overhang", "side", "empty", "upper_floor"] as const) {
+    const text = upperFloorSetbackProblemText(problem);
+    assert.ok(text.ru && text.en);
+  }
+
+  // One stair has to fit the tightest wall of every level.
+  const insets = stackedUpperFloorInsets([{ ...none, yMaxMm: 500 }, { ...none, yMinMm: 500, yMaxMm: 500 }]);
+  assert.deepEqual(insets, { ...none, yMinMm: 500, yMaxMm: 500 });
+  const straight = { footprint: { x: 4_760, y: 1_000 }, houseLengthMm: 12_000, houseWidthMm: 8_000 };
+  assert.equal(stairFootprintFits({ ...straight, placement: "left", insets }), false);
+  assert.equal(stairFootprintFits({ ...straight, placement: "center", insets }), true);
+  const winder = { ...base, placement: "left" as const };
+  assert.equal(checkWinderStair({ ...winder, upperFloorSetbackSides: insets }).problem, "setback_placement");
 });

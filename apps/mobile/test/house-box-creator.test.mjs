@@ -22,7 +22,7 @@ test("mobile sends discriminated straight, L-turn, U-turn or spiral stair parame
   assert.match(creator, /kind: "spiral"[\s\S]+diameter_mm: dimensions\.spiralDiameter,[\s\S]+post_diameter_mm: dimensions\.spiralPostDiameter,[\s\S]+step_count: dimensions\.spiralSteps,[\s\S]+sweep_deg: dimensions\.spiralSweep,[\s\S]+railing: false/);
   assert.match(creator, /turn,[\s\S]+placement: "center"/);
   assert.match(creator, /2 \* rise \+ dimensions\.tread < 550/);
-  assert.match(creator, /stairFootprintFits\(\{\s+footprint: \{ x: footprintLength, y: footprintWidth \},\s+placement: "center",[\s\S]+insets: upperFloorInsets\(upperInset, setbackSides\),/);
+  assert.match(creator, /stairFootprintFits\(\{\s+footprint: \{ x: footprintLength, y: footprintWidth \},\s+placement: "center",[\s\S]+insets: upperFloorInsets\(upperInset, stairSides\),/);
   assert.match(creator, /stairKind === "straight"[\s\S]+\[dimensions\.straightSteps\][\s\S]+\[dimensions\.lowerSteps, dimensions\.upperSteps\][\s\S]+\[dimensions\.spiralDiameter, dimensions\.spiralPostDiameter, dimensions\.spiralSteps, dimensions\.spiralSweep\][\s\S]+\[dimensions\.uFlightSteps\]/);
   assert.match(creator, /Лестницы пока доступны только для прямоугольного дома/);
   assert.match(creator, /upper_floor_setback_mm: upperInset,/);
@@ -31,7 +31,7 @@ test("mobile sends discriminated straight, L-turn, U-turn or spiral stair parame
 
 test("mobile spiral controls mirror the bounded server rules", () => {
   assert.match(creator, /value="spiral" selected=\{stairKind\} label="Винтовая"/);
-  assert.match(creator, /checkSpiralStair\(\{[\s\S]+diameterMm: dimensions\.spiralDiameter,[\s\S]+upperFloorSetbackMm: upperInset,\s+upperFloorSetbackSides: setbackSides,/);
+  assert.match(creator, /checkSpiralStair\(\{[\s\S]+diameterMm: dimensions\.spiralDiameter,[\s\S]+upperFloorSetbackMm: upperInset,\s+upperFloorSetbackSides: stairSides,/);
   assert.match(creator, /SPIRAL_STAIR_PROBLEM_TEXT\[spiral\.problem\]\.ru/);
   assert.match(creator, /value=\{spiralDiameterMm\}[\s\S]+value=\{spiralPostDiameterMm\}[\s\S]+value=\{spiralSteps\}[\s\S]+value=\{spiralSweepDeg\}/);
   assert.match(creator, /Винтовое ограждение, прочность и строительные нормы не моделируются/);
@@ -45,7 +45,7 @@ test("mobile winder stair sends only its own bounded fields and no railing", () 
   assert.match(creator, /value="winder_turn" selected=\{stairKind\} label="Забежная 90°"/);
   assert.match(creator, /stairKind === "winder_turn" \? \([\s\S]+value=\{winderLowerSteps\}[\s\S]+value=\{winderUpperSteps\}[\s\S]+value=\{newelMm\}/);
   assert.match(creator, /\[dimensions\.winderLowerSteps, dimensions\.winderUpperSteps, dimensions\.newel\]/);
-  assert.match(creator, /checkWinderStair\(\{[\s\S]+upperFloorSetbackMm: upperInset,\s+upperFloorSetbackSides: setbackSides,/);
+  assert.match(creator, /checkWinderStair\(\{[\s\S]+upperFloorSetbackMm: upperInset,\s+upperFloorSetbackSides: stairSides,/);
   assert.match(creator, /WINDER_STAIR_PROBLEM_TEXT\[winder\.problem\]\.ru/);
   assert.match(creator, /Ограждение, столб, прочность и нормы для этого поворота не моделируются/);
 });
@@ -55,7 +55,7 @@ test("mobile per-side setback replaces the symmetric one and mirrors the server 
   assert.match(creator, /xMinMm: dimensions\.setbackXMin, xMaxMm: dimensions\.setbackXMax, yMinMm: dimensions\.setbackYMin, yMaxMm: dimensions\.setbackYMax/);
   assert.match(creator, /checkUpperFloorSetbackSides\(setbackSides, dimensions\.length, dimensions\.width\)/);
   assert.match(creator, /\|\| sidesProblem !== null/);
-  assert.match(creator, /upper_floor_setback_sides_mm: setbackSides\s+\? \{ x_min_mm: setbackSides\.xMinMm, x_max_mm: setbackSides\.xMaxMm, y_min_mm: setbackSides\.yMinMm, y_max_mm: setbackSides\.yMaxMm \}\s+: null,/);
+  assert.match(creator, /upper_floor_setback_sides_mm: setbackSides && !perFloorSides\s+\? \{ x_min_mm: setbackSides\.xMinMm, x_max_mm: setbackSides\.xMaxMm, y_min_mm: setbackSides\.yMinMm, y_max_mm: setbackSides\.yMaxMm \}\s+: null,/);
   assert.match(creator, /Отступ по сторонам \(терраса, балкон\)/);
   assert.match(creator, /Это геометрия, а не расчёт консолей или опор/);
 });
@@ -63,4 +63,14 @@ test("mobile per-side setback replaces the symmetric one and mirrors the server 
 test("description mode states the current multi-floor shell boundary", () => {
   assert.match(textCreator, /2–3 этажа получает отдельные shell каждого уровня и плоскую крышу/);
   assert.doesNotMatch(textCreator, /без лестниц, крыши, окон и комнат/);
+});
+
+test("mobile three-floor house sends one per-side setback per upper floor", () => {
+  assert.match(creator, /setbackSides && floors === 3\s+\? \[setbackSides, \{ xMinMm: dimensions\.topXMin, xMaxMm: dimensions\.topXMax, yMinMm: dimensions\.topYMin, yMaxMm: dimensions\.topYMax \}\]/);
+  assert.match(creator, /upper_floor_setbacks_mm: perFloorSides\s+\? perFloorSides\.map\(\(sides\) => \(\{ x_min_mm: sides\.xMinMm, x_max_mm: sides\.xMaxMm, y_min_mm: sides\.yMinMm, y_max_mm: sides\.yMaxMm \}\)\)\s+: null,/);
+  // One stair has to fit the tightest wall of every upper level.
+  assert.match(creator, /perFloorSides \? stackedUpperFloorInsets\(perFloorSides\) : setbackSides/);
+  assert.match(creator, /checkUpperFloorSetbackLevels\(perFloorSides, floors, dimensions\.length, dimensions\.width\)/);
+  assert.match(creator, /upperFloorSetbackProblemText\(sidesProblem\)\.ru/);
+  assert.match(creator, /Этаж 3 и крыша/);
 });

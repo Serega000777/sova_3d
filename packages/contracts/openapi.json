@@ -25420,6 +25420,22 @@
                 "type": "null"
               }
             ]
+          },
+          "upper_floor_setbacks_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/UpperFloorSetbackSidesBody"
+                },
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper Floor Setbacks Mm"
           }
         },
         "type": "object",

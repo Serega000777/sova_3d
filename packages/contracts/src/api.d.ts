@@ -7078,6 +7078,8 @@ export interface components {
              */
             upper_floor_setback_mm: number;
             upper_floor_setback_sides_mm?: components["schemas"]["UpperFloorSetbackSidesBody"] | null;
+            /** Upper Floor Setbacks Mm */
+            upper_floor_setbacks_mm?: components["schemas"]["UpperFloorSetbackSidesBody"][] | null;
         };
         /** HouseTextApplyBody */
         HouseTextApplyBody: {

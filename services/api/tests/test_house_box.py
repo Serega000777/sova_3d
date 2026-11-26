@@ -1,6 +1,7 @@
 """The house quick-start is a validated, deterministic operation plan."""
 
 import itertools
+import json
 import math
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -1097,6 +1098,127 @@ def test_stair_against_a_set_back_wall_fails_but_opposite_wall_fits() -> None:
             op.id == "stair_opening_2" or op.id.startswith("stair_opening_2_")
             for op in plan.operations
         )
+
+
+def test_per_floor_setbacks_step_each_level_and_roof_repeats_top_floor() -> None:
+    request = HouseBoxRequest(
+        length_mm=12_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=3,
+        upper_floor_setbacks_mm=(
+            UpperFloorSetbackSides(x_max_mm=2_000),
+            UpperFloorSetbackSides(x_max_mm=4_000, y_min_mm=1_000),
+        ),
+    )
+    plan = request.build()
+    boxes = {op.id: op for op in plan.operations if isinstance(op, CreateBox)}
+    assert boxes["floor_1"].origin_mm == (0.0, 0.0, 0.0)
+    assert boxes["floor_2"].origin_mm == (0.0, 0.0, 3_000.0)
+    assert (boxes["floor_2"].width_mm, boxes["floor_2"].depth_mm) == (10_000.0, 8_000.0)
+    for body, z in (("floor_3", 6_000.0), ("roof", 9_000.0)):
+        assert boxes[body].origin_mm == (0.0, 1_000.0, z)
+        assert (boxes[body].width_mm, boxes[body].depth_mm) == (8_000.0, 7_000.0)
+    assert "its own validated per-side setback" in " ".join(plan.assumptions)
+
+    levels = floor_plans_from_house_box(
+        request, project_id="project", version_id="version", name="House"
+    ).levels
+    assert levels[1].plan.rooms[0].outline == [
+        (0.0, 0.0),
+        (10_000.0, 0.0),
+        (10_000.0, 8_000.0),
+        (0.0, 8_000.0),
+    ]
+    assert levels[2].plan.rooms[0].outline == [
+        (0.0, 1_000.0),
+        (8_000.0, 1_000.0),
+        (8_000.0, 8_000.0),
+        (0.0, 8_000.0),
+    ]
+
+    # Equal levels describe the same geometry as the per-side field.
+    sides = UpperFloorSetbackSides(x_min_mm=300, y_max_mm=700)
+    per_side = replace(
+        request, upper_floor_setbacks_mm=None, upper_floor_setback_sides_mm=sides
+    ).build()
+    per_floor = replace(request, upper_floor_setbacks_mm=(sides, sides)).build()
+    assert per_floor.operations == per_side.operations
+
+    # A job-input round trip (lists of dicts) rebuilds the same validated request.
+    assert HouseBoxRequest(**json.loads(json.dumps(asdict(request)))) == request
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"upper_floor_setback_mm": 200}, "send only one"),
+        ({"upper_floor_setback_sides_mm": {"x_min_mm": 100}}, "send only one"),
+        ({"levels": [{"x_min_mm": 100}]}, "exactly one entry per upper floor"),
+        ({"floors": 2, "levels": [{"x_min_mm": 100}] * 2}, "exactly one entry per upper floor"),
+        ({"levels": [{}, {}]}, "at least one positive side"),
+        ({"floors": 1, "levels": []}, "at least one positive side"),
+        ({"shape": "l_shape"}, "rectangular house"),
+        ({"levels": [{}, {"y_min_mm": 3_000, "y_max_mm": 3_001}]}, "at least 2000 mm"),
+        ({"levels": [{"x_min_mm": 1_000}, {"x_min_mm": 500}]}, "no overhang"),
+        ({"levels": [{}, {"x_min_mm": float("inf")}]}, "finite"),
+        ({"levels": [{}, {"x_min_mm": float("nan")}]}, "finite"),
+        ({"levels": [{}, {"x_min_mm": "100"}]}, "valid number"),
+        ({"levels": [{}, {"x_min_mm": True}]}, "valid number"),
+        ({"levels": [{}, {"front_mm": 100}]}, "front_mm"),
+    ],
+)
+def test_invalid_per_floor_setbacks_fail_before_kernel(
+    values: dict[str, Any], message: str
+) -> None:
+    levels = values.pop("levels", [{"x_min_mm": 100}, {"x_min_mm": 200}])
+    request = {
+        "length_mm": 12_000,
+        "width_mm": 8_000,
+        "floor_height_mm": 3_000,
+        "floors": 3,
+        **values,
+        "upper_floor_setbacks_mm": levels,
+    }
+    with pytest.raises(ValidationError, match=message):
+        HouseBoxRequest(**request)
+
+
+def test_one_stair_must_fit_every_per_floor_setback() -> None:
+    def house(stair: Any, *levels: UpperFloorSetbackSides) -> HouseBoxRequest:
+        return HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=3,
+            upper_floor_setbacks_mm=levels,
+            stair=stair,
+        )
+
+    stairs = [
+        StraightStairRequest(placement="left"),
+        LTurnStairRequest(kind="l_turn", placement="left"),
+        UTurnStairRequest(kind="u_turn", placement="left"),
+        WinderTurnStairRequest(kind="winder_turn", placement="left"),
+        SpiralStairRequest(kind="spiral", placement="left"),
+    ]
+    for stair in stairs:
+        # Floor 2 alone would fit; the top floor steps back over the left-wall stair.
+        with pytest.raises(ValidationError, match="setback upper floor"):
+            house(
+                stair,
+                UpperFloorSetbackSides(y_max_mm=500),
+                UpperFloorSetbackSides(y_min_mm=500, y_max_mm=500),
+            )
+        plan = house(
+            stair, UpperFloorSetbackSides(y_max_mm=500), UpperFloorSetbackSides(y_max_mm=1_000)
+        ).build()
+        ids = {op.id for op in plan.operations}
+        for floor in (2, 3):
+            assert any(
+                op_id == f"stair_opening_{floor}" or op_id.startswith(f"stair_opening_{floor}_")
+                for op_id in ids
+            )
 
 
 def _spiral_request(house: dict[str, object] | None = None, **stair: object) -> HouseBoxRequest:
