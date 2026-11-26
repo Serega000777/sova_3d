@@ -7077,6 +7077,7 @@ export interface components {
              * @default 0
              */
             upper_floor_setback_mm: number;
+            upper_floor_setback_sides_mm?: components["schemas"]["UpperFloorSetbackSidesBody"] | null;
         };
         /** HouseTextApplyBody */
         HouseTextApplyBody: {
@@ -11610,6 +11611,32 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+        };
+        /**
+         * UpperFloorSetbackSidesBody
+         * @description Per-wall inset of every upper floor and the roof; X along the length, Y across it.
+         */
+        UpperFloorSetbackSidesBody: {
+            /**
+             * X Min Mm
+             * @default 0
+             */
+            x_min_mm: number;
+            /**
+             * X Max Mm
+             * @default 0
+             */
+            x_max_mm: number;
+            /**
+             * Y Min Mm
+             * @default 0
+             */
+            y_min_mm: number;
+            /**
+             * Y Max Mm
+             * @default 0
+             */
+            y_max_mm: number;
         };
         /** UsageOut */
         UsageOut: {

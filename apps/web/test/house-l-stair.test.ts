@@ -22,7 +22,12 @@ test("the house-box wizard submits discriminated straight, L-turn, U-turn or spi
   assert.match(wizard, /2 \* uFlightSteps \+ 1/);
   assert.match(wizard, /strideMm < 550 \|\| strideMm > 700/);
   assert.match(wizard, /disabled=\{busy \|\| stairInvalid \|\| setbackInvalid\}/);
-  assert.match(wizard, /upper_floor_setback_mm: setbackEnabled \? upperFloorSetbackMm : 0/);
+  assert.match(wizard, /upper_floor_setback_mm: effectiveUpperInset,/);
+  assert.match(wizard, /const effectiveUpperInset = setbackEnabled && !perSideSetback \? upperFloorSetbackMm : 0;/);
+  assert.match(wizard, /upper_floor_setback_sides_mm: effectiveSides\s+\? \{ x_min_mm: effectiveSides\.xMinMm, x_max_mm: effectiveSides\.xMaxMm, y_min_mm: effectiveSides\.yMinMm, y_max_mm: effectiveSides\.yMaxMm \}\s+: null,/);
+  assert.match(wizard, /checkUpperFloorSetbackSides\(effectiveSides, lengthMm, widthMm\)/);
+  assert.match(wizard, /stairFootprintFits\(\{ footprint: stairFootprint, placement: stairPlacement, houseLengthMm: lengthMm, houseWidthMm: widthMm, insets \}\)/);
+  assert.match(wizard, /upperFloorSetbackSides: effectiveSides,[\s\S]+upperFloorSetbackSides: effectiveSides,/);
   assert.match(wizard, /lengthMm - 2 \* upperFloorSetbackMm < 2_000/);
 });
 

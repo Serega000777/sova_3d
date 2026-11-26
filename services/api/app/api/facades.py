@@ -397,6 +397,13 @@ def _rectangular_house(db: Session, version: ProjectVersion) -> HouseBoxRequest:
                     "the facade editor does not yet preserve separate floor, stair and roof "
                     "scene bodies; edit this stair house only after multi-floor facade support",
                 )
+            if house.has_upper_floor_setback:
+                # The facade builder extrudes one full-footprint shell and would erase the setback.
+                raise IneligibleVersionError(
+                    "upper_floor_setback_not_supported",
+                    "the facade editor rebuilds one full-footprint shell and cannot preserve an "
+                    "upper-floor setback; edit this house only after multi-floor facade support",
+                )
             return house
         if job.type == FACADE_JOB and isinstance(job.input.get("promoted_from_scan"), dict):
             request = _facade_request(job)

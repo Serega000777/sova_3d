@@ -25410,6 +25410,16 @@
             "minimum": 0.0,
             "title": "Upper Floor Setback Mm",
             "default": 0
+          },
+          "upper_floor_setback_sides_mm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpperFloorSetbackSidesBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -37861,6 +37871,42 @@
           "expires_at"
         ],
         "title": "UploadCreated"
+      },
+      "UpperFloorSetbackSidesBody": {
+        "properties": {
+          "x_min_mm": {
+            "type": "number",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "X Min Mm",
+            "default": 0
+          },
+          "x_max_mm": {
+            "type": "number",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "X Max Mm",
+            "default": 0
+          },
+          "y_min_mm": {
+            "type": "number",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Y Min Mm",
+            "default": 0
+          },
+          "y_max_mm": {
+            "type": "number",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Y Max Mm",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UpperFloorSetbackSidesBody",
+        "description": "Per-wall inset of every upper floor and the roof; X along the length, Y across it."
       },
       "UsageOut": {
         "properties": {

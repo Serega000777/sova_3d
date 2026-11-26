@@ -18,6 +18,102 @@ const WINDERS = 3;
 const WALKLINE_OFFSET_MM = 300;
 const CLEARANCE_MM = 350;
 
+/**
+ * Per-wall inset of every upper floor and the roof, mirroring `upper_floor_setback_sides_mm`.
+ * X runs along the house length; `yMinMm` is the stair "left" wall and `yMaxMm` the "right" one.
+ */
+export interface UpperFloorSetbackSides {
+  xMinMm: number;
+  xMaxMm: number;
+  yMinMm: number;
+  yMaxMm: number;
+}
+
+export const UPPER_FLOOR_SETBACK_LIMITS = { sideMm: [0, 10_000], minUpperFloorMm: 2_000 } as const;
+
+/** Effective insets: explicit per-side values win over the symmetric setback. */
+export function upperFloorInsets(
+  symmetricMm: number,
+  sides?: UpperFloorSetbackSides | null,
+): UpperFloorSetbackSides {
+  return sides ?? { xMinMm: symmetricMm, xMaxMm: symmetricMm, yMinMm: symmetricMm, yMaxMm: symmetricMm };
+}
+
+export type UpperFloorSetbackProblem = "side" | "empty" | "upper_floor";
+
+/** Mirror the server's per-side setback bounds; `null` means the request may be sent. */
+export function checkUpperFloorSetbackSides(
+  sides: UpperFloorSetbackSides,
+  houseLengthMm: number,
+  houseWidthMm: number,
+): UpperFloorSetbackProblem | null {
+  const values = [sides.xMinMm, sides.xMaxMm, sides.yMinMm, sides.yMaxMm];
+  if (!values.every((value) => within(value, UPPER_FLOOR_SETBACK_LIMITS.sideMm))) return "side";
+  if (!values.some((value) => value > 0)) return "empty";
+  const min = UPPER_FLOOR_SETBACK_LIMITS.minUpperFloorMm;
+  if (houseLengthMm - sides.xMinMm - sides.xMaxMm < min || houseWidthMm - sides.yMinMm - sides.yMaxMm < min) {
+    return "upper_floor";
+  }
+  return null;
+}
+
+export const UPPER_FLOOR_SETBACK_PROBLEM_TEXT: Record<UpperFloorSetbackProblem, { ru: string; en: string }> = {
+  side: { ru: "Отступ каждой стороны должен быть 0–10 000 мм.", en: "Each side setback must be 0–10,000 mm." },
+  empty: {
+    ru: "Укажите хотя бы одну сторону с отступом больше нуля или выключите отступ по сторонам.",
+    en: "Give at least one side a positive setback or turn per-side setbacks off.",
+  },
+  upper_floor: {
+    ru: "Отступы должны оставить верхний этаж не меньше 2000 × 2000 мм.",
+    en: "The setbacks must leave an upper floor of at least 2,000 × 2,000 mm.",
+  },
+};
+
+/** Whether an aligned stair box keeps 350 mm from the ground walls and the inset upper walls. */
+function stairBoxFits(
+  minX: number,
+  minY: number,
+  extentX: number,
+  extentY: number,
+  houseLengthMm: number,
+  houseWidthMm: number,
+  insets: UpperFloorSetbackSides,
+): boolean {
+  return minX >= CLEARANCE_MM + insets.xMinMm
+    && minX + extentX <= houseLengthMm - CLEARANCE_MM - insets.xMaxMm
+    && minY >= CLEARANCE_MM + insets.yMinMm
+    && minY + extentY <= houseWidthMm - CLEARANCE_MM - insets.yMaxMm;
+}
+
+/** Same placement rule as the server: centred along X, wall-side or centred across Y. */
+function placedMinY(placement: "left" | "center" | "right", extentY: number, houseWidthMm: number): number {
+  if (placement === "left") return CLEARANCE_MM;
+  if (placement === "right") return houseWidthMm - CLEARANCE_MM - extentY;
+  return (houseWidthMm - extentY) / 2;
+}
+
+/**
+ * Fit of any aligned stair bounding box (straight, L, U, winder or spiral) placed exactly like the
+ * server: 350 mm from the ground walls and from every inset upper-floor wall.
+ */
+export function stairFootprintFits(input: {
+  footprint: { x: number; y: number };
+  placement: "left" | "center" | "right";
+  houseLengthMm: number;
+  houseWidthMm: number;
+  insets: UpperFloorSetbackSides;
+}): boolean {
+  return stairBoxFits(
+    (input.houseLengthMm - input.footprint.x) / 2,
+    placedMinY(input.placement, input.footprint.y, input.houseWidthMm),
+    input.footprint.x,
+    input.footprint.y,
+    input.houseLengthMm,
+    input.houseWidthMm,
+    input.insets,
+  );
+}
+
 export type WinderStairProblem =
   | "width"
   | "tread"
@@ -42,6 +138,8 @@ export interface WinderStairInput {
   floorHeightMm: number;
   /** Symmetric inset of the upper floors; 0 when the house has no setback. */
   upperFloorSetbackMm: number;
+  /** Per-side insets; when present they replace `upperFloorSetbackMm`. */
+  upperFloorSetbackSides?: UpperFloorSetbackSides | null;
 }
 
 export interface WinderStairCheck {
@@ -68,7 +166,8 @@ export function checkWinderStair(input: WinderStairInput): WinderStairCheck {
     y: turn + input.treadMm * input.upperSteps,
   };
   const limits = WINDER_STAIR_LIMITS;
-  const margin = 2 * (CLEARANCE_MM + input.upperFloorSetbackMm);
+  const insets = upperFloorInsets(input.upperFloorSetbackMm, input.upperFloorSetbackSides);
+  const sideInset = input.placement === "left" ? insets.yMinMm : input.placement === "right" ? insets.yMaxMm : 0;
   const flightOk = (steps: number) => Number.isInteger(steps) && within(steps, limits.flightSteps);
   let problem: WinderStairProblem | null = null;
   if (!within(input.widthMm, limits.widthMm)) problem = "width";
@@ -79,9 +178,17 @@ export function checkWinderStair(input: WinderStairInput): WinderStairCheck {
   else if (!within(riseMm, limits.riseMm)) problem = "rise";
   else if (!within(2 * riseMm + input.treadMm, limits.strideMm)) problem = "stride";
   else if (!within(2 * riseMm + winderGoingMm, limits.strideMm)) problem = "winder_stride";
-  // A wall-side stair keeps 350 mm from the ground-floor wall, so any setback would cut into it.
-  else if (input.upperFloorSetbackMm > 0 && input.placement !== "center") problem = "setback_placement";
-  else if (!(footprint.x <= input.houseLengthMm - margin && footprint.y <= input.houseWidthMm - margin)) {
+  // A wall-side stair keeps 350 mm from the ground-floor wall, so a setback on that side cuts into it.
+  else if (sideInset > 0) problem = "setback_placement";
+  else if (!stairBoxFits(
+    (input.houseLengthMm - footprint.x) / 2,
+    placedMinY(input.placement, footprint.y, input.houseWidthMm),
+    footprint.x,
+    footprint.y,
+    input.houseLengthMm,
+    input.houseWidthMm,
+    insets,
+  )) {
     problem = "fit";
   }
   return { riserCount, riseMm, winderGoingMm, footprint, problem };
@@ -106,8 +213,8 @@ export const WINDER_STAIR_PROBLEM_TEXT: Record<WinderStairProblem, { ru: string;
     en: "2 × rise + winder going on the walking line must be 550–700 mm: change the newel void.",
   },
   setback_placement: {
-    ru: "При отступе верхних этажей лестница с забежными ступенями ставится только по центру.",
-    en: "With an upper-floor setback a winder stair can only be centred.",
+    ru: "Лестница с забежными ступенями не ставится к стене, над которой отступает верхний этаж: выберите центр или другую сторону.",
+    en: "A winder stair cannot stand against a wall the upper floor is set back from: centre it or use the other side.",
   },
   fit: {
     ru: "Лестница с проёмом не помещается в контур с отступом 350 мм от стен.",
@@ -150,6 +257,8 @@ export interface SpiralStairInput {
   floorHeightMm: number;
   /** Symmetric inset of the upper floors; 0 when the house has no setback. */
   upperFloorSetbackMm: number;
+  /** Per-side insets; when present they replace `upperFloorSetbackMm`. */
+  upperFloorSetbackSides?: UpperFloorSetbackSides | null;
 }
 
 export interface SpiralStairCheck {
@@ -171,17 +280,16 @@ export function checkSpiralStair(input: SpiralStairInput): SpiralStairCheck {
   const goingMm = walklineRadiusMm * treadAngleDeg * Math.PI / 180;
   const footprint = { x: input.diameterMm, y: input.diameterMm };
   const limits = SPIRAL_STAIR_LIMITS;
-  const inset = CLEARANCE_MM + input.upperFloorSetbackMm;
-  const radius = input.diameterMm / 2;
-  const centerY = input.placement === "left"
-    ? CLEARANCE_MM + radius
-    : input.placement === "right"
-      ? input.houseWidthMm - CLEARANCE_MM - radius
-      : input.houseWidthMm / 2;
-  const fits = input.houseLengthMm / 2 - radius >= inset
-    && input.houseLengthMm / 2 + radius <= input.houseLengthMm - inset
-    && centerY - radius >= inset
-    && centerY + radius <= input.houseWidthMm - inset;
+  const insets = upperFloorInsets(input.upperFloorSetbackMm, input.upperFloorSetbackSides);
+  const fits = stairBoxFits(
+    (input.houseLengthMm - input.diameterMm) / 2,
+    placedMinY(input.placement, input.diameterMm, input.houseWidthMm),
+    input.diameterMm,
+    input.diameterMm,
+    input.houseLengthMm,
+    input.houseWidthMm,
+    insets,
+  );
   let problem: SpiralStairProblem | null = null;
   if (!within(input.diameterMm, limits.diameterMm)) problem = "diameter";
   else if (!within(input.postDiameterMm, limits.postDiameterMm)) problem = "post";

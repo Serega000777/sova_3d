@@ -16,6 +16,7 @@ HouseLength = Annotated[float, Field(ge=2_000, le=50_000)]
 FloorHeight = Annotated[float, Field(ge=2_200, le=6_000)]
 FloorCount = Annotated[int, Field(ge=1, le=3)]
 UpperFloorSetback = Annotated[float, Field(ge=0, le=10_000)]
+SetbackSide = Annotated[float, Field(ge=0, le=10_000, strict=True, allow_inf_nan=False)]
 StairWidth = Annotated[float, Field(ge=700, le=2_000)]
 StairTread = Annotated[float, Field(ge=200, le=400)]
 StairSteps = Annotated[int, Field(ge=10, le=30)]
@@ -207,6 +208,20 @@ StairRequest = Annotated[
 
 
 @dataclass(frozen=True, config=ConfigDict(extra="forbid"))
+class UpperFloorSetbackSides:
+    """Independent insets of every upper floor and the roof from the four ground-floor walls.
+
+    ``x_min``/``x_max`` are measured from the walls at X = 0 and X = length; ``y_min``/``y_max``
+    from the walls at Y = 0 (stair placement "left") and Y = width (placement "right").
+    """
+
+    x_min_mm: SetbackSide = 0
+    x_max_mm: SetbackSide = 0
+    y_min_mm: SetbackSide = 0
+    y_max_mm: SetbackSide = 0
+
+
+@dataclass(frozen=True, config=ConfigDict(extra="forbid"))
 class HouseBoxRequest:
     length_mm: HouseLength
     width_mm: HouseLength
@@ -215,18 +230,28 @@ class HouseBoxRequest:
     shape: HouseShape = "rectangle"
     stair: StairRequest | None = None
     upper_floor_setback_mm: UpperFloorSetback = 0
+    upper_floor_setback_sides_mm: UpperFloorSetbackSides | None = None
+
+    @property
+    def has_upper_floor_setback(self) -> bool:
+        return bool(self.upper_floor_setback_mm) or self.upper_floor_setback_sides_mm is not None
 
     def __post_init__(self) -> None:
-        setback = float(self.upper_floor_setback_mm)
-        if setback:
+        sides = self.upper_floor_setback_sides_mm
+        if sides is not None:
+            if self.upper_floor_setback_mm:
+                raise ValueError(
+                    "use either the symmetric upper-floor setback or per-side setbacks, not both"
+                )
+            if not any((sides.x_min_mm, sides.x_max_mm, sides.y_min_mm, sides.y_max_mm)):
+                raise ValueError("a per-side upper-floor setback needs at least one positive side")
+        if self.has_upper_floor_setback:
             if self.floors < 2:
                 raise ValueError("an upper-floor setback requires at least two floors")
             if self.shape != "rectangle":
                 raise ValueError("the bounded upper-floor setback requires a rectangular house")
-            if (
-                float(self.length_mm) - 2 * setback < 2_000
-                or float(self.width_mm) - 2 * setback < 2_000
-            ):
+            min_x, min_y, max_x, max_y = floor_rect(self, 1)
+            if max_x - min_x < 2_000 or max_y - min_y < 2_000:
                 raise ValueError(
                     "the setback must leave every upper floor at least 2000 mm wide and long"
                 )
@@ -330,18 +355,25 @@ Rect = tuple[float, float, float, float]  # min_x, min_y, max_x, max_y
 
 def floor_rect(request: HouseBoxRequest, floor_index: int) -> Rect:
     """Return the trusted aligned rectangle for one floor (or the roof at ``floors``)."""
-    inset = float(request.upper_floor_setback_mm) if floor_index > 0 else 0.0
-    return (
-        inset,
-        inset,
-        float(request.length_mm) - inset,
-        float(request.width_mm) - inset,
-    )
+    length = float(request.length_mm)
+    width = float(request.width_mm)
+    if floor_index == 0:
+        return (0.0, 0.0, length, width)
+    sides = request.upper_floor_setback_sides_mm
+    if sides is not None:
+        return (
+            float(sides.x_min_mm),
+            float(sides.y_min_mm),
+            length - float(sides.x_max_mm),
+            width - float(sides.y_max_mm),
+        )
+    inset = float(request.upper_floor_setback_mm)
+    return (inset, inset, length - inset, width - inset)
 
 
 def _validate_stair_against_upper_floor(request: HouseBoxRequest) -> None:
     """Fail closed when a stair/shaft leaves the reduced upper-floor footprint."""
-    if not request.upper_floor_setback_mm or request.stair is None:
+    if not request.has_upper_floor_setback or request.stair is None:
         return
     min_floor_x, min_floor_y, max_floor_x, max_floor_y = floor_rect(request, 1)
     for min_x, min_y, max_x, max_y in _opening_rects(request):
@@ -1671,6 +1703,8 @@ def build(request: HouseBoxRequest) -> OperationPlan:
                     (
                         "Upper levels and the roof use the validated symmetric setback."
                         if request.upper_floor_setback_mm
+                        else "Upper levels and the roof use the validated per-side setback."
+                        if request.upper_floor_setback_sides_mm is not None
                         else (
                             "Every level repeats the same validated footprint and measured "
                             "floor height."

@@ -16,6 +16,7 @@ from app.engineering.house_box import (
     SpiralStairRequest,
     StairRequest,
     StraightStairRequest,
+    UpperFloorSetbackSides,
     UTurnStairRequest,
     WinderTurnStairRequest,
     stair_kind,
@@ -136,6 +137,17 @@ def _stair_request(body: StairBody) -> StairRequest:
     return StraightStairRequest(**body.model_dump())
 
 
+class UpperFloorSetbackSidesBody(BaseModel):
+    """Per-wall inset of every upper floor and the roof; X along the length, Y across it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x_min_mm: float = Field(default=0, ge=0, le=10_000, strict=True, allow_inf_nan=False)
+    x_max_mm: float = Field(default=0, ge=0, le=10_000, strict=True, allow_inf_nan=False)
+    y_min_mm: float = Field(default=0, ge=0, le=10_000, strict=True, allow_inf_nan=False)
+    y_max_mm: float = Field(default=0, ge=0, le=10_000, strict=True, allow_inf_nan=False)
+
+
 class HouseBoxBody(BaseModel):
     workspace_id: uuid.UUID
     project_id: uuid.UUID | None = None
@@ -147,6 +159,7 @@ class HouseBoxBody(BaseModel):
     shape: Literal["rectangle", "l_shape", "t_shape"] = "rectangle"
     stair: StairBody | None = None
     upper_floor_setback_mm: float = Field(default=0, ge=0, le=10_000)
+    upper_floor_setback_sides_mm: UpperFloorSetbackSidesBody | None = None
 
 
 class HouseBoxAccepted(BaseModel):
@@ -174,6 +187,11 @@ def build_house_box(
             shape=body.shape,
             stair=_stair_request(body.stair) if body.stair is not None else None,
             upper_floor_setback_mm=body.upper_floor_setback_mm,
+            upper_floor_setback_sides_mm=(
+                UpperFloorSetbackSides(**body.upper_floor_setback_sides_mm.model_dump())
+                if body.upper_floor_setback_sides_mm is not None
+                else None
+            ),
         )
     except ValueError as exc:
         raise ValidationFailedError(str(exc)) from exc

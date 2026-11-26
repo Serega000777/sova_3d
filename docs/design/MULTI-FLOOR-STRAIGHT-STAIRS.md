@@ -189,6 +189,29 @@ smaller upper rectangle before the job is accepted and again when the worker res
 This is geometric vertical alignment, not a claim that partitions, columns, wet stacks or load
 paths have been structurally engineered.
 
+## Per-side upper-floor setback follow-up
+
+`upper_floor_setback_sides_mm` is an optional alternative to the symmetric field with four
+independent insets `x_min_mm`, `x_max_mm`, `y_min_mm`, `y_max_mm` (strict finite numbers, 0–10,000
+mm each, unknown keys rejected). X runs along the house length; `y_min` is the wall a `left` stair
+stands against and `y_max` the `right` one. It applies to every level above the ground floor and
+the flat roof alike, so it models a one-sided terrace or balcony, not a different contour per
+level. The request fails closed when it is combined with a non-zero symmetric setback, when all
+four sides are zero, for a one-floor or L/T house, or when the remaining upper rectangle is below
+2,000 × 2,000 mm.
+
+The same `floor_rect` produces the shell origin, the roof and the stored 2D outline, so the exact
+geometry and the plan tabs cannot disagree. Equal sides produce an OperationPlan identical to the
+symmetric field, and symmetric or no-setback plans are byte-identical to before; job provenance
+only carries the new key when it was declared. Every stair kind is checked against the actual
+inset rectangle: a wall-side stair now fits when only the opposite wall is set back, and is
+rejected (422 before a job, and again in the worker) when its own wall is. Web and mobile share
+`checkUpperFloorSetbackSides`, `upperFloorInsets` and `stairFootprintFits` for immediate feedback.
+
+The facade editor rebuilds one full-footprint shell, so it now rejects both symmetric and
+per-side setback houses with `upper_floor_setback_not_supported` instead of silently erasing the
+setback. Cantilevers, supports and loads under the overhang are not computed.
+
 ## Geometric cross-floor review follow-up
 
 The authenticated read-only
@@ -216,13 +239,13 @@ This is not a general staircase or building-information model. It does not claim
 - spiral stairs, half-turn or other winder counts, winder railings or newel posts, or L stairs with
   unequal landing size;
 - independently configured flights per transition;
-- stairs inside L- or T-shaped footprints, asymmetric/per-level setbacks or shape changes;
+- stairs inside L- or T-shaped footprints, a different setback for each upper level or shape changes;
 - pitched roofs in this multi-floor scene path;
 - one atomic all-floor transaction (web coordinates separate immutable per-floor steps);
 - automatic structural optimization of partitions, columns, wet stacks or load paths; the
   geometric report is advisory evidence only;
-- facade rebuilding of the multi-body scene (the existing facade endpoint rejects this lineage
-  fail closed instead of silently replacing it with its historical single shell);
+- facade rebuilding of the multi-body scene (the existing facade endpoint rejects stair and setback
+  lineages fail closed instead of silently replacing them with its historical single shell);
 - structural-code compliance (the 550–700 mm stride is a comfort rule, not a code check), stringers, headroom proof or baluster detailing;
 - physical browser/device visual acceptance.
 

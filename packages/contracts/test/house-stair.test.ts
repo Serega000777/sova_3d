@@ -4,9 +4,13 @@ import { test } from "node:test";
 
 import {
   checkSpiralStair,
+  checkUpperFloorSetbackSides,
   checkWinderStair,
   SPIRAL_STAIR_LIMITS,
   SPIRAL_STAIR_PROBLEM_TEXT,
+  stairFootprintFits,
+  UPPER_FLOOR_SETBACK_PROBLEM_TEXT,
+  upperFloorInsets,
   WINDER_STAIR_LIMITS,
   WINDER_STAIR_PROBLEM_TEXT,
   type SpiralStairInput,
@@ -115,4 +119,38 @@ test("the shared spiral check rejects every server boundary before submit", () =
   assert.equal(checkSpiralStair({ ...spiralBase, houseLengthMm: 2_900, houseWidthMm: 2_900 }).problem, null);
   assert.deepEqual(SPIRAL_STAIR_LIMITS.steps, [10, 20]);
   for (const text of Object.values(SPIRAL_STAIR_PROBLEM_TEXT)) assert.ok(text.ru && text.en);
+});
+
+test("per-side upper-floor setbacks mirror the server bounds", () => {
+  const none = { xMinMm: 0, xMaxMm: 0, yMinMm: 0, yMaxMm: 0 };
+  assert.equal(checkUpperFloorSetbackSides({ ...none, xMaxMm: 3_000, yMinMm: 1_000 }, 12_000, 8_000), null);
+  assert.equal(checkUpperFloorSetbackSides(none, 12_000, 8_000), "empty");
+  assert.equal(checkUpperFloorSetbackSides({ ...none, xMinMm: -1 }, 12_000, 8_000), "side");
+  assert.equal(checkUpperFloorSetbackSides({ ...none, xMinMm: 10_001 }, 12_000, 8_000), "side");
+  assert.equal(checkUpperFloorSetbackSides({ ...none, xMinMm: Number.NaN }, 12_000, 8_000), "side");
+  assert.equal(checkUpperFloorSetbackSides({ ...none, yMinMm: 6_001 }, 12_000, 8_000), "upper_floor");
+  assert.equal(checkUpperFloorSetbackSides({ ...none, xMinMm: 5_000, xMaxMm: 5_000 }, 12_000, 8_000), null);
+  for (const text of Object.values(UPPER_FLOOR_SETBACK_PROBLEM_TEXT)) assert.ok(text.ru && text.en);
+  assert.deepEqual(upperFloorInsets(500), { xMinMm: 500, xMaxMm: 500, yMinMm: 500, yMaxMm: 500 });
+  assert.deepEqual(upperFloorInsets(500, { ...none, yMaxMm: 10 }), { ...none, yMaxMm: 10 });
+});
+
+test("stair fit follows the server placement against the inset upper walls", () => {
+  const none = { xMinMm: 0, xMaxMm: 0, yMinMm: 0, yMaxMm: 0 };
+  const straight = { footprint: { x: 4_760, y: 1_000 }, houseLengthMm: 12_000, houseWidthMm: 8_000 };
+  assert.equal(stairFootprintFits({ ...straight, placement: "left", insets: none }), true);
+  // A left-wall stair is cut by a left setback but not by one on the opposite wall.
+  assert.equal(stairFootprintFits({ ...straight, placement: "left", insets: { ...none, yMinMm: 1 } }), false);
+  assert.equal(stairFootprintFits({ ...straight, placement: "left", insets: { ...none, yMaxMm: 1_000 } }), true);
+  // A centred stair is cut once an X inset reaches its centred run.
+  assert.equal(stairFootprintFits({ ...straight, placement: "center", insets: { ...none, xMaxMm: 3_270 } }), true);
+  assert.equal(stairFootprintFits({ ...straight, placement: "center", insets: { ...none, xMaxMm: 3_271 } }), false);
+
+  const winder = { ...base, placement: "left" as const };
+  assert.equal(checkWinderStair({ ...winder, upperFloorSetbackSides: { ...none, yMaxMm: 1_000 } }).problem, null);
+  assert.equal(checkWinderStair({ ...winder, upperFloorSetbackSides: { ...none, yMinMm: 100 } }).problem, "setback_placement");
+  // Explicit sides replace the symmetric value instead of adding to it.
+  assert.equal(checkWinderStair({ ...winder, upperFloorSetbackMm: 100, upperFloorSetbackSides: { ...none, yMaxMm: 100 } }).problem, null);
+  assert.equal(checkSpiralStair({ ...spiralBase, placement: "left", upperFloorSetbackSides: { ...none, yMaxMm: 1_000 } }).problem, null);
+  assert.equal(checkSpiralStair({ ...spiralBase, placement: "left", upperFloorSetbackSides: { ...none, yMinMm: 1 } }).problem, "fit");
 });

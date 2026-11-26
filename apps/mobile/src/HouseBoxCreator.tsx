@@ -1,4 +1,4 @@
-import { checkSpiralStair, checkWinderStair, type HouseBoxBody, type PhysicalAiClient, SPIRAL_STAIR_PROBLEM_TEXT, WINDER_STAIR_PROBLEM_TEXT } from "@physical-ai/contracts";
+import { checkSpiralStair, checkUpperFloorSetbackSides, checkWinderStair, type HouseBoxBody, type PhysicalAiClient, SPIRAL_STAIR_PROBLEM_TEXT, stairFootprintFits, UPPER_FLOOR_SETBACK_PROBLEM_TEXT, upperFloorInsets, WINDER_STAIR_PROBLEM_TEXT } from "@physical-ai/contracts";
 import { useMemo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
@@ -64,6 +64,11 @@ export function HouseBoxCreator({
   const [floors, setFloors] = useState<1 | 2 | 3>(2);
   const [shape, setShape] = useState<Shape>("rectangle");
   const [upperFloorSetbackMm, setUpperFloorSetbackMm] = useState("0");
+  const [perSideSetback, setPerSideSetback] = useState(false);
+  const [setbackXMinMm, setSetbackXMinMm] = useState("0");
+  const [setbackXMaxMm, setSetbackXMaxMm] = useState("0");
+  const [setbackYMinMm, setSetbackYMinMm] = useState("0");
+  const [setbackYMaxMm, setSetbackYMaxMm] = useState("0");
   const [addStair, setAddStair] = useState(false);
   const [stairKind, setStairKind] = useState<StairKind>("straight");
   const [stairWidthMm, setStairWidthMm] = useState("1000");
@@ -102,7 +107,19 @@ export function HouseBoxCreator({
     spiralSteps: numberValue(spiralSteps),
     spiralSweep: numberValue(spiralSweepDeg),
     upperFloorSetback: numberValue(upperFloorSetbackMm),
-  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps, uFlightSteps, winderLowerSteps, winderUpperSteps, newelMm, spiralDiameterMm, spiralPostDiameterMm, spiralSteps, spiralSweepDeg, upperFloorSetbackMm]);
+    setbackXMin: numberValue(setbackXMinMm),
+    setbackXMax: numberValue(setbackXMaxMm),
+    setbackYMin: numberValue(setbackYMinMm),
+    setbackYMax: numberValue(setbackYMaxMm),
+  }), [lengthM, widthM, floorHeightM, stairWidthMm, treadMm, straightSteps, lowerSteps, upperSteps, uFlightSteps, winderLowerSteps, winderUpperSteps, newelMm, spiralDiameterMm, spiralPostDiameterMm, spiralSteps, spiralSweepDeg, upperFloorSetbackMm, setbackXMinMm, setbackXMaxMm, setbackYMinMm, setbackYMaxMm]);
+
+  const setbackAllowed = floors > 1 && shape === "rectangle";
+  // Per-side insets replace the symmetric setback; the server rejects a request with both.
+  const upperInset = setbackAllowed && !perSideSetback ? dimensions.upperFloorSetback : 0;
+  const setbackSides = useMemo(() => (setbackAllowed && perSideSetback
+    ? { xMinMm: dimensions.setbackXMin, xMaxMm: dimensions.setbackXMax, yMinMm: dimensions.setbackYMin, yMaxMm: dimensions.setbackYMax }
+    : null), [setbackAllowed, perSideSetback, dimensions]);
+  const sidesProblem = setbackSides ? checkUpperFloorSetbackSides(setbackSides, dimensions.length, dimensions.width) : null;
 
   const winder = useMemo(() => checkWinderStair({
     widthMm: dimensions.stairWidth,
@@ -114,8 +131,9 @@ export function HouseBoxCreator({
     houseLengthMm: dimensions.length,
     houseWidthMm: dimensions.width,
     floorHeightMm: dimensions.floorHeight,
-    upperFloorSetbackMm: dimensions.upperFloorSetback,
-  }), [dimensions]);
+    upperFloorSetbackMm: upperInset,
+    upperFloorSetbackSides: setbackSides,
+  }), [dimensions, upperInset, setbackSides]);
 
   const spiral = useMemo(() => checkSpiralStair({
     diameterMm: dimensions.spiralDiameter,
@@ -126,8 +144,9 @@ export function HouseBoxCreator({
     houseLengthMm: dimensions.length,
     houseWidthMm: dimensions.width,
     floorHeightMm: dimensions.floorHeight,
-    upperFloorSetbackMm: dimensions.upperFloorSetback,
-  }), [dimensions]);
+    upperFloorSetbackMm: upperInset,
+    upperFloorSetbackSides: setbackSides,
+  }), [dimensions, upperInset, setbackSides]);
 
   const stairProblem = useMemo(() => {
     if (!addStair || !stairAllowed) return null;
@@ -173,12 +192,15 @@ export function HouseBoxCreator({
       : stairKind === "l_turn"
         ? dimensions.stairWidth + dimensions.tread * dimensions.upperSteps
         : 2 * dimensions.stairWidth;
-    if (
-      footprintLength > dimensions.length - 2 * dimensions.upperFloorSetback - 700
-      || footprintWidth > dimensions.width - 2 * dimensions.upperFloorSetback - 700
-    ) return "Лестница и проёмы не помещаются с отступом 350 мм от стен.";
+    if (!stairFootprintFits({
+      footprint: { x: footprintLength, y: footprintWidth },
+      placement: "center",
+      houseLengthMm: dimensions.length,
+      houseWidthMm: dimensions.width,
+      insets: upperFloorInsets(upperInset, setbackSides),
+    })) return "Лестница и проёмы не помещаются с отступом 350 мм от стен и верхнего контура.";
     return null;
-  }, [addStair, stairAllowed, stairKind, dimensions, spiral, winder]);
+  }, [addStair, stairAllowed, stairKind, dimensions, spiral, winder, upperInset, setbackSides]);
 
   async function create() {
     if (busy) return;
@@ -210,10 +232,11 @@ export function HouseBoxCreator({
       || !Number.isFinite(dimensions.upperFloorSetback)
       || dimensions.upperFloorSetback < 0
       || dimensions.upperFloorSetback > 10_000
-      || (floors > 1 && shape === "rectangle" && dimensions.upperFloorSetback > 0 && (
-        dimensions.length - 2 * dimensions.upperFloorSetback < 2_000
-        || dimensions.width - 2 * dimensions.upperFloorSetback < 2_000
+      || (upperInset > 0 && (
+        dimensions.length - 2 * upperInset < 2_000
+        || dimensions.width - 2 * upperInset < 2_000
       ))
+      || sidesProblem !== null
       || (stairEnabled && (
         stairDimensions.some((value) => !Number.isFinite(value))
         || (stairKind !== "spiral" && (
@@ -225,7 +248,7 @@ export function HouseBoxCreator({
         || stairProblem !== null
       ))
     ) {
-      setError(stairProblem ?? "Проверьте размеры: дом 2–50 м, этаж 2,2–6 м, марш 700–2000 мм.");
+      setError((sidesProblem && UPPER_FLOOR_SETBACK_PROBLEM_TEXT[sidesProblem].ru) ?? stairProblem ?? "Проверьте размеры: дом 2–50 м, этаж 2,2–6 м, марш 700–2000 мм.");
       return;
     }
     const stair: HouseBoxBody["stair"] = !stairEnabled
@@ -299,7 +322,10 @@ export function HouseBoxCreator({
           floors,
           shape,
           stair,
-          upper_floor_setback_mm: floors > 1 && shape === "rectangle" ? dimensions.upperFloorSetback : 0,
+          upper_floor_setback_mm: upperInset,
+          upper_floor_setback_sides_mm: setbackSides
+            ? { x_min_mm: setbackSides.xMinMm, x_max_mm: setbackSides.xMaxMm, y_min_mm: setbackSides.yMinMm, y_max_mm: setbackSides.yMaxMm }
+            : null,
         },
         `mobile-house-box-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       );
@@ -326,8 +352,29 @@ export function HouseBoxCreator({
         <Choice value="l_shape" selected={shape} label="Г-форма" disabled={busy} onChange={(value) => { setShape(value); setAddStair(false); }} />
         <Choice value="t_shape" selected={shape} label="Т-форма" disabled={busy} onChange={(value) => { setShape(value); setAddStair(false); }} />
       </View>
-      {floors > 1 && shape === "rectangle" ? (
-        <TextInput style={styles.input} value={upperFloorSetbackMm} editable={!busy} onChangeText={setUpperFloorSetbackMm} keyboardType="number-pad" placeholder="Отступ верхних этажей, мм" placeholderTextColor={colors.muted} accessibilityLabel="Симметричный отступ верхних этажей в миллиметрах" />
+      {setbackAllowed ? (
+        <>
+          <Pressable style={[styles.chip, perSideSetback && { borderColor: colors.accent, backgroundColor: colors.accentWash }]} disabled={busy} onPress={() => setPerSideSetback((value) => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: perSideSetback }}>
+            <Text style={styles.chipText}>Отступ по сторонам (терраса, балкон)</Text>
+          </Pressable>
+          {perSideSetback ? (
+            <>
+              <View style={styles.row}>
+                <TextInput style={[styles.input, { flex: 1 }]} value={setbackXMinMm} editable={!busy} onChangeText={setSetbackXMinMm} keyboardType="number-pad" placeholder="X = 0, мм" placeholderTextColor={colors.muted} accessibilityLabel="Отступ верхних этажей от стены X = 0 в миллиметрах" />
+                <TextInput style={[styles.input, { flex: 1 }]} value={setbackXMaxMm} editable={!busy} onChangeText={setSetbackXMaxMm} keyboardType="number-pad" placeholder="X = длина, мм" placeholderTextColor={colors.muted} accessibilityLabel="Отступ верхних этажей от стены X = длина в миллиметрах" />
+              </View>
+              <View style={styles.row}>
+                <TextInput style={[styles.input, { flex: 1 }]} value={setbackYMinMm} editable={!busy} onChangeText={setSetbackYMinMm} keyboardType="number-pad" placeholder="Слева (Y = 0), мм" placeholderTextColor={colors.muted} accessibilityLabel="Отступ верхних этажей от левой стены в миллиметрах" />
+                <TextInput style={[styles.input, { flex: 1 }]} value={setbackYMaxMm} editable={!busy} onChangeText={setSetbackYMaxMm} keyboardType="number-pad" placeholder="Справа (Y = ширина), мм" placeholderTextColor={colors.muted} accessibilityLabel="Отступ верхних этажей от правой стены в миллиметрах" />
+              </View>
+              <Text style={styles.muted}>
+                {sidesProblem ? UPPER_FLOOR_SETBACK_PROBLEM_TEXT[sidesProblem].ru : "Верхние этажи и крыша смещаются от выбранных стен. Это геометрия, а не расчёт консолей или опор."}
+              </Text>
+            </>
+          ) : (
+            <TextInput style={styles.input} value={upperFloorSetbackMm} editable={!busy} onChangeText={setUpperFloorSetbackMm} keyboardType="number-pad" placeholder="Отступ верхних этажей, мм" placeholderTextColor={colors.muted} accessibilityLabel="Симметричный отступ верхних этажей в миллиметрах" />
+          )}
+        </>
       ) : null}
       <View style={styles.row}>
         <TextInput style={[styles.input, { flex: 1 }]} value={lengthM} editable={!busy} onChangeText={setLengthM} keyboardType="decimal-pad" placeholder="Длина, м" placeholderTextColor={colors.muted} accessibilityLabel="Длина дома в метрах" />

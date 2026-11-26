@@ -78,6 +78,9 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
         "stair": asdict(request.stair) if request.stair is not None else None,
         "upper_floor_setback_mm": request.upper_floor_setback_mm,
     }
+    if request.upper_floor_setback_sides_mm is not None:
+        # Only present when declared, so historical provenance stays byte-identical.
+        request_data["upper_floor_setback_sides_mm"] = asdict(request.upper_floor_setback_sides_mm)
     floor_plan = floor_plan_from_house_box(
         request,
         plan_id=f"project-{project_id}-floor-1",

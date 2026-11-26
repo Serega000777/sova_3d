@@ -17,6 +17,7 @@ from app.engineering.house_box import (
     LTurnStairRequest,
     SpiralStairRequest,
     StraightStairRequest,
+    UpperFloorSetbackSides,
     UTurnStairRequest,
     WinderTurnStairRequest,
     l_stair_layout,
@@ -996,6 +997,105 @@ def test_stair_must_fit_inside_setback_upper_floor() -> None:
             floors=2,
             upper_floor_setback_mm=1_500,
             stair=StraightStairRequest(placement="left"),
+        )
+
+
+def test_per_side_setback_offsets_shell_roof_plans_and_keeps_symmetric_plan() -> None:
+    request = HouseBoxRequest(
+        length_mm=12_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=3,
+        upper_floor_setback_sides_mm=UpperFloorSetbackSides(x_max_mm=3_000, y_min_mm=1_000),
+    )
+    plan = request.build()
+    boxes = {op.id: op for op in plan.operations if isinstance(op, CreateBox)}
+    assert boxes["floor_1"].origin_mm == (0.0, 0.0, 0.0)
+    assert (boxes["floor_1"].width_mm, boxes["floor_1"].depth_mm) == (12_000.0, 8_000.0)
+    for body, z in (("floor_2", 3_000.0), ("floor_3", 6_000.0), ("roof", 9_000.0)):
+        assert boxes[body].origin_mm == (0.0, 1_000.0, z)
+        assert (boxes[body].width_mm, boxes[body].depth_mm) == (9_000.0, 7_000.0)
+    assert "per-side setback" in " ".join(plan.assumptions)
+
+    floors = floor_plans_from_house_box(
+        request, project_id="project", version_id="version", name="House"
+    )
+    assert floors.levels[1].plan.rooms[0].outline == [
+        (0.0, 1_000.0),
+        (9_000.0, 1_000.0),
+        (9_000.0, 8_000.0),
+        (0.0, 8_000.0),
+    ]
+
+    # Equal sides describe the same geometry as the historical symmetric field.
+    symmetric = replace(
+        request, upper_floor_setback_sides_mm=None, upper_floor_setback_mm=500
+    ).build()
+    equal_sides = replace(
+        request,
+        upper_floor_setback_sides_mm=UpperFloorSetbackSides(
+            x_min_mm=500, x_max_mm=500, y_min_mm=500, y_max_mm=500
+        ),
+    ).build()
+    assert equal_sides.operations == symmetric.operations
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"upper_floor_setback_mm": 200, "sides": {"x_min_mm": 100}}, "not both"),
+        ({"sides": {}}, "at least one positive side"),
+        ({"floors": 1, "sides": {"x_min_mm": 100}}, "at least two floors"),
+        ({"shape": "t_shape", "sides": {"x_min_mm": 100}}, "rectangular house"),
+        ({"sides": {"x_min_mm": 5_000, "x_max_mm": 5_001}}, "at least 2000 mm"),
+        ({"sides": {"y_min_mm": 6_001}}, "at least 2000 mm"),
+        ({"sides": {"x_min_mm": -1}}, "greater than or equal"),
+        ({"sides": {"x_min_mm": 10_001}}, "less than or equal"),
+        ({"sides": {"x_min_mm": float("nan")}}, "finite"),
+        ({"sides": {"x_min_mm": "100"}}, "valid number"),
+        ({"sides": {"front_mm": 100}}, "front_mm"),
+    ],
+)
+def test_invalid_per_side_setback_fails_before_kernel(values: dict[str, Any], message: str) -> None:
+    sides = values.pop("sides")
+    request = {
+        "length_mm": 12_000,
+        "width_mm": 8_000,
+        "floor_height_mm": 3_000,
+        "floors": 2,
+        **values,
+        "upper_floor_setback_sides_mm": sides,
+    }
+    with pytest.raises(ValidationError, match=message):
+        HouseBoxRequest(**request)
+
+
+def test_stair_against_a_set_back_wall_fails_but_opposite_wall_fits() -> None:
+    def house(stair: Any, **sides: float) -> HouseBoxRequest:
+        return HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=2,
+            upper_floor_setback_sides_mm=UpperFloorSetbackSides(**sides),
+            stair=stair,
+        )
+
+    stairs = [
+        StraightStairRequest(placement="left"),
+        LTurnStairRequest(kind="l_turn", placement="left"),
+        UTurnStairRequest(kind="u_turn", placement="left"),
+        WinderTurnStairRequest(kind="winder_turn", placement="left"),
+        SpiralStairRequest(kind="spiral", placement="left"),
+    ]
+    for stair in stairs:
+        with pytest.raises(ValidationError, match="setback upper floor"):
+            house(stair, y_min_mm=500)
+        # The left-wall stair keeps its clearance when only the opposite wall is set back.
+        plan = house(stair, y_max_mm=1_000).build()
+        assert any(
+            op.id == "stair_opening_2" or op.id.startswith("stair_opening_2_")
+            for op in plan.operations
         )
 
 
