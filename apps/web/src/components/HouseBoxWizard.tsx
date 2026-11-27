@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
 type Shape = HouseBoxBody["shape"];
+type StairPayload = NonNullable<HouseBoxBody["stair"]>;
 type Language = "ru" | "en";
 
 const SHAPES: readonly { id: Shape; glyph: string; ru: string; en: string }[] = [
@@ -52,6 +53,10 @@ export function HouseBoxWizard({
   const [spiralSweepDeg, setSpiralSweepDeg] = useState(300);
   const [stairTurn, setStairTurn] = useState<"left" | "right">("left");
   const [stairPlacement, setStairPlacement] = useState<"left" | "center" | "right">("center");
+  const [separateTopStair, setSeparateTopStair] = useState(false);
+  const [topStairPlacement, setTopStairPlacement] = useState<"left" | "center" | "right">("right");
+  const [topStairTurn, setTopStairTurn] = useState<"left" | "right">("right");
+  const [topStairMaterialId, setTopStairMaterialId] = useState<string>("interior.stone.grey-v1");
   const [railing, setRailing] = useState(true);
   const [stairMaterialId, setStairMaterialId] = useState<string>("interior.wood.oak-natural.v1");
   const [materials, setMaterials] = useState<InteriorMaterial[]>([]);
@@ -68,9 +73,12 @@ export function HouseBoxWizard({
   // Two floors keep the single per-side field; three floors send one entry per upper floor.
   const effectiveSides = setbackEnabled && perSideSetback && floors === 2 ? setbackSides : null;
   const perFloorSides = setbackEnabled && perSideSetback && floors === 3 ? [setbackSides, topFloorSides] : null;
-  // One stair rises through every upper floor, so it is checked against the tightest wall of each.
+  const separateTransitionMode = stairEnabled && floors === 3 && separateTopStair;
+  // Repeat mode checks every upper level; separate mode checks each destination floor itself.
   const stairSides = perFloorSides ? stackedUpperFloorInsets(perFloorSides) : effectiveSides;
-  const insets = upperFloorInsets(effectiveUpperInset, stairSides);
+  const primaryStairSides = separateTransitionMode && perFloorSides ? perFloorSides[0] : stairSides;
+  const topStairSides = separateTransitionMode && perFloorSides ? perFloorSides[1] : stairSides;
+  const insets = upperFloorInsets(effectiveUpperInset, primaryStairSides);
   const winder = checkWinderStair({
     widthMm: stairWidthMm,
     treadMm: treadDepthMm,
@@ -82,7 +90,7 @@ export function HouseBoxWizard({
     houseWidthMm: widthMm,
     floorHeightMm,
     upperFloorSetbackMm: effectiveUpperInset,
-    upperFloorSetbackSides: stairSides,
+    upperFloorSetbackSides: primaryStairSides,
   });
   const spiral = checkSpiralStair({
     diameterMm: spiralDiameterMm,
@@ -94,7 +102,32 @@ export function HouseBoxWizard({
     houseWidthMm: widthMm,
     floorHeightMm,
     upperFloorSetbackMm: effectiveUpperInset,
-    upperFloorSetbackSides: stairSides,
+    upperFloorSetbackSides: primaryStairSides,
+  });
+  const topWinder = checkWinderStair({
+    widthMm: stairWidthMm,
+    treadMm: treadDepthMm,
+    lowerSteps: winderLowerSteps,
+    upperSteps: winderUpperSteps,
+    newelMm,
+    placement: topStairPlacement,
+    houseLengthMm: lengthMm,
+    houseWidthMm: widthMm,
+    floorHeightMm,
+    upperFloorSetbackMm: effectiveUpperInset,
+    upperFloorSetbackSides: topStairSides,
+  });
+  const topSpiral = checkSpiralStair({
+    diameterMm: spiralDiameterMm,
+    postDiameterMm: spiralPostDiameterMm,
+    stepCount: spiralSteps,
+    sweepDeg: spiralSweepDeg,
+    placement: topStairPlacement,
+    houseLengthMm: lengthMm,
+    houseWidthMm: widthMm,
+    floorHeightMm,
+    upperFloorSetbackMm: effectiveUpperInset,
+    upperFloorSetbackSides: topStairSides,
   });
   // A turning landing counts as one riser and so does every winder, like the server's derivation.
   const riserCount = spiralStair ? spiralSteps : winderTurn ? winder.riserCount : lTurn ? lowerSteps + upperSteps + 1 : uTurn ? 2 * uFlightSteps + 1 : stepCount;
@@ -126,9 +159,24 @@ export function HouseBoxWizard({
       : strideMm < 550 || strideMm > 700
         ? (ru ? "2 × подъём + проступь должно быть 550–700 мм." : "2 × rise + tread must be 550–700 mm.")
         : null;
+  const topStairProblem = !separateTransitionMode
+    ? null
+    : spiralStair
+      ? topSpiral.problem && SPIRAL_STAIR_PROBLEM_TEXT[topSpiral.problem][language]
+      : winderTurn
+        ? topWinder.problem && WINDER_STAIR_PROBLEM_TEXT[topWinder.problem][language]
+        : !stairFootprintFits({
+            footprint: stairFootprint,
+            placement: topStairPlacement,
+            houseLengthMm: lengthMm,
+            houseWidthMm: widthMm,
+            insets: upperFloorInsets(effectiveUpperInset, topStairSides),
+          })
+          ? (ru ? "Лестница 2 → 3 не помещается в контур верхнего этажа." : "The 2 → 3 stair does not fit the top-floor footprint.")
+          : null;
   // The shared winder check already covers rise, fit and every bound with one message.
   const riseInvalid = !winderTurn && !spiralStair && (riserMm < 120 || riserMm > 220);
-  const stairInvalid = stairEnabled && (riserMm < 120 || riserMm > 220 || turningProblem !== null || stairFitProblem !== null);
+  const stairInvalid = stairEnabled && (riserMm < 120 || riserMm > 220 || turningProblem !== null || stairFitProblem !== null || topStairProblem !== null);
   const sidesProblem = perFloorSides
     ? checkUpperFloorSetbackLevels(perFloorSides, floors, lengthMm, widthMm)
     : effectiveSides ? checkUpperFloorSetbackSides(effectiveSides, lengthMm, widthMm) : null;
@@ -148,6 +196,23 @@ export function HouseBoxWizard({
     setBusy(true);
     setError(null);
     try {
+      const stairPayload = (
+        placement: typeof stairPlacement,
+        turn: typeof stairTurn,
+        materialId: string,
+      ): StairPayload => lTurn
+        ? { kind: "l_turn", width_mm: stairWidthMm, tread_depth_mm: treadDepthMm, lower_step_count: lowerSteps, upper_step_count: upperSteps, turn, placement, railing, material_id: materialId || null }
+        : winderTurn
+          ? { kind: "winder_turn", width_mm: stairWidthMm, tread_depth_mm: treadDepthMm, lower_step_count: winderLowerSteps, upper_step_count: winderUpperSteps, newel_mm: newelMm, turn, placement, railing: false, material_id: materialId || null }
+          : spiralStair
+            ? { kind: "spiral", diameter_mm: spiralDiameterMm, post_diameter_mm: spiralPostDiameterMm, step_count: spiralSteps, sweep_deg: spiralSweepDeg, turn, placement, railing: false, material_id: materialId || null }
+            : uTurn
+              ? { kind: "u_turn", width_mm: stairWidthMm, tread_depth_mm: treadDepthMm, flight_step_count: uFlightSteps, turn, placement, railing, material_id: materialId || null }
+              : { kind: "straight", width_mm: stairWidthMm, tread_depth_mm: treadDepthMm, step_count: stepCount, placement, railing, material_id: materialId || null };
+      const repeatedStair = stairEnabled ? stairPayload(stairPlacement, stairTurn, stairMaterialId) : null;
+      const transitionStairs = repeatedStair && floors === 3 && separateTopStair
+        ? [repeatedStair, stairPayload(topStairPlacement, topStairTurn, topStairMaterialId)]
+        : null;
       const accepted = await client.buildHouseBox(
         {
           workspace_id: workspaceId,
@@ -164,65 +229,8 @@ export function HouseBoxWizard({
           upper_floor_setbacks_mm: perFloorSides
             ? perFloorSides.map((sides) => ({ x_min_mm: sides.xMinMm, x_max_mm: sides.xMaxMm, y_min_mm: sides.yMinMm, y_max_mm: sides.yMaxMm }))
             : null,
-          stair: !stairEnabled
-            ? null
-            : lTurn
-              ? {
-                  kind: "l_turn",
-                  width_mm: stairWidthMm,
-                  tread_depth_mm: treadDepthMm,
-                  lower_step_count: lowerSteps,
-                  upper_step_count: upperSteps,
-                  turn: stairTurn,
-                  placement: stairPlacement,
-                  railing,
-                  material_id: stairMaterialId || null,
-                }
-              : winderTurn
-                ? {
-                    kind: "winder_turn",
-                    width_mm: stairWidthMm,
-                    tread_depth_mm: treadDepthMm,
-                    lower_step_count: winderLowerSteps,
-                    upper_step_count: winderUpperSteps,
-                    newel_mm: newelMm,
-                    turn: stairTurn,
-                    placement: stairPlacement,
-                    railing: false,
-                    material_id: stairMaterialId || null,
-                  }
-              : spiralStair
-                ? {
-                    kind: "spiral",
-                    diameter_mm: spiralDiameterMm,
-                    post_diameter_mm: spiralPostDiameterMm,
-                    step_count: spiralSteps,
-                    sweep_deg: spiralSweepDeg,
-                    turn: stairTurn,
-                    placement: stairPlacement,
-                    railing: false,
-                    material_id: stairMaterialId || null,
-                  }
-              : uTurn
-                ? {
-                    kind: "u_turn",
-                    width_mm: stairWidthMm,
-                    tread_depth_mm: treadDepthMm,
-                    flight_step_count: uFlightSteps,
-                    turn: stairTurn,
-                    placement: stairPlacement,
-                    railing,
-                    material_id: stairMaterialId || null,
-                  }
-              : {
-                  kind: "straight",
-                  width_mm: stairWidthMm,
-                  tread_depth_mm: treadDepthMm,
-                  step_count: stepCount,
-                  placement: stairPlacement,
-                  railing,
-                  material_id: stairMaterialId || null,
-                },
+          stair: transitionStairs ? null : repeatedStair,
+          stairs: transitionStairs,
         },
         crypto.randomUUID(),
       );
@@ -426,6 +434,40 @@ export function HouseBoxWizard({
                       {ru ? "Ограждение" : "Railing"}
                     </label>
                   )}
+                  {floors === 3 && (
+                    <label className="check">
+                      <input type="checkbox" checked={separateTopStair} onChange={(event) => setSeparateTopStair(event.target.checked)} />
+                      {ru ? "Отдельная конфигурация лестницы 2 → 3" : "Separate stair configuration for 2 → 3"}
+                    </label>
+                  )}
+                  {floors === 3 && separateTopStair && (
+                    <>
+                      <label>
+                        <span>{ru ? "Расположение 2 → 3" : "Placement 2 → 3"}</span>
+                        <select className="input" value={topStairPlacement} onChange={(event) => setTopStairPlacement(event.target.value as typeof topStairPlacement)}>
+                          <option value="left">{ru ? "Слева" : "Left"}</option>
+                          <option value="center">{ru ? "По центру" : "Centre"}</option>
+                          <option value="right">{ru ? "Справа" : "Right"}</option>
+                        </select>
+                      </label>
+                      {(turning || spiralStair) && (
+                        <label>
+                          <span>{ru ? "Поворот 2 → 3" : "Turn 2 → 3"}</span>
+                          <select className="input" value={topStairTurn} onChange={(event) => setTopStairTurn(event.target.value as typeof topStairTurn)}>
+                            <option value="left">{ru ? "Налево / против часовой" : "Left / counter-clockwise"}</option>
+                            <option value="right">{ru ? "Направо / по часовой" : "Right / clockwise"}</option>
+                          </select>
+                        </label>
+                      )}
+                      <label>
+                        <span>{ru ? "Материал 2 → 3" : "Material 2 → 3"}</span>
+                        <select className="input" value={topStairMaterialId} onChange={(event) => setTopStairMaterialId(event.target.value)}>
+                          <option value="">{ru ? "Без материала" : "No material"}</option>
+                          {materials.map((material) => <option key={material.id} value={material.id}>{ru ? material.name_ru : material.name}</option>)}
+                        </select>
+                      </label>
+                    </>
+                  )}
                 </div>
                 <p className="house-total">
                   {ru ? "Подъём / проступь / длина" : "Rise / tread / run"}: <strong>{riserMm.toFixed(1)} / {(spiralStair ? spiral.goingMm : treadDepthMm).toFixed(0)} / {stairRunMm.toFixed(0)} {ru ? "мм" : "mm"}</strong>
@@ -451,6 +493,7 @@ export function HouseBoxWizard({
                   : "Change the step count: rise must be 120–220 mm."}</div>}
                 {turningProblem && !riseInvalid && <div className="error" role="alert">{turningProblem}</div>}
                 {stairFitProblem && !turningProblem && !riseInvalid && <div className="error" role="alert">{stairFitProblem}</div>}
+                {topStairProblem && !turningProblem && !riseInvalid && <div className="error" role="alert">{topStairProblem}</div>}
                 {winderTurn ? <span className="muted">{ru
                   ? "Ровно три забежные ступени по 30° вокруг открытого внутреннего просвета; каждая считается подъёмом. Ограждение, столб, прочность и строительные нормы для этого поворота не моделируются."
                   : "Exactly three 30° winders around an open newel void; each counts as one riser. Railings, a newel post, structure and building codes are not modelled for this turn."}</span> : spiralStair ? <span className="muted">{ru

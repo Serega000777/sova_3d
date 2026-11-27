@@ -229,6 +229,9 @@ class HouseBoxRequest:
     floors: FloorCount
     shape: HouseShape = "rectangle"
     stair: StairRequest | None = None
+    # Optional transition-specific stairs (1→2 first). This is mutually exclusive with the
+    # historical singular field, which remains the compatible "repeat on every level" mode.
+    stairs: tuple[StairRequest, ...] | None = None
     upper_floor_setback_mm: UpperFloorSetback = 0
     upper_floor_setback_sides_mm: UpperFloorSetbackSides | None = None
     # One per-side inset per upper floor (floor 2 first); the roof repeats the top floor.
@@ -243,6 +246,15 @@ class HouseBoxRequest:
         )
 
     def __post_init__(self) -> None:
+        if self.stairs is not None:
+            if self.stair is not None:
+                raise ValueError(
+                    "use either one repeated stair or transition-specific stairs, not both"
+                )
+            if len(self.stairs) != self.floors - 1 or not self.stairs:
+                raise ValueError(
+                    "transition-specific stairs need exactly one entry per floor transition"
+                )
         sides = self.upper_floor_setback_sides_mm
         if sides is not None:
             if self.upper_floor_setback_mm:
@@ -282,6 +294,17 @@ class HouseBoxRequest:
                         "each upper floor must stay within the floor below it (no overhang)"
                     )
                 below = (min_x, min_y, max_x, max_y)
+        if self.stairs is not None:
+            if self.floors < 2:
+                raise ValueError("transition-specific stairs require at least two floors")
+            if self.shape != "rectangle":
+                raise ValueError("the bounded stair builder currently requires a rectangular house")
+            for transition, stair in enumerate(self.stairs):
+                _validate_transition_stair(self, stair, transition + 1)
+            # Validate the complete mixed plan before a job can be persisted. This also enforces
+            # the shared OperationPlan ceiling across both independently configured transitions.
+            build(self)
+            return
         if self.stair is None:
             return
         if self.floors < 2:
@@ -323,6 +346,18 @@ class HouseBoxRequest:
         return build(self)
 
 
+def stairs_by_transition(request: HouseBoxRequest) -> tuple[StairRequest, ...]:
+    """Return one trusted stair per adjacent-floor transition.
+
+    Historical singular requests repeat the same immutable spec on every transition.
+    """
+    if request.stairs is not None:
+        return request.stairs
+    if request.stair is None:
+        return ()
+    return tuple(request.stair for _ in range(request.floors - 1))
+
+
 def _box(
     op_id: str,
     *,
@@ -353,17 +388,21 @@ def _fuse(op_id: str, *, target: str, tool: str) -> dict[str, object]:
     }
 
 
-def _stair_origin(request: HouseBoxRequest) -> tuple[float, float]:
+def _stair_origin(
+    request: HouseBoxRequest, stair: StraightStairRequest | None = None
+) -> tuple[float, float]:
     """Return a trusted in-footprint origin or reject an impossible stair/shaft."""
-    if not isinstance(request.stair, StraightStairRequest):  # pragma: no cover - callers prove
+    candidate = request.stair if stair is None else stair
+    if not isinstance(candidate, StraightStairRequest):  # pragma: no cover - callers prove
         raise ValueError("the house has no straight stair")
+    stair = candidate
     clearance = STAIR_CLEARANCE_MM
-    run = float(request.stair.tread_depth_mm) * request.stair.step_count
-    width = float(request.stair.width_mm)
+    run = float(stair.tread_depth_mm) * stair.step_count
+    width = float(stair.width_mm)
     x = (float(request.length_mm) - run) / 2
-    if request.stair.placement == "left":
+    if stair.placement == "left":
         y = clearance
-    elif request.stair.placement == "right":
+    elif stair.placement == "right":
         y = float(request.width_mm) - clearance - width
     else:
         y = (float(request.width_mm) - width) / 2
@@ -403,13 +442,19 @@ def floor_rect(request: HouseBoxRequest, floor_index: int) -> Rect:
     return (inset, inset, length - inset, width - inset)
 
 
-def _validate_stair_against_upper_floor(request: HouseBoxRequest) -> None:
+def _validate_stair_against_upper_floor(
+    request: HouseBoxRequest,
+    stair: StairRequest | None = None,
+    floor_indices: tuple[int, ...] | None = None,
+) -> None:
     """Fail closed when a stair/shaft leaves the reduced upper-floor footprint."""
-    if not request.has_upper_floor_setback or request.stair is None:
+    stair = request.stair if stair is None else stair
+    if not request.has_upper_floor_setback or stair is None:
         return
-    openings = _opening_rects(request)
-    # The same stair/shaft rises through every upper floor, so it must fit each of them.
-    for floor_index in range(1, request.floors):
+    openings = _opening_rects(request, stair)
+    # A repeated legacy stair fits every upper floor. A transition-specific stair only needs to
+    # fit the destination floor whose slab it pierces.
+    for floor_index in floor_indices or tuple(range(1, request.floors)):
         min_floor_x, min_floor_y, max_floor_x, max_floor_y = floor_rect(request, floor_index)
         for min_x, min_y, max_x, max_y in openings:
             if (
@@ -446,11 +491,14 @@ class LStairLayout:
         return [(x0, y0), (lx0, y0), (lx0, uy0), (lx1, uy0), (lx1, y1), (x0, y1)]
 
 
-def l_stair_layout(request: HouseBoxRequest) -> LStairLayout:
+def l_stair_layout(
+    request: HouseBoxRequest, stair: LTurnStairRequest | None = None
+) -> LStairLayout:
     """Place the L footprint inside the house or reject an impossible stair/opening."""
-    stair = request.stair
-    if not isinstance(stair, LTurnStairRequest):  # pragma: no cover - callers prove this first
+    candidate = request.stair if stair is None else stair
+    if not isinstance(candidate, LTurnStairRequest):  # pragma: no cover - callers prove this first
         raise ValueError("the house has no L-turn stair")
+    stair = candidate
     length = float(request.length_mm)
     house_width = float(request.width_mm)
     width = float(stair.width_mm)
@@ -518,11 +566,14 @@ class UStairLayout:
         return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
 
 
-def u_stair_layout(request: HouseBoxRequest) -> UStairLayout:
+def u_stair_layout(
+    request: HouseBoxRequest, stair: UTurnStairRequest | None = None
+) -> UStairLayout:
     """Place a U footprint inside the house or reject an impossible stair/opening."""
-    stair = request.stair
-    if not isinstance(stair, UTurnStairRequest):  # pragma: no cover - callers prove this first
+    candidate = request.stair if stair is None else stair
+    if not isinstance(candidate, UTurnStairRequest):  # pragma: no cover - callers prove this first
         raise ValueError("the house has no U-turn stair")
+    stair = candidate
     length = float(request.length_mm)
     house_width = float(request.width_mm)
     width = float(stair.width_mm)
@@ -603,11 +654,14 @@ class WinderStairLayout:
         return [(x0, y0, tx1, y1), (ux0, min(ty0, uy0), ux1, max(ty1, uy1))]
 
 
-def winder_stair_layout(request: HouseBoxRequest) -> WinderStairLayout:
+def winder_stair_layout(
+    request: HouseBoxRequest, stair: WinderTurnStairRequest | None = None
+) -> WinderStairLayout:
     """Place the winder footprint inside the house or reject an impossible stair/opening."""
-    stair = request.stair
-    if not isinstance(stair, WinderTurnStairRequest):  # pragma: no cover - callers prove this
+    candidate = request.stair if stair is None else stair
+    if not isinstance(candidate, WinderTurnStairRequest):  # pragma: no cover - callers prove this
         raise ValueError("the house has no winder-turn stair")
+    stair = candidate
     length = float(request.length_mm)
     house_width = float(request.width_mm)
     width = float(stair.width_mm)
@@ -828,11 +882,14 @@ class SpiralStairLayout:
         return (a, b) if a < b else (b, a)
 
 
-def spiral_stair_layout(request: HouseBoxRequest) -> SpiralStairLayout:
+def spiral_stair_layout(
+    request: HouseBoxRequest, stair: SpiralStairRequest | None = None
+) -> SpiralStairLayout:
     """Place the spiral stair's circle inside the house or reject an impossible stair."""
-    stair = request.stair
-    if not isinstance(stair, SpiralStairRequest):  # pragma: no cover - callers prove this
+    candidate = request.stair if stair is None else stair
+    if not isinstance(candidate, SpiralStairRequest):  # pragma: no cover - callers prove this
         raise ValueError("the house has no spiral stair")
+    stair = candidate
     length = float(request.length_mm)
     house_width = float(request.width_mm)
     radius = float(stair.diameter_mm) / 2
@@ -899,6 +956,72 @@ def _validate_spiral_stair(request: HouseBoxRequest) -> None:
         raise ValueError("the spiral house plan does not match its derived operation count")
 
 
+def _validate_transition_stair(
+    request: HouseBoxRequest, stair: StairRequest, destination_floor: int
+) -> None:
+    """Validate one independently configured adjacent-floor stair without persisting anything."""
+    target = (destination_floor,)
+    if isinstance(stair, WinderTurnStairRequest):
+        if not 10 <= stair.step_count <= 30:
+            raise ValueError(
+                "a winder stair needs 10-30 risers in total (both flights plus three winders)"
+            )
+        rise = float(request.floor_height_mm) / stair.step_count
+        if not 120 <= rise <= 220:
+            raise ValueError(
+                "floor height divided by the total riser count must produce a 120-220 mm rise"
+            )
+        low, high = L_STAIR_STRIDE_MM
+        if not low <= 2 * rise + float(stair.tread_depth_mm) <= high:
+            raise ValueError("2 × rise + tread must stay within 550-700 mm for a turning stair")
+        if not low <= 2 * rise + stair.walkline_going_mm <= high:
+            raise ValueError(
+                "2 × rise + winder walking-line going must stay within 550-700 mm; change newel_mm"
+            )
+        winder_stair_layout(request, stair)
+    elif isinstance(stair, SpiralStairRequest):
+        rise = float(request.floor_height_mm) / stair.step_count
+        if not 120 <= rise <= 220:
+            raise ValueError(
+                "floor height divided by the riser count must produce a 120-220 mm rise"
+            )
+        if not SPIRAL_TREAD_ANGLE_DEG[0] <= stair.tread_angle_deg <= SPIRAL_TREAD_ANGLE_DEG[1]:
+            raise ValueError("sweep_deg / step_count must give a 10-30 degree tread angle")
+        if not SPIRAL_CLEAR_WIDTH_MM[0] <= stair.clear_width_mm <= SPIRAL_CLEAR_WIDTH_MM[1]:
+            raise ValueError("the clear tread width (diameter - post) / 2 must be 700-1400 mm")
+        if not SPIRAL_GOING_MM[0] <= stair.walkline_going_mm <= SPIRAL_GOING_MM[1]:
+            raise ValueError("the going on the walking line must be 200-400 mm")
+        if not L_STAIR_STRIDE_MM[0] <= 2 * rise + stair.walkline_going_mm <= L_STAIR_STRIDE_MM[1]:
+            raise ValueError("2 × rise + walking-line going must stay within 550-700 mm")
+        spiral_stair_layout(request, stair)
+    elif isinstance(stair, (LTurnStairRequest, UTurnStairRequest)):
+        if not 10 <= stair.step_count <= 30:
+            raise ValueError(
+                "a turning stair needs 10-30 risers in total (both flights plus the landing)"
+            )
+        rise = float(request.floor_height_mm) / stair.step_count
+        if not 120 <= rise <= 220:
+            raise ValueError(
+                "floor height divided by the total riser count must produce a 120-220 mm rise"
+            )
+        if (
+            not L_STAIR_STRIDE_MM[0]
+            <= 2 * rise + float(stair.tread_depth_mm)
+            <= L_STAIR_STRIDE_MM[1]
+        ):
+            raise ValueError("2 × rise + tread must stay within 550-700 mm for a turning stair")
+        if isinstance(stair, LTurnStairRequest):
+            l_stair_layout(request, stair)
+        else:
+            u_stair_layout(request, stair)
+    else:
+        rise = float(request.floor_height_mm) / stair.step_count
+        if not 120 <= rise <= 220:
+            raise ValueError("floor height divided by step count must produce a 120-220 mm rise")
+        _stair_origin(request, stair)
+    _validate_stair_against_upper_floor(request, stair, target)
+
+
 def _sector_sketch(
     center: tuple[float, float],
     start: tuple[float, float],
@@ -936,16 +1059,18 @@ def _spiral_opening_profile(layout: SpiralStairLayout) -> dict[str, object]:
 
 
 def _spiral_stair_operations(
-    request: HouseBoxRequest, layout: SpiralStairLayout, floor_index: int
+    request: HouseBoxRequest,
+    stair: SpiralStairRequest,
+    layout: SpiralStairLayout,
+    floor_index: int,
 ) -> tuple[list[dict[str, object]], list[str]]:
     """One fused exact spiral flight: sector treads stacked from the floor plus the post."""
-    assert isinstance(request.stair, SpiralStairRequest)
     z = floor_index * float(request.floor_height_mm)
     flight_id = f"stair_{floor_index + 1}_{floor_index + 2}"
     first_step = f"{flight_id}_step_1"
     points = [layout.point(angle) for angle in layout.angles_deg]
     operations: list[dict[str, object]] = []
-    for riser in range(1, request.stair.step_count + 1):
+    for riser in range(1, stair.step_count + 1):
         step_id = f"{flight_id}_step_{riser}"
         before, after = points[riser - 1], points[riser]
         start, end = (before, after) if layout.turn == "left" else (after, before)
@@ -1051,10 +1176,12 @@ def _extrude_polygon(
 
 
 def _l_stair_operations(
-    request: HouseBoxRequest, layout: LStairLayout, floor_index: int
+    request: HouseBoxRequest,
+    stair: LTurnStairRequest,
+    layout: LStairLayout,
+    floor_index: int,
 ) -> tuple[list[dict[str, object]], list[str]]:
     """One fused exact L flight (steps + landing) and optional exact rail bodies."""
-    assert isinstance(request.stair, LTurnStairRequest)
     z = floor_index * float(request.floor_height_mm)
     rise, tread, width = layout.rise, layout.tread, layout.width
     flight_id = f"stair_{floor_index + 1}_{floor_index + 2}"
@@ -1097,7 +1224,7 @@ def _l_stair_operations(
         if riser > 1:
             operations.append(_fuse(f"join_{step_id}", target=first_step, tool=step_id))
     outputs = [first_step]
-    if not request.stair.railing:
+    if not stair.railing:
         return operations, outputs
 
     rail = 50.0
@@ -1175,10 +1302,12 @@ def _l_stair_operations(
 
 
 def _u_stair_operations(
-    request: HouseBoxRequest, layout: UStairLayout, floor_index: int
+    request: HouseBoxRequest,
+    stair: UTurnStairRequest,
+    layout: UStairLayout,
+    floor_index: int,
 ) -> tuple[list[dict[str, object]], list[str]]:
     """One fused exact U flight (parallel runs + landing) and optional rail bodies."""
-    assert isinstance(request.stair, UTurnStairRequest)
     z = floor_index * float(request.floor_height_mm)
     rise, tread, width = layout.rise, layout.tread, layout.width
     flight_id = f"stair_{floor_index + 1}_{floor_index + 2}"
@@ -1221,7 +1350,7 @@ def _u_stair_operations(
         if riser > 1:
             operations.append(_fuse(f"join_{step_id}", target=first_step, tool=step_id))
     outputs = [first_step]
-    if not request.stair.railing:
+    if not stair.railing:
         return operations, outputs
 
     rail = 50.0
@@ -1299,10 +1428,12 @@ def _u_stair_operations(
 
 
 def _winder_stair_operations(
-    request: HouseBoxRequest, layout: WinderStairLayout, floor_index: int
+    request: HouseBoxRequest,
+    stair: WinderTurnStairRequest,
+    layout: WinderStairLayout,
+    floor_index: int,
 ) -> tuple[list[dict[str, object]], list[str]]:
     """One fused exact winder flight: lower boxes, three polygonal prisms, upper boxes."""
-    assert isinstance(request.stair, WinderTurnStairRequest)
     z = floor_index * float(request.floor_height_mm)
     rise, tread, width = layout.rise, layout.tread, layout.width
     flight_id = f"stair_{floor_index + 1}_{floor_index + 2}"
@@ -1310,7 +1441,7 @@ def _winder_stair_operations(
     operations: list[dict[str, object]] = []
     lower_x, lower_y, _, _ = layout.lower
     upper_x, upper_y, _, upper_y1 = layout.upper
-    for riser in range(1, request.stair.step_count + 1):
+    for riser in range(1, stair.step_count + 1):
         height = rise * riser
         if riser <= layout.lower_steps:
             step_id = f"{flight_id}_step_{riser}"
@@ -1347,26 +1478,26 @@ def _winder_stair_operations(
     return operations, [first_step]
 
 
-def _opening_rects(request: HouseBoxRequest) -> list[Rect]:
+def _opening_rects(request: HouseBoxRequest, stair: StairRequest | None = None) -> list[Rect]:
     """Upper-floor openings (before margin) that keep the whole stair footprint clear."""
-    stair = request.stair
+    stair = request.stair if stair is None else stair
     if isinstance(stair, LTurnStairRequest):
-        l_layout = l_stair_layout(request)
+        l_layout = l_stair_layout(request, stair)
         lower_x, lower_y, _, _ = l_layout.lower
         _, _, landing_x1, landing_y1 = l_layout.landing
         return [(lower_x, lower_y, landing_x1, landing_y1), l_layout.upper]
     if isinstance(stair, UTurnStairRequest):
-        u_layout = u_stair_layout(request)
+        u_layout = u_stair_layout(request, stair)
         min_x, min_y = u_layout.outline[0]
         max_x, max_y = u_layout.outline[2]
         return [(min_x, min_y, max_x, max_y)]
     if isinstance(stair, WinderTurnStairRequest):
-        return winder_stair_layout(request).opening_rects
+        return winder_stair_layout(request, stair).opening_rects
     if isinstance(stair, SpiralStairRequest):
         # Conservative square for setback checks; the real cut is the exact swept sector.
-        return [spiral_stair_layout(request).bounding_rect]
+        return [spiral_stair_layout(request, stair).bounding_rect]
     assert stair is not None
-    x, y = _stair_origin(request)
+    x, y = _stair_origin(request, stair)
     run = float(stair.tread_depth_mm) * stair.step_count
     return [(x, y, x + run, y + float(stair.width_mm))]
 
@@ -1446,10 +1577,9 @@ def _shape_body_operations(
 def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, object]], list[str]]:
     """Build separate footprint shells and optional exact stairs for scene-level visibility."""
     floor_height = float(request.floor_height_mm)
-    stair = request.stair
+    transition_stairs = stairs_by_transition(request)
     wall = WALL_MM
     opening_margin = OPENING_MARGIN_MM
-    openings = _opening_rects(request) if stair is not None else []
     operations: list[dict[str, object]] = []
     outputs: list[str] = []
 
@@ -1475,13 +1605,17 @@ def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, obj
                 "open_face": {"kind": "face_by_normal", "axis": "z", "sign": "+"},
             }
         )
+        stair = (
+            transition_stairs[floor_index - 1] if floor_index > 0 and transition_stairs else None
+        )
+        openings = _opening_rects(request, stair) if stair is not None else []
         if floor_index > 0 and isinstance(stair, SpiralStairRequest):
             opening_id = f"stair_opening_{floor_index + 1}"
             operations.extend(
                 [
                     _extrude_sketch(
                         opening_id,
-                        profile=_spiral_opening_profile(spiral_stair_layout(request)),
+                        profile=_spiral_opening_profile(spiral_stair_layout(request, stair)),
                         height_mm=wall + 2,
                         z_mm=z - 1,
                     ),
@@ -1519,47 +1653,43 @@ def _multifloor_operations(request: HouseBoxRequest) -> tuple[list[dict[str, obj
     )
     outputs.append("roof")
 
-    if stair is None:
+    if not transition_stairs:
         return operations, outputs
-    if isinstance(stair, LTurnStairRequest):
-        l_layout = l_stair_layout(request)
-        for floor_index in range(request.floors - 1):
-            flight_operations, flight_outputs = _l_stair_operations(request, l_layout, floor_index)
+    for floor_index, stair in enumerate(transition_stairs):
+        if isinstance(stair, LTurnStairRequest):
+            flight_operations, flight_outputs = _l_stair_operations(
+                request, stair, l_stair_layout(request, stair), floor_index
+            )
             operations.extend(flight_operations)
             outputs.extend(flight_outputs)
-        return operations, outputs
-    if isinstance(stair, UTurnStairRequest):
-        u_layout = u_stair_layout(request)
-        for floor_index in range(request.floors - 1):
-            flight_operations, flight_outputs = _u_stair_operations(request, u_layout, floor_index)
+            continue
+        if isinstance(stair, UTurnStairRequest):
+            flight_operations, flight_outputs = _u_stair_operations(
+                request, stair, u_stair_layout(request, stair), floor_index
+            )
             operations.extend(flight_operations)
             outputs.extend(flight_outputs)
-        return operations, outputs
-    if isinstance(stair, WinderTurnStairRequest):
-        winder_layout = winder_stair_layout(request)
-        for floor_index in range(request.floors - 1):
+            continue
+        if isinstance(stair, WinderTurnStairRequest):
             flight_operations, flight_outputs = _winder_stair_operations(
-                request, winder_layout, floor_index
+                request, stair, winder_stair_layout(request, stair), floor_index
             )
             operations.extend(flight_operations)
             outputs.extend(flight_outputs)
-        return operations, outputs
-    if isinstance(stair, SpiralStairRequest):
-        spiral_layout = spiral_stair_layout(request)
-        for floor_index in range(request.floors - 1):
+            continue
+        if isinstance(stair, SpiralStairRequest):
             flight_operations, flight_outputs = _spiral_stair_operations(
-                request, spiral_layout, floor_index
+                request, stair, spiral_stair_layout(request, stair), floor_index
             )
             operations.extend(flight_operations)
             outputs.extend(flight_outputs)
-        return operations, outputs
+            continue
 
-    tread = float(stair.tread_depth_mm)
-    stair_width = float(stair.width_mm)
-    rise = floor_height / stair.step_count
-    run = tread * stair.step_count
-    x, y = _stair_origin(request)
-    for floor_index in range(request.floors - 1):
+        tread = float(stair.tread_depth_mm)
+        stair_width = float(stair.width_mm)
+        rise = floor_height / stair.step_count
+        run = tread * stair.step_count
+        x, y = _stair_origin(request, stair)
         z = floor_index * floor_height
         flight_id = f"stair_{floor_index + 1}_{floor_index + 2}"
         first_step = f"{flight_id}_step_1"
@@ -1619,6 +1749,28 @@ def build(request: HouseBoxRequest) -> OperationPlan:
     width = float(request.width_mm)
     height = float(request.floor_height_mm) * request.floors
 
+    transition_stairs = stairs_by_transition(request)
+    if request.stairs is not None:
+        operations, outputs = _multifloor_operations(request)
+        kinds = ", ".join(stair_kind(stair).replace("_", "-") for stair in transition_stairs)
+        return OperationPlan.model_validate(
+            {
+                "schema_version": 1,
+                "goal": f"{request.floors}-floor house with transition-specific stairs",
+                "assumptions": [
+                    "All dimensions are millimetres.",
+                    "Each floor is a separate exact shell so floor visibility is deterministic.",
+                    f"Adjacent-floor transitions use independently validated stair types: {kinds}.",
+                ],
+                "operations": operations,
+                "validation_steps": [
+                    "Confirm every floor shell is a valid solid.",
+                    "Confirm every destination floor opening matches its own incoming stair.",
+                    "Confirm every transition reaches the exact floor-to-floor height.",
+                ],
+                "expected_outputs": outputs,
+            }
+        )
     if isinstance(request.stair, (LTurnStairRequest, UTurnStairRequest)):
         operations, outputs = _multifloor_operations(request)
         u_turn = isinstance(request.stair, UTurnStairRequest)

@@ -6,6 +6,7 @@ import { colors, styles } from "./theme";
 
 type Shape = "rectangle" | "l_shape" | "t_shape";
 type StairKind = "straight" | "l_turn" | "u_turn" | "winder_turn" | "spiral";
+type StairPayload = NonNullable<HouseBoxBody["stair"]>;
 
 function millimetres(value: string): number {
   return Number(value.replace(",", ".")) * 1_000;
@@ -89,6 +90,9 @@ export function HouseBoxCreator({
   const [spiralSteps, setSpiralSteps] = useState("15");
   const [spiralSweepDeg, setSpiralSweepDeg] = useState("300");
   const [turn, setTurn] = useState<"left" | "right">("left");
+  const [separateTopStair, setSeparateTopStair] = useState(false);
+  const [topStairPlacement, setTopStairPlacement] = useState<"left" | "center" | "right">("right");
+  const [topStairTurn, setTopStairTurn] = useState<"left" | "right">("right");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,8 +135,11 @@ export function HouseBoxCreator({
   const perFloorSides = useMemo(() => (setbackSides && floors === 3
     ? [setbackSides, { xMinMm: dimensions.topXMin, xMaxMm: dimensions.topXMax, yMinMm: dimensions.topYMin, yMaxMm: dimensions.topYMax }]
     : null), [setbackSides, floors, dimensions]);
-  // One stair rises through every upper floor, so it is checked against the tightest wall of each.
+  const separateTransitionMode = addStair && stairAllowed && floors === 3 && separateTopStair;
+  // Repeat mode checks every upper level; separate mode checks each destination floor itself.
   const stairSides = useMemo(() => (perFloorSides ? stackedUpperFloorInsets(perFloorSides) : setbackSides), [perFloorSides, setbackSides]);
+  const primaryStairSides = separateTransitionMode && perFloorSides ? perFloorSides[0] : stairSides;
+  const topStairSides = separateTransitionMode && perFloorSides ? perFloorSides[1] : stairSides;
   const sidesProblem = perFloorSides
     ? checkUpperFloorSetbackLevels(perFloorSides, floors, dimensions.length, dimensions.width)
     : setbackSides ? checkUpperFloorSetbackSides(setbackSides, dimensions.length, dimensions.width) : null;
@@ -148,8 +155,8 @@ export function HouseBoxCreator({
     houseWidthMm: dimensions.width,
     floorHeightMm: dimensions.floorHeight,
     upperFloorSetbackMm: upperInset,
-    upperFloorSetbackSides: stairSides,
-  }), [dimensions, upperInset, stairSides]);
+    upperFloorSetbackSides: primaryStairSides,
+  }), [dimensions, upperInset, primaryStairSides]);
 
   const spiral = useMemo(() => checkSpiralStair({
     diameterMm: dimensions.spiralDiameter,
@@ -161,16 +168,45 @@ export function HouseBoxCreator({
     houseWidthMm: dimensions.width,
     floorHeightMm: dimensions.floorHeight,
     upperFloorSetbackMm: upperInset,
-    upperFloorSetbackSides: stairSides,
-  }), [dimensions, upperInset, stairSides]);
+    upperFloorSetbackSides: primaryStairSides,
+  }), [dimensions, upperInset, primaryStairSides]);
+
+  const topWinder = useMemo(() => checkWinderStair({
+    widthMm: dimensions.stairWidth,
+    treadMm: dimensions.tread,
+    lowerSteps: dimensions.winderLowerSteps,
+    upperSteps: dimensions.winderUpperSteps,
+    newelMm: dimensions.newel,
+    placement: topStairPlacement,
+    houseLengthMm: dimensions.length,
+    houseWidthMm: dimensions.width,
+    floorHeightMm: dimensions.floorHeight,
+    upperFloorSetbackMm: upperInset,
+    upperFloorSetbackSides: topStairSides,
+  }), [dimensions, topStairPlacement, upperInset, topStairSides]);
+
+  const topSpiral = useMemo(() => checkSpiralStair({
+    diameterMm: dimensions.spiralDiameter,
+    postDiameterMm: dimensions.spiralPostDiameter,
+    stepCount: dimensions.spiralSteps,
+    sweepDeg: dimensions.spiralSweep,
+    placement: topStairPlacement,
+    houseLengthMm: dimensions.length,
+    houseWidthMm: dimensions.width,
+    floorHeightMm: dimensions.floorHeight,
+    upperFloorSetbackMm: upperInset,
+    upperFloorSetbackSides: topStairSides,
+  }), [dimensions, topStairPlacement, upperInset, topStairSides]);
 
   const stairProblem = useMemo(() => {
     if (!addStair || !stairAllowed) return null;
     if (stairKind === "winder_turn") {
-      return winder.problem ? WINDER_STAIR_PROBLEM_TEXT[winder.problem].ru : null;
+      const problem = winder.problem ?? (separateTransitionMode ? topWinder.problem : null);
+      return problem ? WINDER_STAIR_PROBLEM_TEXT[problem].ru : null;
     }
     if (stairKind === "spiral") {
-      return spiral.problem ? SPIRAL_STAIR_PROBLEM_TEXT[spiral.problem].ru : null;
+      const problem = spiral.problem ?? (separateTransitionMode ? topSpiral.problem : null);
+      return problem ? SPIRAL_STAIR_PROBLEM_TEXT[problem].ru : null;
     }
     const risers = stairKind === "straight"
       ? dimensions.straightSteps
@@ -213,10 +249,17 @@ export function HouseBoxCreator({
       placement: "center",
       houseLengthMm: dimensions.length,
       houseWidthMm: dimensions.width,
-      insets: upperFloorInsets(upperInset, stairSides),
+      insets: upperFloorInsets(upperInset, primaryStairSides),
     })) return "Лестница и проёмы не помещаются с отступом 350 мм от стен и верхнего контура.";
+    if (separateTransitionMode && !stairFootprintFits({
+      footprint: { x: footprintLength, y: footprintWidth },
+      placement: topStairPlacement,
+      houseLengthMm: dimensions.length,
+      houseWidthMm: dimensions.width,
+      insets: upperFloorInsets(upperInset, topStairSides),
+    })) return "Лестница 2 → 3 не помещается в контур верхнего этажа.";
     return null;
-  }, [addStair, stairAllowed, stairKind, dimensions, spiral, winder, upperInset, stairSides]);
+  }, [addStair, stairAllowed, stairKind, dimensions, spiral, winder, topSpiral, topWinder, separateTransitionMode, topStairPlacement, upperInset, primaryStairSides, topStairSides]);
 
   async function create() {
     if (busy) return;
@@ -267,15 +310,16 @@ export function HouseBoxCreator({
       setError((sidesProblem && upperFloorSetbackProblemText(sidesProblem).ru) ?? stairProblem ?? "Проверьте размеры: дом 2–50 м, этаж 2,2–6 м, марш 700–2000 мм.");
       return;
     }
-    const stair: HouseBoxBody["stair"] = !stairEnabled
-      ? null
-      : stairKind === "straight"
+    const stairFor = (
+      placement: "left" | "center" | "right",
+      stairTurn: "left" | "right",
+    ): StairPayload => stairKind === "straight"
         ? {
             kind: "straight",
             width_mm: dimensions.stairWidth,
             tread_depth_mm: dimensions.tread,
             step_count: dimensions.straightSteps,
-            placement: "center",
+            placement,
             railing: true,
             material_id: null,
           }
@@ -286,8 +330,8 @@ export function HouseBoxCreator({
             tread_depth_mm: dimensions.tread,
             lower_step_count: dimensions.lowerSteps,
             upper_step_count: dimensions.upperSteps,
-            turn,
-            placement: "center",
+            turn: stairTurn,
+            placement,
             railing: true,
             material_id: null,
           }
@@ -299,8 +343,8 @@ export function HouseBoxCreator({
                 lower_step_count: dimensions.winderLowerSteps,
                 upper_step_count: dimensions.winderUpperSteps,
                 newel_mm: dimensions.newel,
-                turn,
-                placement: "center",
+                turn: stairTurn,
+                placement,
                 railing: false,
                 material_id: null,
               }
@@ -311,8 +355,8 @@ export function HouseBoxCreator({
                   post_diameter_mm: dimensions.spiralPostDiameter,
                   step_count: dimensions.spiralSteps,
                   sweep_deg: dimensions.spiralSweep,
-                  turn,
-                  placement: "center",
+                  turn: stairTurn,
+                  placement,
                   railing: false,
                   material_id: null,
                 }
@@ -321,11 +365,15 @@ export function HouseBoxCreator({
               width_mm: dimensions.stairWidth,
               tread_depth_mm: dimensions.tread,
               flight_step_count: dimensions.uFlightSteps,
-              turn,
-              placement: "center",
+              turn: stairTurn,
+              placement,
               railing: true,
               material_id: null,
             };
+    const stair = stairEnabled ? stairFor("center", turn) : null;
+    const transitionStairs = stair && floors === 3 && separateTopStair
+      ? [stair, stairFor(topStairPlacement, topStairTurn)]
+      : null;
     setBusy(true);
     try {
       const accepted = await client.buildHouseBox(
@@ -337,7 +385,8 @@ export function HouseBoxCreator({
           floor_height_mm: dimensions.floorHeight,
           floors,
           shape,
-          stair,
+          stair: transitionStairs ? null : stair,
+          stairs: transitionStairs,
           upper_floor_setback_mm: upperInset,
           upper_floor_setback_sides_mm: setbackSides && !perFloorSides
             ? { x_min_mm: setbackSides.xMinMm, x_max_mm: setbackSides.xMaxMm, y_min_mm: setbackSides.yMinMm, y_max_mm: setbackSides.yMaxMm }
@@ -507,6 +556,27 @@ export function HouseBoxCreator({
                 </>
               )}
               {stairProblem ? <Text style={styles.error}>{stairProblem}</Text> : null}
+              {floors === 3 ? (
+                <Pressable style={[styles.chip, separateTopStair && { borderColor: colors.accent, backgroundColor: colors.accentWash }]} disabled={busy} onPress={() => setSeparateTopStair((value) => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: separateTopStair }}>
+                  <Text style={styles.chipText}>Отдельная лестница 2 → 3</Text>
+                </Pressable>
+              ) : null}
+              {floors === 3 && separateTopStair ? (
+                <>
+                  <Text style={styles.muted}>Расположение лестницы 2 → 3</Text>
+                  <View style={styles.row} accessibilityRole="radiogroup">
+                    <Choice value="left" selected={topStairPlacement} label="Слева" disabled={busy} onChange={setTopStairPlacement} />
+                    <Choice value="center" selected={topStairPlacement} label="По центру" disabled={busy} onChange={setTopStairPlacement} />
+                    <Choice value="right" selected={topStairPlacement} label="Справа" disabled={busy} onChange={setTopStairPlacement} />
+                  </View>
+                  {stairKind !== "straight" ? (
+                    <View style={styles.row} accessibilityRole="radiogroup">
+                      <Choice value="left" selected={topStairTurn} label="Поворот налево" disabled={busy} onChange={setTopStairTurn} />
+                      <Choice value="right" selected={topStairTurn} label="Поворот направо" disabled={busy} onChange={setTopStairTurn} />
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
             </View>
           ) : null}
         </>

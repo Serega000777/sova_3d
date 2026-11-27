@@ -193,6 +193,121 @@ def test_maximum_multifloor_stair_stays_within_operation_plan_limit() -> None:
         StraightStairRequest(step_count=31)
 
 
+def test_three_floor_house_accepts_independent_transition_stairs() -> None:
+    first = StraightStairRequest(
+        width_mm=900,
+        tread_depth_mm=280,
+        step_count=17,
+        placement="left",
+        railing=False,
+    )
+    second = LTurnStairRequest(
+        kind="l_turn",
+        width_mm=1_000,
+        tread_depth_mm=280,
+        lower_step_count=8,
+        upper_step_count=8,
+        placement="right",
+        turn="right",
+        railing=False,
+    )
+    request = HouseBoxRequest(
+        length_mm=12_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=3,
+        shape="rectangle",
+        stairs=(first, second),
+    )
+
+    plan = request.build()
+    assert plan.goal == "3-floor house with transition-specific stairs"
+    assert "stair_1_2_step_1" in plan.expected_outputs
+    assert "stair_2_3_step_1" in plan.expected_outputs
+    first_opening = next(op for op in plan.operations if op.id == "stair_opening_2")
+    second_opening = next(op for op in plan.operations if op.id == "stair_opening_3_1")
+    assert isinstance(first_opening, CreateBox)
+    assert isinstance(second_opening, CreateBox)
+    assert first_opening.origin_mm[1] < second_opening.origin_mm[1]
+
+    floors = floor_plans_from_house_box(
+        request, project_id="project", version_id="version", name="House"
+    )
+    assert [stair.kind for stair in floors.levels[1].plan.stairs] == ["straight", "l_turn"]
+    assert floors.levels[0].plan.stairs[0].outline != floors.levels[2].plan.stairs[0].outline
+
+
+@pytest.mark.parametrize(
+    ("stairs", "floors", "message"),
+    [
+        ((StraightStairRequest(),), 3, "exactly one entry per floor transition"),
+        ((StraightStairRequest(),), 1, "exactly one entry per floor transition"),
+    ],
+)
+def test_transition_stair_count_is_fail_closed(
+    stairs: tuple[StraightStairRequest, ...], floors: int, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=floors,  # type: ignore[arg-type]
+            shape="rectangle",
+            stairs=stairs,
+        )
+
+
+def test_repeated_and_transition_specific_stair_modes_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match="either one repeated stair"):
+        HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=2,
+            shape="rectangle",
+            stair=StraightStairRequest(),
+            stairs=(StraightStairRequest(),),
+        )
+
+
+def test_transition_stairs_validate_only_their_destination_floor_setback() -> None:
+    levels = (
+        UpperFloorSetbackSides(),
+        UpperFloorSetbackSides(y_min_mm=500),
+    )
+    request = HouseBoxRequest(
+        length_mm=12_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=3,
+        shape="rectangle",
+        stairs=(
+            StraightStairRequest(placement="left", railing=False),
+            StraightStairRequest(placement="right", railing=False),
+        ),
+        upper_floor_setbacks_mm=levels,
+    )
+    assert request.build().expected_outputs[-2:] == [
+        "stair_1_2_step_1",
+        "stair_2_3_step_1",
+    ]
+
+    with pytest.raises(ValueError, match="does not fit inside the setback upper floor"):
+        HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=3,
+            shape="rectangle",
+            stairs=(
+                StraightStairRequest(placement="left", railing=False),
+                StraightStairRequest(placement="left", railing=False),
+            ),
+            upper_floor_setbacks_mm=levels,
+        )
+
+
 @pytest.mark.parametrize(
     "payload, message",
     [

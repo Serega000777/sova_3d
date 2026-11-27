@@ -577,6 +577,64 @@ def test_multifloor_stair_creates_aligned_plans_and_floor_scene_groups(
     assert sum(operation.operation_type == "shell" for operation in logged) == 2
 
 
+def test_transition_specific_stairs_persist_and_render_distinct_floor_connections(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    response = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "label": "Дом с разными лестницами",
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 3,
+            "shape": "rectangle",
+            "stairs": [
+                {
+                    "kind": "straight",
+                    "placement": "left",
+                    "railing": False,
+                    "material_id": "interior.wood.oak-natural.v1",
+                },
+                {
+                    "kind": "l_turn",
+                    "placement": "right",
+                    "turn": "right",
+                    "railing": False,
+                    "material_id": "interior.stone.grey-v1",
+                },
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    project_id = response.json()["project_id"]
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    stored = result["house_box"]["request"]
+    assert stored["stair"] is None
+    assert [stair["kind"] for stair in stored["stairs"]] == ["straight", "l_turn"]
+
+    floor_set = api_client.get(f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers)
+    assert floor_set.status_code == 200, floor_set.text
+    levels = floor_set.json()["levels"]
+    assert [stair["kind"] for stair in levels[1]["plan"]["stairs"]] == ["straight", "l_turn"]
+    assert levels[0]["plan"]["stairs"][0]["outline"] != levels[2]["plan"]["stairs"][0]["outline"]
+
+    scene = api_client.get(f"/api/v1/models/{result['version_id']}/scene", headers=actor.headers)
+    assert scene.status_code == 200, scene.text
+    nodes = {node["id"]: node for node in scene.json()["nodes"]}
+    assert nodes["stair_1_2"]["name"].startswith("Лестница")
+    assert nodes["stair_2_3"]["name"].startswith("Г-образная")
+    assert nodes["stair_1_2"]["appearance"]["catalog_material_id"] == "interior.wood.oak-natural.v1"
+    assert nodes["stair_2_3"]["appearance"]["catalog_material_id"] == "interior.stone.grey-v1"
+
+
 def test_stair_rejects_impossible_or_unknown_material_before_enqueue(
     api_client: TestClient, actor: Actor
 ) -> None:
@@ -603,6 +661,77 @@ def test_stair_rejects_impossible_or_unknown_material_before_enqueue(
     )
     assert forged.status_code == 422
     assert forged.json()["error"]["details"]["material_id"] == "interior.wood.forged.v1"
+
+
+def test_transition_specific_stairs_reject_ambiguous_or_incomplete_requests(
+    api_client: TestClient, actor: Actor
+) -> None:
+    base = {
+        "workspace_id": str(actor.workspace.id),
+        "length_mm": 12_000,
+        "width_mm": 8_000,
+        "floor_height_mm": 3_000,
+        "floors": 3,
+        "shape": "rectangle",
+    }
+    cases = [
+        ({**base, "stairs": [{"kind": "straight"}]}, "exactly one entry per floor transition"),
+        (
+            {
+                **base,
+                "stair": {"kind": "straight"},
+                "stairs": [{"kind": "straight"}, {"kind": "straight"}],
+            },
+            "either stair or stairs",
+        ),
+        (
+            {
+                **base,
+                "stairs": [
+                    {"kind": "straight"},
+                    {"kind": "straight", "material_id": "interior.wood.forged.v1"},
+                ],
+            },
+            "unknown interior material",
+        ),
+    ]
+    for payload, message in cases:
+        response = api_client.post("/api/v1/house-boxes", json=payload, headers=actor.headers)
+        assert response.status_code == 422, response.text
+        assert message in response.text
+
+
+def test_worker_revalidates_tampered_transition_stair_count(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    response = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 3,
+            "shape": "rectangle",
+            "stairs": [{"kind": "straight"}, {"kind": "straight"}],
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    queued = db_session.get(Job, uuid.UUID(response.json()["job"]["job_id"]))
+    assert queued is not None
+    tampered = copy.deepcopy(queued.input)
+    tampered["request"]["stairs"] = tampered["request"]["stairs"][:1]
+    queued.input = tampered
+    db_session.flush()
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert (job.error or {})["code"] == "invalid_house_box"
+    assert "exactly one entry per floor transition" in str(job.error)
 
 
 def test_l_turn_stair_creates_l_plans_scene_groups_and_operation_log(

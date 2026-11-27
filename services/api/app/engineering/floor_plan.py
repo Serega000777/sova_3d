@@ -17,12 +17,14 @@ from app.engineering.house_box import (
     HouseBoxRequest,
     LTurnStairRequest,
     SpiralStairRequest,
+    StairRequest,
     UTurnStairRequest,
     WinderTurnStairRequest,
     _stair_origin,
     floor_rect,
     l_stair_layout,
     spiral_stair_layout,
+    stairs_by_transition,
     u_stair_layout,
     winder_stair_layout,
 )
@@ -329,124 +331,125 @@ def floor_plans_from_house_box(
     request: HouseBoxRequest, *, project_id: str, version_id: str, name: str
 ) -> BuildingFloorPlans:
     """Derive one aligned plan per floor, including the trusted stair/shaft footprint."""
-    levels: list[BuildingFloorLevel] = []
-    stair = request.stair
-    stair_fields: dict[str, object] | None = None
-    if isinstance(stair, LTurnStairRequest):
-        l_layout = l_stair_layout(request)
 
-        def corners(rect: tuple[float, float, float, float]) -> list[Point]:
-            min_x, min_y, max_x, max_y = rect
-            return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
+    def corners(rect: tuple[float, float, float, float]) -> list[Point]:
+        min_x, min_y, max_x, max_y = rect
+        return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
 
-        stair_fields = {
-            "kind": "l_turn",
-            "turn": stair.turn,
-            "outline": l_layout.outline,
-            "run_mm": stair.tread_depth_mm * (stair.lower_step_count + stair.upper_step_count),
-            "flights": [
-                PlanStairFlight(
-                    outline=corners(l_layout.lower),
-                    step_count=stair.lower_step_count,
-                    direction="+x",
+    def fields_for(stair: StairRequest) -> dict[str, object]:
+        if isinstance(stair, LTurnStairRequest):
+            l_layout = l_stair_layout(request, stair)
+            fields: dict[str, object] = {
+                "kind": "l_turn",
+                "turn": stair.turn,
+                "outline": l_layout.outline,
+                "run_mm": stair.tread_depth_mm * (stair.lower_step_count + stair.upper_step_count),
+                "flights": [
+                    PlanStairFlight(
+                        outline=corners(l_layout.lower),
+                        step_count=stair.lower_step_count,
+                        direction="+x",
+                    ),
+                    PlanStairFlight(
+                        outline=corners(l_layout.upper),
+                        step_count=stair.upper_step_count,
+                        direction="+y" if stair.turn == "left" else "-y",
+                    ),
+                ],
+                "landing": corners(l_layout.landing),
+            }
+        elif isinstance(stair, UTurnStairRequest):
+            u_layout = u_stair_layout(request, stair)
+            fields = {
+                "kind": "u_turn",
+                "turn": stair.turn,
+                "outline": u_layout.outline,
+                "run_mm": stair.tread_depth_mm * 2 * stair.flight_step_count,
+                "flights": [
+                    PlanStairFlight(
+                        outline=corners(u_layout.lower),
+                        step_count=stair.flight_step_count,
+                        direction="+x",
+                    ),
+                    PlanStairFlight(
+                        outline=corners(u_layout.upper),
+                        step_count=stair.flight_step_count,
+                        direction="-x",
+                    ),
+                ],
+                "landing": corners(u_layout.landing),
+            }
+        elif isinstance(stair, WinderTurnStairRequest):
+            w_layout = winder_stair_layout(request, stair)
+            fields = {
+                "kind": "winder_turn",
+                "turn": stair.turn,
+                "outline": w_layout.outline,
+                "run_mm": stair.tread_depth_mm * (stair.lower_step_count + stair.upper_step_count),
+                "flights": [
+                    PlanStairFlight(
+                        outline=corners(w_layout.lower),
+                        step_count=stair.lower_step_count,
+                        direction="+x",
+                    ),
+                    PlanStairFlight(
+                        outline=corners(w_layout.upper),
+                        step_count=stair.upper_step_count,
+                        direction="+y" if stair.turn == "left" else "-y",
+                    ),
+                ],
+                "winders": [list(winder) for winder in w_layout.winders],
+                "newel": corners(w_layout.newel),
+            }
+        elif isinstance(stair, SpiralStairRequest):
+            s_layout = spiral_stair_layout(request, stair)
+            angle = 360.0 / SPIRAL_OUTLINE_SIDES
+            radius = s_layout.radius / math.cos(math.radians(angle / 2))
+            low, high = s_layout.sweep_bounds_deg
+            fields = {
+                "kind": "spiral",
+                "turn": stair.turn,
+                "outline": [
+                    s_layout.point(angle * index, radius) for index in range(SPIRAL_OUTLINE_SIDES)
+                ],
+                "width_mm": stair.clear_width_mm,
+                "tread_depth_mm": stair.walkline_going_mm,
+                "run_mm": stair.walkline_radius_mm * math.radians(float(stair.sweep_deg)),
+                "spiral": PlanStairSpiral(
+                    center=s_layout.center,
+                    radius_mm=s_layout.radius,
+                    post_radius_mm=s_layout.post_radius,
+                    start_angle_deg=s_layout.angles_deg[0],
+                    sweep_deg=high - low,
                 ),
-                PlanStairFlight(
-                    outline=corners(l_layout.upper),
-                    step_count=stair.upper_step_count,
-                    direction="+y" if stair.turn == "left" else "-y",
-                ),
-            ],
-            "landing": corners(l_layout.landing),
-        }
-    elif isinstance(stair, UTurnStairRequest):
-        u_layout = u_stair_layout(request)
-
-        def corners(rect: tuple[float, float, float, float]) -> list[Point]:
-            min_x, min_y, max_x, max_y = rect
-            return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
-
-        stair_fields = {
-            "kind": "u_turn",
-            "turn": stair.turn,
-            "outline": u_layout.outline,
-            "run_mm": stair.tread_depth_mm * 2 * stair.flight_step_count,
-            "flights": [
-                PlanStairFlight(
-                    outline=corners(u_layout.lower),
-                    step_count=stair.flight_step_count,
-                    direction="+x",
-                ),
-                PlanStairFlight(
-                    outline=corners(u_layout.upper),
-                    step_count=stair.flight_step_count,
-                    direction="-x",
-                ),
-            ],
-            "landing": corners(u_layout.landing),
-        }
-    elif isinstance(stair, WinderTurnStairRequest):
-        w_layout = winder_stair_layout(request)
-
-        def corners(rect: tuple[float, float, float, float]) -> list[Point]:
-            min_x, min_y, max_x, max_y = rect
-            return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
-
-        stair_fields = {
-            "kind": "winder_turn",
-            "turn": stair.turn,
-            "outline": w_layout.outline,
-            # Flight run only, like the L-turn: winder goings vary across the tread.
-            "run_mm": stair.tread_depth_mm * (stair.lower_step_count + stair.upper_step_count),
-            "flights": [
-                PlanStairFlight(
-                    outline=corners(w_layout.lower),
-                    step_count=stair.lower_step_count,
-                    direction="+x",
-                ),
-                PlanStairFlight(
-                    outline=corners(w_layout.upper),
-                    step_count=stair.upper_step_count,
-                    direction="+y" if stair.turn == "left" else "-y",
-                ),
-            ],
-            "winders": [list(winder) for winder in w_layout.winders],
-            "newel": corners(w_layout.newel),
-        }
-    elif isinstance(stair, SpiralStairRequest):
-        s_layout = spiral_stair_layout(request)
-        step = 360.0 / SPIRAL_OUTLINE_SIDES
-        circumscribed = s_layout.radius / math.cos(math.radians(step / 2))
-        low, high = s_layout.sweep_bounds_deg
-        stair_fields = {
-            "kind": "spiral",
-            "turn": stair.turn,
-            "outline": [
-                s_layout.point(step * index, circumscribed) for index in range(SPIRAL_OUTLINE_SIDES)
-            ],
-            # Walking-line values: middle of the clear width between the post and the outer edge.
-            "width_mm": stair.clear_width_mm,
-            "tread_depth_mm": stair.walkline_going_mm,
-            "run_mm": stair.walkline_radius_mm * math.radians(float(stair.sweep_deg)),
-            "spiral": PlanStairSpiral(
-                center=s_layout.center,
-                radius_mm=s_layout.radius,
-                post_radius_mm=s_layout.post_radius,
-                start_angle_deg=s_layout.angles_deg[0],
-                sweep_deg=high - low,
+            }
+        else:
+            x, y = _stair_origin(request, stair)
+            run = float(stair.tread_depth_mm) * stair.step_count
+            fields = {
+                "outline": [
+                    (x, y),
+                    (x + run, y),
+                    (x + run, y + float(stair.width_mm)),
+                    (x, y + float(stair.width_mm)),
+                ],
+                "run_mm": run,
+            }
+        return {
+            **fields,
+            **(
+                {}
+                if isinstance(stair, SpiralStairRequest)
+                else {"width_mm": stair.width_mm, "tread_depth_mm": stair.tread_depth_mm}
             ),
+            "step_count": stair.step_count,
+            "riser_height_mm": float(request.floor_height_mm) / stair.step_count,
+            "railing": stair.railing,
+            "material_id": stair.material_id,
         }
-    elif stair is not None:
-        x, y = _stair_origin(request)
-        run = float(stair.tread_depth_mm) * stair.step_count
-        stair_fields = {
-            "outline": [
-                (x, y),
-                (x + run, y),
-                (x + run, y + float(stair.width_mm)),
-                (x, y + float(stair.width_mm)),
-            ],
-            "run_mm": run,
-        }
+
+    levels: list[BuildingFloorLevel] = []
+    transition_fields = [fields_for(stair) for stair in stairs_by_transition(request)]
     for floor_index in range(request.floors):
         plan = floor_plan_from_house_box(
             request,
@@ -454,43 +457,32 @@ def floor_plans_from_house_box(
             name=f"{name} · Floor {floor_index + 1}",
             floor_index=floor_index,
         )
-        if stair is not None and stair_fields is not None:
-            common = {
-                **stair_fields,
-                **(
-                    {}
-                    if isinstance(stair, SpiralStairRequest)
-                    else {"width_mm": stair.width_mm, "tread_depth_mm": stair.tread_depth_mm}
-                ),
-                "step_count": stair.step_count,
-                "riser_height_mm": float(request.floor_height_mm) / stair.step_count,
-                "railing": stair.railing,
-                "material_id": stair.material_id,
-            }
-            if floor_index > 0:
-                plan.stairs.append(
-                    PlanStair.model_validate(
-                        {
-                            **common,
-                            "id": f"stair_{floor_index}_{floor_index + 1}_down",
-                            "role": "down",
-                            "from_floor": floor_index - 1,
-                            "to_floor": floor_index,
-                        }
-                    )
+        if floor_index > 0 and transition_fields:
+            common = transition_fields[floor_index - 1]
+            plan.stairs.append(
+                PlanStair.model_validate(
+                    {
+                        **common,
+                        "id": f"stair_{floor_index}_{floor_index + 1}_down",
+                        "role": "down",
+                        "from_floor": floor_index - 1,
+                        "to_floor": floor_index,
+                    }
                 )
-            if floor_index < request.floors - 1:
-                plan.stairs.append(
-                    PlanStair.model_validate(
-                        {
-                            **common,
-                            "id": f"stair_{floor_index + 1}_{floor_index + 2}_up",
-                            "role": "up",
-                            "from_floor": floor_index,
-                            "to_floor": floor_index + 1,
-                        }
-                    )
+            )
+        if floor_index < request.floors - 1 and transition_fields:
+            common = transition_fields[floor_index]
+            plan.stairs.append(
+                PlanStair.model_validate(
+                    {
+                        **common,
+                        "id": f"stair_{floor_index + 1}_{floor_index + 2}_up",
+                        "role": "up",
+                        "from_floor": floor_index,
+                        "to_floor": floor_index + 1,
+                    }
                 )
+            )
         levels.append(
             BuildingFloorLevel(
                 index=floor_index,

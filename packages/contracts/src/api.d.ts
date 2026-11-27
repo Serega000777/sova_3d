@@ -7072,6 +7072,8 @@ export interface components {
             shape: "rectangle" | "l_shape" | "t_shape";
             /** Stair */
             stair?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"] | components["schemas"]["UTurnStairBody"] | components["schemas"]["WinderTurnStairBody"] | components["schemas"]["SpiralStairBody"]) | null;
+            /** Stairs */
+            stairs?: (components["schemas"]["StraightStairBody"] | components["schemas"]["LTurnStairBody"] | components["schemas"]["UTurnStairBody"] | components["schemas"]["WinderTurnStairBody"] | components["schemas"]["SpiralStairBody"])[] | null;
             /**
              * Upper Floor Setback Mm
              * @default 0

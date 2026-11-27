@@ -4,7 +4,7 @@ import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
@@ -158,12 +158,20 @@ class HouseBoxBody(BaseModel):
     floors: int = Field(ge=1, le=3)
     shape: Literal["rectangle", "l_shape", "t_shape"] = "rectangle"
     stair: StairBody | None = None
+    # Optional transition-specific stairs, 1→2 first. The domain layer enforces floors - 1.
+    stairs: list[StairBody] | None = Field(default=None, min_length=1, max_length=2)
     upper_floor_setback_mm: float = Field(default=0, ge=0, le=10_000)
     upper_floor_setback_sides_mm: UpperFloorSetbackSidesBody | None = None
     # Exactly ``floors - 1`` entries, floor 2 first; the roof repeats the top floor.
     upper_floor_setbacks_mm: list[UpperFloorSetbackSidesBody] | None = Field(
         default=None, min_length=1, max_length=2
     )
+
+    @model_validator(mode="after")
+    def one_stair_mode(self) -> "HouseBoxBody":
+        if self.stair is not None and self.stairs is not None:
+            raise ValueError("use either stair or stairs, not both")
+        return self
 
 
 class HouseBoxAccepted(BaseModel):
@@ -180,8 +188,9 @@ def build_house_box(
     principal: PrincipalDep,
     idempotency_key: IdempotencyKey = None,
 ) -> HouseBoxAccepted:
-    if body.stair is not None and body.stair.material_id is not None:
-        material_by_id(body.stair.material_id)
+    for stair in [body.stair] if body.stair is not None else body.stairs or []:
+        if stair.material_id is not None:
+            material_by_id(stair.material_id)
     try:
         request = HouseBoxRequest(
             length_mm=body.length_mm,
@@ -190,6 +199,7 @@ def build_house_box(
             floors=body.floors,
             shape=body.shape,
             stair=_stair_request(body.stair) if body.stair is not None else None,
+            stairs=(tuple(_stair_request(stair) for stair in body.stairs) if body.stairs else None),
             upper_floor_setback_mm=body.upper_floor_setback_mm,
             upper_floor_setback_sides_mm=(
                 UpperFloorSetbackSides(**body.upper_floor_setback_sides_mm.model_dump())

@@ -13,10 +13,13 @@ const planPage = read("../src/app/plan/page.tsx");
 const editor = read("../src/components/PlanEditor.tsx");
 
 test("the house-box wizard submits discriminated straight, L-turn, U-turn or spiral stairs", () => {
-  assert.match(wizard, /kind: "l_turn",\s+width_mm: stairWidthMm,[\s\S]+lower_step_count: lowerSteps,\s+upper_step_count: upperSteps,\s+turn: stairTurn,/);
+  assert.match(wizard, /kind: "l_turn", width_mm: stairWidthMm,[^}]+lower_step_count: lowerSteps, upper_step_count: upperSteps, turn, placement,/);
   assert.match(wizard, /kind: "straight",\s+width_mm: stairWidthMm,[\s\S]+step_count: stepCount,/);
-  assert.match(wizard, /kind: "u_turn",\s+width_mm: stairWidthMm,[\s\S]+flight_step_count: uFlightSteps,\s+turn: stairTurn,/);
-  assert.match(wizard, /kind: "spiral",\s+diameter_mm: spiralDiameterMm,\s+post_diameter_mm: spiralPostDiameterMm,\s+step_count: spiralSteps,\s+sweep_deg: spiralSweepDeg,\s+turn: stairTurn,\s+placement: stairPlacement,\s+railing: false,/);
+  assert.match(wizard, /kind: "u_turn", width_mm: stairWidthMm,[^}]+flight_step_count: uFlightSteps, turn, placement,/);
+  assert.match(wizard, /kind: "spiral", diameter_mm: spiralDiameterMm, post_diameter_mm: spiralPostDiameterMm, step_count: spiralSteps, sweep_deg: spiralSweepDeg, turn, placement, railing: false,/);
+  assert.match(wizard, /floors === 3 && separateTopStair[\s\S]+\[repeatedStair, stairPayload\(topStairPlacement, topStairTurn, topStairMaterialId\)\]/);
+  assert.match(wizard, /stair: transitionStairs \? null : repeatedStair,\s+stairs: transitionStairs,/);
+  assert.match(wizard, /Отдельная конфигурация лестницы 2 → 3/);
   // The landing is one riser and the comfort/fit checks gate submission like the server does.
   assert.match(wizard, /lowerSteps \+ upperSteps \+ 1/);
   assert.match(wizard, /2 \* uFlightSteps \+ 1/);
@@ -27,7 +30,9 @@ test("the house-box wizard submits discriminated straight, L-turn, U-turn or spi
   assert.match(wizard, /upper_floor_setback_sides_mm: effectiveSides\s+\? \{ x_min_mm: effectiveSides\.xMinMm, x_max_mm: effectiveSides\.xMaxMm, y_min_mm: effectiveSides\.yMinMm, y_max_mm: effectiveSides\.yMaxMm \}\s+: null,/);
   assert.match(wizard, /checkUpperFloorSetbackSides\(effectiveSides, lengthMm, widthMm\)/);
   assert.match(wizard, /stairFootprintFits\(\{ footprint: stairFootprint, placement: stairPlacement, houseLengthMm: lengthMm, houseWidthMm: widthMm, insets \}\)/);
-  assert.match(wizard, /upperFloorSetbackSides: stairSides,[\s\S]+upperFloorSetbackSides: stairSides,/);
+  assert.match(wizard, /upperFloorSetbackSides: primaryStairSides,[\s\S]+upperFloorSetbackSides: primaryStairSides,/);
+  assert.match(wizard, /separateTransitionMode && perFloorSides \? perFloorSides\[1\] : stairSides/);
+  assert.match(wizard, /topStairProblem/);
   assert.match(wizard, /lengthMm - 2 \* upperFloorSetbackMm < 2_000/);
 });
 
@@ -72,13 +77,13 @@ test("the shared plan helper draws a U-turn through both parallel flights", () =
 });
 
 test("the wizard submits a strict winder stair without hidden fields", () => {
-  const body = wizard.match(/\{\s+kind: "winder_turn",[\s\S]+?\n\s+\}/)?.[0] ?? "";
-  assert.match(body, /lower_step_count: winderLowerSteps,\s+upper_step_count: winderUpperSteps,\s+newel_mm: newelMm,\s+turn: stairTurn,\s+placement: stairPlacement,\s+railing: false,/);
+  const body = wizard.match(/\{ kind: "winder_turn"[^}]+\}/)?.[0] ?? "";
+  assert.match(body, /lower_step_count: winderLowerSteps, upper_step_count: winderUpperSteps, newel_mm: newelMm, turn, placement, railing: false,/);
   // Nothing from the straight, L or U controls leaks, and the hidden railing state is not sent.
-  assert.deepEqual(
-    [...body.matchAll(/^\s+([a-z_]+):/gm)].map((match) => match[1]).sort(),
-    ["kind", "lower_step_count", "material_id", "newel_mm", "placement", "railing", "tread_depth_mm", "turn", "upper_step_count", "width_mm"],
-  );
+  for (const field of ["kind", "width_mm", "tread_depth_mm", "lower_step_count", "upper_step_count", "newel_mm", "railing", "material_id"]) {
+    assert.match(body, new RegExp(`${field}:`));
+  }
+  assert.match(body, /newel_mm: newelMm, turn, placement, railing:/);
   assert.doesNotMatch(body, /stepCount|uFlightSteps|[^r]lowerSteps|[^r]upperSteps|railing,/);
   // newel_mm belongs to the winder request only.
   assert.equal(wizard.match(/newel_mm/g)?.length, 1);

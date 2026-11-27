@@ -25404,6 +25404,38 @@
             ],
             "title": "Stair"
           },
+          "stairs": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/StraightStairBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LTurnStairBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UTurnStairBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WinderTurnStairBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SpiralStairBody"
+                    }
+                  ]
+                },
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stairs"
+          },
           "upper_floor_setback_mm": {
             "type": "number",
             "maximum": 10000.0,

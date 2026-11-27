@@ -3,8 +3,9 @@
 ## Acceptance boundary
 
 This increment turns `floors` from a visual height multiplier into explicit floor data for one
-bounded creator: a rectangular `house_box` with two or three floors and one repeated straight
-flight between adjacent levels.
+bounded creator: a rectangular `house_box` with two or three floors and an exact stair on every
+adjacent-floor transition. A singular stair is repeated for compatibility; a three-floor request
+may instead configure the 1→2 and 2→3 transitions independently.
 
 It must produce, from the same immutable request:
 
@@ -17,6 +18,29 @@ It must produce, from the same immutable request:
 - one aligned 2D plan per floor with an `up` and/or `down` stair footprint.
 
 The existing one-floor and shape-only rectangle/L/T house paths remain backward compatible.
+
+## Transition-specific stair follow-up
+
+`HouseBoxRequest.stairs` and the REST `stairs` field accept exactly `floors - 1` discriminated
+stair objects, floor 1→2 first. They are mutually exclusive with the historical singular
+`stair`, which still means “repeat this immutable specification on every transition”. The list is
+bounded to two entries because the house creator is bounded to three floors. Each entry is
+validated against its own destination-floor footprint and the complete mixed OperationPlan is
+validated before a job is persisted.
+
+The generator cuts floor 2 from the first stair and floor 3 from the second, then builds each
+flight with its own kind, placement, turn, railing and material. Mixed kinds use only the existing
+exact straight/L/U/winder/spiral primitives; no new kernel operation or parser branch is involved.
+Worker provenance retains the ordered list, resolves every material again, requires every output
+body, and assigns the correct appearance and scene name to each lower-floor stair node.
+
+`BuildingFloorPlans` derives the down stair from the incoming transition and the up stair from the
+outgoing transition. The middle floor of a three-floor house therefore legitimately contains two
+different `PlanStair` objects, while the bottom and top plans contain their matching ends. Web and
+mobile expose an explicit optional 2→3 configuration; leaving it off preserves the historical
+single-field request byte-for-byte. The current client increment shares the selected stair kind
+and numeric dimensions between transitions while allowing separate placement/turn and, on web,
+material; the API contract already supports independently typed and dimensioned transitions.
 
 ## Repeated L/T multi-floor shells
 

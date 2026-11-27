@@ -16,6 +16,7 @@ from app.engineering.house_box import (
     UTurnStairRequest,
     WinderTurnStairRequest,
     l_stair_rail_ids,
+    stairs_by_transition,
     u_stair_rail_ids,
 )
 from app.interior_materials import material_by_id, snapshot_for
@@ -51,8 +52,9 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
     project_id = uuid.UUID(str(ctx.job.input["project_id"]))
     try:
         request = HouseBoxRequest(**dict(ctx.job.input.get("request") or {}))
-        if request.stair is not None and request.stair.material_id is not None:
-            material_by_id(request.stair.material_id)
+        for stair in stairs_by_transition(request):
+            if stair.material_id is not None:
+                material_by_id(stair.material_id)
         plan = request.build()
     except (TypeError, ValueError, ValidationFailedError) as exc:
         message = exc.message if isinstance(exc, ValidationFailedError) else str(exc)
@@ -78,6 +80,8 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
         "stair": asdict(request.stair) if request.stair is not None else None,
         "upper_floor_setback_mm": request.upper_floor_setback_mm,
     }
+    if request.stairs is not None:
+        request_data["stairs"] = [asdict(stair) for stair in request.stairs]
     if request.upper_floor_setback_sides_mm is not None:
         # Only present when declared, so historical provenance stays byte-identical.
         request_data["upper_floor_setback_sides_mm"] = asdict(request.upper_floor_setback_sides_mm)
@@ -90,7 +94,8 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
         plan_id=f"project-{project_id}-floor-1",
         name=str(ctx.job.input.get("label") or "House plan")[:200],
     ).model_dump(mode="json")
-    if request.stair is not None or request.floors > 1:
+    transition_stairs = stairs_by_transition(request)
+    if transition_stairs or request.floors > 1:
         missing = set(plan.expected_outputs) - set(executed.parts)
         if missing:
             raise JobFailureError(
@@ -98,7 +103,10 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                 "the geometry engine did not return every floor and stair body",
                 details={"missing_bodies": sorted(missing)},
             )
-        if isinstance(request.stair, (WinderTurnStairRequest, SpiralStairRequest)):
+        if any(
+            isinstance(stair, (WinderTurnStairRequest, SpiralStairRequest))
+            for stair in transition_stairs
+        ):
             # Face-joined treads must really have fused; never store a disconnected flight.
             measured = {str(body["name"]): body for body in executed.bodies}
             broken = [
@@ -128,9 +136,6 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                     metadata={**tag, "body": body_name, "kind": "brep"},
                 ),
             )
-        appearance = None
-        if request.stair is not None and request.stair.material_id is not None:
-            appearance = snapshot_for(material_by_id(request.stair.material_id))
         nodes: list[dict[str, Any]] = []
         for floor_index in range(request.floors):
             group_id = f"floor_{floor_index + 1}_group"
@@ -163,14 +168,20 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                     },
                 ]
             )
-            if request.stair is None or floor_index >= request.floors - 1:
+            if floor_index >= len(transition_stairs):
                 continue
+            stair = transition_stairs[floor_index]
+            appearance = (
+                snapshot_for(material_by_id(stair.material_id))
+                if stair.material_id is not None
+                else None
+            )
             flight_prefix = f"stair_{floor_index + 1}_{floor_index + 2}"
             flight_body = f"{flight_prefix}_step_1"
-            l_turn = isinstance(request.stair, LTurnStairRequest)
-            u_turn = isinstance(request.stair, UTurnStairRequest)
-            winder_turn = isinstance(request.stair, WinderTurnStairRequest)
-            spiral = isinstance(request.stair, SpiralStairRequest)
+            l_turn = isinstance(stair, LTurnStairRequest)
+            u_turn = isinstance(stair, UTurnStairRequest)
+            winder_turn = isinstance(stair, WinderTurnStairRequest)
+            spiral = isinstance(stair, SpiralStairRequest)
             nodes.append(
                 {
                     "id": flight_prefix,
@@ -195,7 +206,7 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                     "appearance": appearance,
                 }
             )
-            if request.stair.railing and (l_turn or u_turn):
+            if stair.railing and (l_turn or u_turn):
                 rail_names = _L_RAIL_NAMES if l_turn else _U_RAIL_NAMES
                 rail_ids = (
                     l_stair_rail_ids(floor_index) if l_turn else u_stair_rail_ids(floor_index)
@@ -216,7 +227,7 @@ def handle_house_box(ctx: JobContext) -> dict[str, Any]:
                             "appearance": appearance,
                         }
                     )
-            elif request.stair.railing:
+            elif stair.railing:
                 for side in ("left", "right"):
                     rail_body = f"rail_{side}_{floor_index + 1}_{floor_index + 2}"
                     nodes.append(
